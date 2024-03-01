@@ -3295,7 +3295,8 @@ wzapi::no_return_value wzapi::fireWeaponAtLoc(WZAPI_PARAMS(std::string weaponNam
 	WEAPON sWeapon;
 	sWeapon.nStat = weaponIndex;
 
-	proj_SendProjectile(&sWeapon, nullptr, player, target, nullptr, true, 0);
+	auto* psProj = proj_SendProjectile(&sWeapon, nullptr, player, target, nullptr, true, 0);
+	proj_AddActiveProjectile(psProj);
 	return {};
 }
 
@@ -3317,7 +3318,8 @@ wzapi::no_return_value wzapi::fireWeaponAtObj(WZAPI_PARAMS(std::string weaponNam
 	WEAPON sWeapon;
 	sWeapon.nStat = weaponIndex;
 
-	proj_SendProjectile(&sWeapon, nullptr, player, target, psObj, true, 0);
+	auto* psProj = proj_SendProjectile(&sWeapon, nullptr, player, target, psObj, true, 0);
+	proj_AddActiveProjectile(psProj);
 	return {};
 }
 

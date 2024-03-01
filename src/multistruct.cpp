@@ -243,7 +243,9 @@ bool recvLasSat(NETQUEUE queue)
 		}
 
 		// Give enemy no quarter, unleash the lasat
-		proj_SendProjectile(&psStruct->asWeaps[0], nullptr, player, psObj->pos, psObj, true, 0);
+		auto* psProj = proj_SendProjectile(&psStruct->asWeaps[0], nullptr, player, psObj->pos, psObj, true, 0);
+		proj_AddActiveProjectile(psProj);
+
 		psStruct->asWeaps[0].lastFired = gameTime;
 		psStruct->asWeaps[0].ammo = 1; // abducting this field for keeping track of triggers
 
