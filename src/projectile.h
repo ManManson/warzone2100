@@ -63,11 +63,11 @@ int getExpGain(int player);
 int32_t projCalcIndirectVelocities(const int32_t dx, const int32_t dz, int32_t v, int32_t *vx, int32_t *vz, int min_angle);
 
 /** Send a single projectile against the given target. */
-bool proj_SendProjectile(WEAPON *psWeap, SIMPLE_OBJECT *psAttacker, int player, Vector3i target, BASE_OBJECT *psTarget, bool bVisible, int weapon_slot);
+PROJECTILE* proj_SendProjectile(WEAPON *psWeap, SIMPLE_OBJECT *psAttacker, int player, Vector3i target, BASE_OBJECT *psTarget, bool bVisible, int weapon_slot);
 
 /** Send a single projectile against the given target
  * with a minimum shot angle. */
-bool proj_SendProjectileAngled(WEAPON *psWeap, SIMPLE_OBJECT *psAttacker, int player, Vector3i target, BASE_OBJECT *psTarget, bool bVisible, int weapon_slot, int min_angle, unsigned fireTime);
+PROJECTILE* proj_SendProjectileAngled(WEAPON *psWeap, SIMPLE_OBJECT *psAttacker, int player, Vector3i target, BASE_OBJECT *psTarget, bool bVisible, int weapon_slot, int min_angle, unsigned fireTime);
 
 /** Return whether a weapon is direct or indirect. */
 bool proj_Direct(const WEAPON_STATS *psStats);

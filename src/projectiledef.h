@@ -42,7 +42,9 @@ struct PROJECTILE : public SIMPLE_OBJECT
 {
 	PROJECTILE(uint32_t id, unsigned player) : SIMPLE_OBJECT(OBJ_PROJECTILE, id, player) {}
 
-	void            update();
+	// Returns non-empty pointer if `update()` has spawned an additional projectile (e.g. true for penetrating projectiles).
+	// This will need to be added to global projectile list.
+	PROJECTILE* update();
 
 	UBYTE           state;                  ///< current projectile state
 	UBYTE           bVisible;               ///< whether the selected player should see the projectile

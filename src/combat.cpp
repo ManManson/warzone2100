@@ -319,7 +319,7 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 	CLIP(predict.x, 0, world_coord(mapWidth - 1));
 	CLIP(predict.y, 0, world_coord(mapHeight - 1));
 
-	proj_SendProjectileAngled(psWeap, psAttacker, psAttacker->player, predict, psTarget, bVisibleAnyway, weapon_slot, min_angle, fireTime);
+	(void)proj_SendProjectileAngled(psWeap, psAttacker, psAttacker->player, predict, psTarget, bVisibleAnyway, weapon_slot, min_angle, fireTime);
 	return true;
 }
 

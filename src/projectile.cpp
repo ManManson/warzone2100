@@ -419,12 +419,12 @@ int32_t projCalcIndirectVelocities(const int32_t dx, const int32_t dz, int32_t v
 	return t;
 }
 
-bool proj_SendProjectile(WEAPON *psWeap, SIMPLE_OBJECT *psAttacker, int player, Vector3i target, BASE_OBJECT *psTarget, bool bVisible, int weapon_slot)
+PROJECTILE* proj_SendProjectile(WEAPON *psWeap, SIMPLE_OBJECT *psAttacker, int player, Vector3i target, BASE_OBJECT *psTarget, bool bVisible, int weapon_slot)
 {
 	return proj_SendProjectileAngled(psWeap, psAttacker, player, target, psTarget, bVisible, weapon_slot, 0, gameTime - 1);
 }
 
-bool proj_SendProjectileAngled(WEAPON *psWeap, SIMPLE_OBJECT *psAttacker, int player, Vector3i target, BASE_OBJECT *psTarget, bool bVisible, int weapon_slot, int min_angle, unsigned fireTime)
+PROJECTILE* proj_SendProjectileAngled(WEAPON *psWeap, SIMPLE_OBJECT *psAttacker, int player, Vector3i target, BASE_OBJECT *psTarget, bool bVisible, int weapon_slot, int min_angle, unsigned fireTime)
 {
 	WEAPON_STATS *psStats = &asWeaponStats[psWeap->nStat];
 
@@ -592,7 +592,7 @@ bool proj_SendProjectileAngled(WEAPON *psWeap, SIMPLE_OBJECT *psAttacker, int pl
 
 	CHECK_PROJECTILE(psProj);
 
-	return true;
+	return psProj;
 }
 
 /***************************************************************************/
@@ -691,7 +691,7 @@ static int32_t collisionXYZ(Vector3i v1, Vector3i v2, ObjectShape shape, int32_t
 	return -1;
 }
 
-static void proj_InFlightFunc(PROJECTILE *psProj)
+static PROJECTILE* proj_InFlightFunc(PROJECTILE *psProj)
 {
 	/* we want a delay between Las-Sats firing and actually hitting in multiPlayer
 	magic number but that's how long the audio countdown message lasts! */
@@ -707,14 +707,14 @@ static void proj_InFlightFunc(PROJECTILE *psProj)
 	int deltaProjectileTime = psProj->time - psProj->prevSpacetime.time;
 
 	WEAPON_STATS *psStats = psProj->psWStats;
-	ASSERT_OR_RETURN(, psStats != nullptr, "Invalid weapon stats pointer");
+	ASSERT_OR_RETURN(nullptr, psStats != nullptr, "Invalid weapon stats pointer");
 
 	/* we want a delay between Las-Sats firing and actually hitting in multiPlayer
 	magic number but that's how long the audio countdown message lasts! */
 	if (bMultiPlayer && psStats->weaponSubClass == WSC_LAS_SAT &&
 	    (unsigned)timeSoFar < LAS_SAT_DELAY * GAME_TICKS_PER_SEC)
 	{
-		return;
+		return nullptr;
 	}
 
 	/* Calculate movement vector: */
@@ -893,6 +893,7 @@ static void proj_InFlightFunc(PROJECTILE *psProj)
 		}
 		setProjectileDestination(psProj, closestCollisionObject);  // We hit something.
 
+		PROJECTILE* spawnedProjectile = nullptr;
 		// Buildings and terrain cannot be penetrated and we need a penetrating weapon, and projectile should not have already travelled further than 1.25 * maximum range.
 		if (closestCollisionObject != nullptr && closestCollisionObject->type == OBJ_DROID && psStats->penetrate && currentDistance < static_cast<int>(1.25 * proj_GetLongRange(*psStats, psProj->player)))
 		{
@@ -902,12 +903,12 @@ static void proj_InFlightFunc(PROJECTILE *psProj)
 			// Assume we damaged the chosen target
 			psProj->psDamaged.push_back(closestCollisionObject);
 
-			proj_SendProjectile(&asWeap, psProj, psProj->player, psProj->dst, nullptr, true, -1);
+			spawnedProjectile = proj_SendProjectile(&asWeap, psProj, psProj->player, psProj->dst, nullptr, true, -1);
 		}
 
 		psProj->state = PROJ_IMPACT;
 
-		return;
+		return spawnedProjectile;
 	}
 
 	if (currentDistance * 100 >= proj_GetLongRange(*psStats, psProj->player) * psStats->distanceExtensionFactor)
@@ -915,7 +916,7 @@ static void proj_InFlightFunc(PROJECTILE *psProj)
 		// We've travelled our maximum range.
 		psProj->state = PROJ_IMPACT;
 		setProjectileDestination(psProj, nullptr); /* miss registered if NULL target */
-		return;
+		return nullptr;
 	}
 
 	/* Paint effects if visible */
@@ -959,6 +960,7 @@ static void proj_InFlightFunc(PROJECTILE *psProj)
 			}
 		}
 	}
+	return nullptr;
 }
 
 /***************************************************************************/
@@ -1325,7 +1327,7 @@ static void proj_PostImpactFunc(PROJECTILE *psObj)
 
 /***************************************************************************/
 
-void PROJECTILE::update()
+PROJECTILE* PROJECTILE::update()
 {
 	PROJECTILE *psObj = this;
 
@@ -1355,13 +1357,14 @@ void PROJECTILE::update()
 	if (worldOnMap(psObj->pos.x, psObj->pos.y) == false)
 	{
 		psObj->died = true;
-		return;
+		return nullptr;
 	}
 
+	PROJECTILE* spawnedProjectile = nullptr;
 	switch (psObj->state)
 	{
 	case PROJ_INFLIGHT:
-		proj_InFlightFunc(psObj);
+		spawnedProjectile = proj_InFlightFunc(psObj);
 		if (psObj->state != PROJ_IMPACT)
 		{
 			break;
@@ -1384,6 +1387,8 @@ void PROJECTILE::update()
 	}
 
 	syncDebugProjectile(psObj, '>');
+
+	return spawnedProjectile;
 }
 
 /***************************************************************************/
@@ -1392,10 +1397,23 @@ void PROJECTILE::update()
 void proj_UpdateAll()
 {
 	WZ_PROFILE_SCOPE(proj_UpdateAll);
-	std::vector<PROJECTILE *> psProjectileListOld = psProjectileList;
+	static std::unordered_set<PROJECTILE*> spawnedProjectiles;
+	spawnedProjectiles.reserve(psProjectileList.size());
+	spawnedProjectiles.clear();
 
 	// Update all projectiles. Penetrating projectiles may add to psProjectileList.
-	std::for_each(psProjectileListOld.begin(), psProjectileListOld.end(), std::mem_fn(&PROJECTILE::update));
+	for (PROJECTILE* p : psProjectileList)
+	{
+		if (spawnedProjectiles.count(p) != 0)
+		{
+			continue;
+		}
+		PROJECTILE* spawned = p->update();
+		if (spawned)
+		{
+			spawnedProjectiles.emplace(spawned);
+		}
+	}
 
 	// Remove and free dead projectiles.
 	psProjectileList.erase(std::remove_if(psProjectileList.begin(), psProjectileList.end(), [](PROJECTILE* p)
