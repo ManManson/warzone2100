@@ -21,6 +21,8 @@
 #ifndef __INCLUDED_SRC_PROJECTILE_H__
 #define __INCLUDED_SRC_PROJECTILE_H__
 
+#include "lib/framework/paged_entity_container.h"
+
 #include "projectiledef.h"
 #include "weapondef.h"
 #include <glm/fwd.hpp>
@@ -50,9 +52,6 @@ extern	BASE_OBJECT	*g_pProjLastAttacker;	///< The last unit that did damage - us
 bool	proj_InitSystem();	///< Initialize projectiles subsystem.
 void	proj_UpdateAll();	///< Frame update for projectiles.
 bool	proj_Shutdown();	///< Shut down projectile subsystem.
-
-PROJECTILE *proj_GetFirst();	///< Get first projectile in the list.
-PROJECTILE *proj_GetNext();		///< Get next projectile in the list.
 
 void	proj_FreeAllProjectiles();	///< Free all projectiles in the list.
 
@@ -138,5 +137,7 @@ struct ObjectShape
 };
 
 ObjectShape establishTargetShape(const BASE_OBJECT *psTarget);
+
+PagedEntityContainer<PROJECTILE>& GlobalProjectileContainer();
 
 #endif // __INCLUDED_SRC_PROJECTILE_H__

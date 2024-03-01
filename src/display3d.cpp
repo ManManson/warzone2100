@@ -1806,34 +1806,34 @@ static void	calcFlagPosScreenCoords(SDWORD *pX, SDWORD *pY, SDWORD *pR, const gl
 static void display3DProjectiles(const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix)
 {
 	WZ_PROFILE_SCOPE(display3DProjectiles);
-	PROJECTILE *psObj = proj_GetFirst();
-	while (psObj != nullptr)
+	auto& globalProjectileCont = GlobalProjectileContainer();
+	for (auto it = globalProjectileCont.begin(), end = globalProjectileCont.end(); it != end; ++it)
 	{
+		PROJECTILE& proj = *it;
 		// If source or destination is visible, and projectile has been spawned and has not impacted.
-		if (graphicsTime >= psObj->prevSpacetime.time && graphicsTime <= psObj->time && gfxVisible(psObj))
+		if (graphicsTime >= proj.prevSpacetime.time && graphicsTime <= proj.time && gfxVisible(&proj))
 		{
 			/* Draw a bullet at psObj->pos.x for X coord
 			   psObj->pos.y for Z coord
 			   whatever for Y (height) coord - arcing ?
 			*/
 			/* these guys get drawn last */
-			if (psObj->psWStats->weaponSubClass == WSC_ROCKET ||
-			    psObj->psWStats->weaponSubClass == WSC_MISSILE ||
-			    psObj->psWStats->weaponSubClass == WSC_COMMAND ||
-			    psObj->psWStats->weaponSubClass == WSC_SLOWMISSILE ||
-			    psObj->psWStats->weaponSubClass == WSC_SLOWROCKET ||
-			    psObj->psWStats->weaponSubClass == WSC_ENERGY ||
-			    psObj->psWStats->weaponSubClass == WSC_EMP)
+			auto weaponSubClass = proj.psWStats->weaponSubClass;
+			if (weaponSubClass == WSC_ROCKET ||
+				weaponSubClass == WSC_MISSILE ||
+				weaponSubClass == WSC_COMMAND ||
+				weaponSubClass == WSC_SLOWMISSILE ||
+				weaponSubClass == WSC_SLOWROCKET ||
+				weaponSubClass == WSC_ENERGY ||
+				weaponSubClass == WSC_EMP)
 			{
-				bucketAddTypeToList(RENDER_PROJECTILE, psObj, perspectiveViewMatrix);
+				bucketAddTypeToList(RENDER_PROJECTILE, &proj, perspectiveViewMatrix);
 			}
 			else
 			{
-				renderProjectile(psObj, viewMatrix, perspectiveViewMatrix);
+				renderProjectile(&proj, viewMatrix, perspectiveViewMatrix);
 			}
 		}
-
-		psObj = proj_GetNext();
 	}
 }	/* end of function display3DProjectiles */
 

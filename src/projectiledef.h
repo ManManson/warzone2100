@@ -61,9 +61,6 @@ struct PROJECTILE : public SIMPLE_OBJECT
 	int             partVisible;            ///< how much of target was visible on shooting (important for homing)
 };
 
-typedef std::vector<PROJECTILE *>::const_iterator ProjectileIterator;
-
-
 /// True iff object is a projectile.
 static inline bool isProjectile(SIMPLE_OBJECT const *psObject)
 {
