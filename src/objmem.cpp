@@ -135,7 +135,7 @@ static bool checkReferences(BASE_OBJECT *psVictim)
 
 /* Remove an object from the destroyed list, finally freeing its memory
  * Hopefully by this time, no pointers still refer to it! */
-static bool objmemDestroy(BASE_OBJECT *psObj)
+bool objmemDestroy(BASE_OBJECT *psObj)
 {
 	switch (psObj->type)
 	{
@@ -158,8 +158,19 @@ static bool objmemDestroy(BASE_OBJECT *psObj)
 	{
 		return false;
 	}
-	debug(LOG_MEMORY, "BASE_OBJECT* 0x%p is freed.", static_cast<void *>(psObj));
-	delete psObj;
+	// Droids are managed by a separate droid container.
+	if (psObj->type == OBJ_DROID)
+	{
+		auto& droidContainer = GlobalDroidContainer();
+		auto it = droidContainer.find(*static_cast<DROID*>(psObj));
+		assert(it != droidContainer.end());
+		droidContainer.erase(it);
+	}
+	else
+	{
+		delete psObj;
+	}
+	debug(LOG_MEMORY, "BASE_OBJECT* is freed.");
 	return true;
 }
 
@@ -376,7 +387,20 @@ void killDroid(DROID *psDel)
 /* Remove all droids */
 void freeAllDroids()
 {
-	releaseAllObjectsInList(apsDroidLists);
+	auto& droidContainer = GlobalDroidContainer();
+	for (auto& list : apsDroidLists)
+	{
+		for (DROID* d : list)
+		{
+			auto it = droidContainer.find(*d);
+			if (it == droidContainer.end())
+			{
+				continue;
+			}
+			droidContainer.erase(it);
+		}
+		list.clear();
+	}
 }
 
 /*Remove a single Droid from a list*/
@@ -409,13 +433,39 @@ void removeDroid(DROID* psDroidToRemove, PerPlayerDroidLists& pList)
 /*Removes all droids that may be stored in the mission lists*/
 void freeAllMissionDroids()
 {
-	releaseAllObjectsInList(mission.apsDroidLists);
+	auto& droidContainer = GlobalDroidContainer();
+	for (auto& list : mission.apsDroidLists)
+	{
+		for (DROID* d : list)
+		{
+			auto it = droidContainer.find(*d);
+			if (it == droidContainer.end())
+			{
+				continue;
+			}
+			droidContainer.erase(it);
+		}
+		list.clear();
+	}
 }
 
 /*Removes all droids that may be stored in the limbo lists*/
 void freeAllLimboDroids()
 {
-	releaseAllObjectsInList(apsLimboDroids);
+	auto& droidContainer = GlobalDroidContainer();
+	for (auto& list : apsLimboDroids)
+	{
+		for (DROID* d : list)
+		{
+			auto it = droidContainer.find(*d);
+			if (it == droidContainer.end())
+			{
+				continue;
+			}
+			droidContainer.erase(it);
+		}
+		list.clear();
+	}
 }
 
 /**************************  STRUCTURE  *******************************/
