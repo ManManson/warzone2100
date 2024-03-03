@@ -116,7 +116,7 @@ public:
 	SessionKeys(EcKey const &me, uint32_t me_playerIdx, EcKey const &other, uint32_t other_playerIdx);
 
 public:
-	std::vector<uint8_t> encryptMessageForOther(void const *data, size_t dataLen); // not thread-safe
+	std::basic_string<uint8_t> encryptMessageForOther(void const *data, size_t dataLen); // not thread-safe
 	bool decryptMessageFromOther(void const *data, size_t dataLen, std::vector<uint8_t>& outputDecrypted);
 
 private:

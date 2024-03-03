@@ -29,6 +29,7 @@
 #include <list>
 #include <deque>
 #include <unordered_map>
+#include <string>
 
 // At game level:
 // There should be a NetQueue representing each client.
@@ -41,6 +42,8 @@
 // There should be a NetQueuePair per socket.
 
 
+using payload = std::basic_string<uint8_t>;
+
 /// A NetMessage consists of a type (uint8_t) and some data, the meaning of which depends on the type.
 class NetMessage
 {
@@ -51,7 +54,7 @@ public:
 	void rawDataAppendToVector(std::vector<uint8_t> &output) const;  ///< Appends data compatible with NetQueue::writeRawData() to the input vector.
 	size_t rawLen() const;        ///< Returns the length of the return value of rawDataDup().
 	uint8_t type;
-	std::vector<uint8_t> data;
+	payload data;
 };
 
 /// MessageWriter is used for serialising, using the same interface as MessageReader.
@@ -71,6 +74,10 @@ public:
 		message->data.insert(message->data.end(), pIn, pIn + numBytes);
 	}
 	void bytesVector(std::vector<uint8_t> &vIn, size_t numBytes) const
+	{
+		message->data.insert(message->data.end(), vIn.begin(), vIn.begin() + std::min(numBytes, vIn.size()));
+	}
+	void byteString(std::basic_string<uint8_t>& vIn, size_t numBytes) const
 	{
 		message->data.insert(message->data.end(), vIn.begin(), vIn.begin() + std::min(numBytes, vIn.size()));
 	}
@@ -107,6 +114,17 @@ public:
 		index += numCopyBytes;
 	}
 	void bytesVector(std::vector<uint8_t> &vOut, size_t desiredBytes) const
+	{
+		size_t numCopyBytes = (index >= message->data.size()) ? 0 : std::min<size_t>(message->data.size() - index, desiredBytes);
+		if (numCopyBytes > 0)
+		{
+			size_t startIdx = vOut.size();
+			vOut.resize(vOut.size() + numCopyBytes);
+			memcpy(&(vOut[startIdx]), &(message->data[index]), numCopyBytes);
+		}
+		index += numCopyBytes;
+	}
+	void byteString(std::basic_string<uint8_t>& vOut, size_t desiredBytes) const
 	{
 		size_t numCopyBytes = (index >= message->data.size()) ? 0 : std::min<size_t>(message->data.size() - index, desiredBytes);
 		if (numCopyBytes > 0)

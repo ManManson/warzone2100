@@ -636,7 +636,7 @@ SessionKeys::SessionKeys(EcKey const &me, uint32_t me_playerIdx, EcKey const &ot
 
 constexpr size_t sessionMessageBlockSize = 64;
 
-std::vector<uint8_t> SessionKeys::encryptMessageForOther(void const *data, size_t dataLen)
+std::basic_string<uint8_t> SessionKeys::encryptMessageForOther(void const *data, size_t dataLen)
 {
 #if SIZE_MAX > UINT32_MAX
 	if (dataLen > static_cast<size_t>(std::numeric_limits<uint32_t>::max()))
@@ -678,7 +678,7 @@ std::vector<uint8_t> SessionKeys::encryptMessageForOther(void const *data, size_
 	}
 
 	// Return <nonce><ciphertext>
-	std::vector<uint8_t> fullResult;
+	std::basic_string<uint8_t> fullResult;
 	fullResult.reserve(nonce.size() + ciphertext.size());
 	std::copy(nonce.begin(), nonce.end(), std::back_inserter(fullResult));
 	std::copy(ciphertext.begin(), ciphertext.end(), std::back_inserter(fullResult));

@@ -294,6 +294,27 @@ static void queue(const Q &q, std::vector<uint8_t> &v)
 }
 
 template<class Q>
+static void queue(const Q& q, std::basic_string<uint8_t>& v)
+{
+	ASSERT(v.size() <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()), "v.size() exceeds uint32_t max");
+	uint32_t len = static_cast<uint32_t>(std::min(v.size(), static_cast<size_t>(std::numeric_limits<uint32_t>::max())));
+	queue(q, len);
+	switch (Q::Direction)
+	{
+	case Q::Write:
+		q.bytes(&v[0], v.size());
+		break;
+	case Q::Read:
+		v.clear();
+		if (q.valid())
+		{
+			q.byteString(v, len);
+		}
+		break;
+	}
+}
+
+template<class Q>
 static void queue(const Q &q, NetMessage &v)
 {
 	queue(q, v.type);

@@ -420,7 +420,7 @@ bool NETreplayLoadNetMessage(std::unique_ptr<NetMessage> &message, uint8_t &play
 
 	message = std::make_unique<NetMessage>(type);
 	message->data.resize(len);
-	size_t messageRead = WZ_PHYSFS_readBytes(replayLoadHandle, message->data.data(), message->data.size());
+	size_t messageRead = WZ_PHYSFS_readBytes(replayLoadHandle, &message->data[0], message->data.size());
 	if (messageRead != message->data.size())
 	{
 		return false;
