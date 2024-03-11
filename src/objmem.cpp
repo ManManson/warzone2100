@@ -224,13 +224,21 @@ bool objmemDestroy(BASE_OBJECT *psObj)
 	{
 		return false;
 	}
-	// Droids are managed by a separate droid container.
 	if (psObj->type == OBJ_DROID)
 	{
+		// Droids are managed by a separate droid container.
 		auto& droidContainer = GlobalDroidContainer();
 		auto it = droidContainer.find(*static_cast<DROID*>(psObj));
 		assert(it != droidContainer.end());
 		droidContainer.erase(it);
+	}
+	else if (psObj->type == OBJ_STRUCTURE)
+	{
+		// Structs are managed by a separate struct container.
+		auto& structContainer = GlobalStructContainer();
+		auto it = structContainer.find(*static_cast<STRUCTURE*>(psObj));
+		assert(it != structContainer.end());
+		structContainer.erase(it);
 	}
 	else
 	{
@@ -614,7 +622,20 @@ void killStruct(STRUCTURE *psBuilding)
 /* Remove heapall structures */
 void freeAllStructs()
 {
-	releaseAllObjectsInList(apsStructLists);
+	auto& structContainer = GlobalStructContainer();
+	for (auto& list : apsStructLists)
+	{
+		for (STRUCTURE* s : list)
+		{
+			auto it = structContainer.find(*s);
+			if (it == structContainer.end())
+			{
+				continue;
+			}
+			structContainer.erase(it);
+		}
+		list.clear();
+	}
 }
 
 /*Remove a single Structure from a list*/

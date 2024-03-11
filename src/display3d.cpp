@@ -363,7 +363,11 @@ struct Blueprint
 			STRUCTURE *psStruct = buildBlueprint();
 			ASSERT_OR_RETURN(, psStruct != nullptr, "buildBlueprint returned nullptr");
 			renderStructure(psStruct, viewMatrix, perspectiveViewMatrix);
-			delete psStruct;
+
+			auto& globalStructCont = GlobalStructContainer();
+			auto it = globalStructCont.find(*psStruct);
+			ASSERT(it != globalStructCont.end(), "renderBlueprint: psStruct not found in global container");
+			globalStructCont.erase(it);
 		}
 	}
 
@@ -692,7 +696,14 @@ STRUCTURE *getTileBlueprintStructure(int mapX, int mapY)
 	Blueprint blueprint = getTileBlueprint(mapX, mapY);
 	if (blueprint.state == SS_BLUEPRINT_PLANNED)
 	{
-		delete psStruct;  // Delete previously returned structure, if any.
+		if (psStruct)
+		{
+			// Delete previously returned structure, if any.
+			auto& globalStructCont = GlobalStructContainer();
+			auto it = globalStructCont.find(*psStruct);
+			ASSERT(it != globalStructCont.end(), "getTileBlueprintStructure: psStruct not found in global container");
+			globalStructCont.erase(it);
+		}
 		psStruct = blueprint.buildBlueprint();
 		return psStruct;  // This blueprint was clicked on.
 	}
