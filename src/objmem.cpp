@@ -240,9 +240,13 @@ bool objmemDestroy(BASE_OBJECT *psObj)
 		assert(it != structContainer.end());
 		structContainer.erase(it);
 	}
-	else
+	else // features
 	{
-		delete psObj;
+		// Features are managed by a separate feature container.
+		auto& featureContainer = GlobalFeatureContainer();
+		auto it = featureContainer.find(*static_cast<FEATURE*>(psObj));
+		assert(it != featureContainer.end());
+		featureContainer.erase(it);
 	}
 	debug(LOG_MEMORY, "BASE_OBJECT* is freed.");
 	return true;
@@ -688,7 +692,20 @@ void killFeature(FEATURE *psDel)
 /* Remove all features */
 void freeAllFeatures()
 {
-	releaseAllObjectsInList(apsFeatureLists);
+	auto& featureContainer = GlobalFeatureContainer();
+	for (auto& list : apsFeatureLists)
+	{
+		for (FEATURE* f : list)
+		{
+			auto it = featureContainer.find(*f);
+			if (it == featureContainer.end())
+			{
+				continue;
+			}
+			featureContainer.erase(it);
+		}
+		list.clear();
+	}
 }
 
 /**************************  FLAG_POSITION ********************************/
