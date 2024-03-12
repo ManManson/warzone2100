@@ -220,3 +220,32 @@ if (WZ_PROFILING_NVTX)
 	set(PROFILING_NVTX_INCLUDE ${CUDAToolkit_INCLUDE_DIRS} PARENT_SCOPE)
 
 endif ()
+
+include(FetchContent)
+
+FetchContent_Declare(
+	protobuf
+	GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
+	GIT_TAG        v25.3
+)
+FetchContent_MakeAvailable(protobuf)
+
+set(Protobuf_INCLUDE_DIR "${protobuf_SOURCE_DIR}/src")
+if (CMAKE_BUILD_TYPE MATCHES Debug)
+	set(Protobuf_LIBRARIES "${protobuf_BINARY_DIR}/libprotobufd.a")
+else()
+	set(Protobuf_LIBRARIES "${protobuf_BINARY_DIR}/libprotobuf.a")
+endif()
+
+find_package(Sodium 1.0.14 REQUIRED)
+add_library(sodium ALIAS unofficial-sodium::sodium)
+
+set(USE_CRYPTO libsodium)
+FetchContent_Declare(
+	GameNetworkingSockets
+	GIT_REPOSITORY https://github.com/ValveSoftware/GameNetworkingSockets.git
+	GIT_TAG        e717c6e1297707c36bbd1e6362acd963a306ae08
+)
+FetchContent_MakeAvailable(GameNetworkingSockets)
+
+target_link_libraries(GameNetworkingSockets PRIVATE unofficial-sodium::sodium)

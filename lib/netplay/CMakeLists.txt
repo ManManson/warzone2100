@@ -50,3 +50,5 @@ if(MSVC)
 	# C4267: 'conversion': conversion from 'type1' to 'type2', possible loss of data // FIXME!!
 	target_compile_options(netplay PRIVATE "/wd4267")
 endif()
+
+target_link_libraries(netplay PRIVATE GameNetworkingSockets::shared protobuf::libprotobuf)
