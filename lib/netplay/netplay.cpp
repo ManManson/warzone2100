@@ -1187,6 +1187,22 @@ bool NETsetGameFlags(UDWORD flag, SDWORD value)
 	return true;
 }
 
+static constexpr size_t GAMESTRUCTmessageBufSize()
+{
+	return sizeof(GAMESTRUCT::GAMESTRUCT_VERSION) +
+		sizeof(GAMESTRUCT::name) +
+		sizeof(std::declval<GAMESTRUCT>().desc.host) +
+		(sizeof(int32_t) * 8) +
+		sizeof(GAMESTRUCT::secondaryHosts) +
+		sizeof(GAMESTRUCT::extra) +
+		sizeof(GAMESTRUCT::hostPort) +
+		sizeof(GAMESTRUCT::mapname) +
+		sizeof(GAMESTRUCT::hostname) +
+		sizeof(GAMESTRUCT::versionstring) +
+		sizeof(GAMESTRUCT::modlist) +
+		(sizeof(uint32_t) * 9);
+}
+
 /**
  * @note \c game is being sent to the master server (if hosting)
  *       The implementation of NETsendGAMESTRUCT <em>must</em> guarantee to
@@ -1202,9 +1218,7 @@ static bool NETsendGAMESTRUCT(Socket *sock, const GAMESTRUCT *ourgamestruct)
 	// circumvents struct padding, which could pose a problem).  Initialise
 	// to zero so that we can be sure we're not sending any (undefined)
 	// memory content across the network.
-	char buf[sizeof(ourgamestruct->GAMESTRUCT_VERSION) + sizeof(ourgamestruct->name) + sizeof(ourgamestruct->desc.host) + (sizeof(int32_t) * 8) +
-	         sizeof(ourgamestruct->secondaryHosts) + sizeof(ourgamestruct->extra) + sizeof(ourgamestruct->hostPort) + sizeof(ourgamestruct->mapname) + sizeof(ourgamestruct->hostname) + sizeof(ourgamestruct->versionstring) +
-	         sizeof(ourgamestruct->modlist) + (sizeof(uint32_t) * 9) ] = { 0 };
+	char buf[GAMESTRUCTmessageBufSize()] = { 0 };
 	char *buffer = buf;
 	unsigned int i;
 	ssize_t result;
