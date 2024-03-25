@@ -554,7 +554,7 @@ static size_t NET_fillBuffer(Socket **pSocket, SocketSet *pSocketSet, uint8_t *b
 	size_t rawBytes;
 	size = readNoInt(socket, bufstart, bufsize, &rawBytes);
 
-	if ((size != 0 || !socketReadDisconnected(socket)) && size != SOCKET_ERROR)
+	if ((size != 0 || !socketReadDisconnected(*socket)) && size != SOCKET_ERROR)
 	{
 		nStats.rawBytes.received          += rawBytes;
 		nStats.uncompressedBytes.received += size;
@@ -4115,7 +4115,7 @@ static void NETallowJoining()
 				ssize_t size = readNoInt(tmp_socket[i], buffer, sizeof(buffer));
 				uint8_t rejected = 0;
 
-				if ((size == 0 && socketReadDisconnected(tmp_socket[i])) || size == SOCKET_ERROR)
+				if ((size == 0 && socketReadDisconnected(*tmp_socket[i])) || size == SOCKET_ERROR)
 				{
 					// disconnect or programmer error
 					if (size == 0)

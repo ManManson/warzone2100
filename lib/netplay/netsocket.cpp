@@ -615,9 +615,9 @@ ssize_t readNoInt(Socket *sock, void *buf, size_t max_size, size_t *rawByteCount
 	return received;
 }
 
-bool socketReadDisconnected(Socket *sock)
+bool socketReadDisconnected(const Socket& sock)
 {
-	return sock->readDisconnected;
+	return sock.readDisconnected;
 }
 
 /**
