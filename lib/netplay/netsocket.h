@@ -103,7 +103,7 @@ Socket *socketOpenAny(const SocketAddress *addr, unsigned timeout);     ///< Ope
 WZ_DECL_NONNULL(1) bool socketHasIPv4(const Socket *sock);
 WZ_DECL_NONNULL(1) bool socketHasIPv6(const Socket *sock);
 
-WZ_DECL_NONNULL(1) char const *getSocketTextAddress(Socket const *sock); ///< Gets a string with the socket address.
+WZ_DECL_NONNULL(1) char const *getSocketTextAddress(const Socket& sock); ///< Gets a string with the socket address.
 std::vector<unsigned char> ipv4_AddressString_To_NetBinary(const std::string& ipv4Address);
 std::vector<unsigned char> ipv6_AddressString_To_NetBinary(const std::string& ipv6Address);
 std::string ipv4_NetBinary_To_AddressString(const std::vector<unsigned char>& ip4NetBinaryForm);

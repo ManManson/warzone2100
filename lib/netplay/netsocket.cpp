@@ -1555,9 +1555,9 @@ WZ_DECL_NONNULL(1) bool socketHasIPv6(const Socket *sock)
 	return sock->fd[SOCK_IPV6_LISTEN] != INVALID_SOCKET;
 }
 
-char const *getSocketTextAddress(Socket const *sock)
+char const *getSocketTextAddress(const Socket& sock)
 {
-	return sock->textAddress;
+	return sock.textAddress;
 }
 
 std::vector<unsigned char> ipv4_AddressString_To_NetBinary(const std::string& ipv4Address)

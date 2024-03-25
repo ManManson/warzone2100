@@ -3487,7 +3487,7 @@ bool readGameStructsList(Socket *sock, unsigned int timeout, const std::function
 		if (tmpGame.desc.host[0] == '\0')
 		{
 			memset(tmpGame.desc.host, 0, sizeof(tmpGame.desc.host));
-			strncpy(tmpGame.desc.host, getSocketTextAddress(sock), sizeof(tmpGame.desc.host) - 1);
+			strncpy(tmpGame.desc.host, getSocketTextAddress(*sock), sizeof(tmpGame.desc.host) - 1);
 		}
 
 		uint32_t Vmgr = (tmpGame.future4 & 0xFFFF0000) >> 16;
@@ -3861,7 +3861,7 @@ static bool quickRejectConnection(const std::string& ip)
 
 static void NETcloseTempSocket(unsigned int i)
 {
-	std::string rIP = getSocketTextAddress(tmp_socket[i]);
+	std::string rIP = getSocketTextAddress(*tmp_socket[i]);
 	SocketSet_DelSocket(tmp_socket_set, tmp_socket[i]);
 	socketClose(tmp_socket[i]);
 	tmp_socket[i] = nullptr;
@@ -3965,7 +3965,7 @@ static void NETallowJoining()
 		NETinitQueue(NETnetTmpQueue(i));
 		SocketSet_AddSocket(tmp_socket_set, tmp_socket[i]);
 
-		std::string rIP = getSocketTextAddress(tmp_socket[i]);
+		std::string rIP = getSocketTextAddress(*tmp_socket[i]);
 		connectFailed = quickRejectConnection(rIP);
 		tmp_pendingIPs[rIP]++;
 
@@ -4404,7 +4404,7 @@ static void NETallowJoining()
 			NETmoveQueue(NETnetTmpQueue(i), NETnetQueue(index));
 
 			// Copy player's IP address.
-			sstrcpy(NetPlay.players[index].IPtextAddress, getSocketTextAddress(connected_bsocket[index]));
+			sstrcpy(NetPlay.players[index].IPtextAddress, getSocketTextAddress(*connected_bsocket[index]));
 
 			NETbeginEncode(NETnetQueue(index), NET_ACCEPTED);
 			NETuint8_t(&index);
@@ -4494,7 +4494,7 @@ static void NETallowJoining()
 				NETpop(tmpQueue);
 			}
 
-			std::string rIP = getSocketTextAddress(tmp_socket[i]);
+			std::string rIP = getSocketTextAddress(*tmp_socket[i]);
 			NETaddSessionBanBadIP(rIP);
 
 			NETcloseTempSocket(i);
