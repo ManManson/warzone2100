@@ -3902,12 +3902,12 @@ static void NETallowJoining()
 		ActivitySink::ListeningInterfaces listeningInterfaces;
 		if (tcp_socket != nullptr)
 		{
-			listeningInterfaces.IPv4 = socketHasIPv4(tcp_socket);
+			listeningInterfaces.IPv4 = socketHasIPv4(*tcp_socket);
 			if (listeningInterfaces.IPv4)
 			{
 				listeningInterfaces.ipv4_port = NETgetGameserverPort();
 			}
-			listeningInterfaces.IPv6 = socketHasIPv6(tcp_socket);
+			listeningInterfaces.IPv6 = socketHasIPv6(*tcp_socket);
 			if (listeningInterfaces.IPv6)
 			{
 				listeningInterfaces.ipv6_port = NETgetGameserverPort();

@@ -100,8 +100,8 @@ Socket *socketListen(unsigned int port);                                ///< Cre
 WZ_DECL_NONNULL(1) Socket *socketAccept(Socket *sock);                  ///< Accepts an incoming Socket connection from a listening Socket.
 WZ_DECL_NONNULL(1) void socketClose(Socket *sock);                      ///< Destroys the Socket.
 Socket *socketOpenAny(const SocketAddress *addr, unsigned timeout);     ///< Opens a Socket, using the first address that works in addr.
-WZ_DECL_NONNULL(1) bool socketHasIPv4(const Socket *sock);
-WZ_DECL_NONNULL(1) bool socketHasIPv6(const Socket *sock);
+WZ_DECL_NONNULL(1) bool socketHasIPv4(const Socket& sock);
+WZ_DECL_NONNULL(1) bool socketHasIPv6(const Socket& sock);
 
 WZ_DECL_NONNULL(1) char const *getSocketTextAddress(const Socket& sock); ///< Gets a string with the socket address.
 std::vector<unsigned char> ipv4_AddressString_To_NetBinary(const std::string& ipv4Address);

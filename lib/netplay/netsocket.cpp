@@ -1527,20 +1527,20 @@ Socket *socketOpenAny(const SocketAddress *addr, unsigned timeout)
 	return ret;
 }
 
-WZ_DECL_NONNULL(1) bool socketHasIPv4(const Socket *sock)
+WZ_DECL_NONNULL(1) bool socketHasIPv4(const Socket& sock)
 {
-	if (sock->fd[SOCK_IPV4_LISTEN] != INVALID_SOCKET)
+	if (sock.fd[SOCK_IPV4_LISTEN] != INVALID_SOCKET)
 	{
 		return true;
 	}
 	else
 	{
 #if defined(IPV6_V6ONLY)
-		if (sock->fd[SOCK_IPV6_LISTEN] != INVALID_SOCKET)
+		if (sock.fd[SOCK_IPV6_LISTEN] != INVALID_SOCKET)
 		{
 			int ipv6_v6only = 1;
 			socklen_t len = sizeof(ipv6_v6only);
-			if (getsockopt(sock->fd[SOCK_IPV6_LISTEN], IPPROTO_IPV6, IPV6_V6ONLY, (char *)&ipv6_v6only, &len) == 0)
+			if (getsockopt(sock.fd[SOCK_IPV6_LISTEN], IPPROTO_IPV6, IPV6_V6ONLY, (char *)&ipv6_v6only, &len) == 0)
 			{
 				return ipv6_v6only == 0;
 			}
@@ -1550,9 +1550,9 @@ WZ_DECL_NONNULL(1) bool socketHasIPv4(const Socket *sock)
 	}
 }
 
-WZ_DECL_NONNULL(1) bool socketHasIPv6(const Socket *sock)
+WZ_DECL_NONNULL(1) bool socketHasIPv6(const Socket& sock)
 {
-	return sock->fd[SOCK_IPV6_LISTEN] != INVALID_SOCKET;
+	return sock.fd[SOCK_IPV6_LISTEN] != INVALID_SOCKET;
 }
 
 char const *getSocketTextAddress(const Socket& sock)
