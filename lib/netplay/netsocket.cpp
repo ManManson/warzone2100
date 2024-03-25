@@ -356,7 +356,7 @@ static bool connectionIsOpen(Socket *sock)
 	                 sock && sock->fd[SOCK_CONNECTION] != INVALID_SOCKET, "Invalid socket");
 
 	// Check whether the socket is still connected
-	int ret = checkSockets(&set, 0);
+	int ret = checkSockets(set, 0);
 	if (ret == SOCKET_ERROR)
 	{
 		return false;
@@ -941,9 +941,9 @@ static void socketBlockSIGPIPE(const SOCKET fd, bool block_sigpipe)
 #endif
 }
 
-int checkSockets(const SocketSet *set, unsigned int timeout)
+int checkSockets(const SocketSet& set, unsigned int timeout)
 {
-	if (set->fds.empty())
+	if (set.fds.empty())
 	{
 		return 0;
 	}
@@ -955,17 +955,17 @@ int checkSockets(const SocketSet *set, unsigned int timeout)
 #endif
 
 	bool compressedReady = false;
-	for (size_t i = 0; i < set->fds.size(); ++i)
+	for (size_t i = 0; i < set.fds.size(); ++i)
 	{
-		ASSERT(set->fds[i]->fd[SOCK_CONNECTION] != INVALID_SOCKET, "Invalid file descriptor!");
+		ASSERT(set.fds[i]->fd[SOCK_CONNECTION] != INVALID_SOCKET, "Invalid file descriptor!");
 
-		if (set->fds[i]->isCompressed && !set->fds[i]->zInflateNeedInput)
+		if (set.fds[i]->isCompressed && !set.fds[i]->zInflateNeedInput)
 		{
 			compressedReady = true;
 			break;
 		}
 
-		maxfd = std::max(maxfd, set->fds[i]->fd[SOCK_CONNECTION]);
+		maxfd = std::max(maxfd, set.fds[i]->fd[SOCK_CONNECTION]);
 	}
 
 	if (compressedReady)
@@ -973,9 +973,9 @@ int checkSockets(const SocketSet *set, unsigned int timeout)
 		// A socket already has some data ready. Don't really poll the sockets.
 
 		int ret = 0;
-		for (size_t i = 0; i < set->fds.size(); ++i)
+		for (size_t i = 0; i < set.fds.size(); ++i)
 		{
-			set->fds[i]->ready = set->fds[i]->isCompressed && !set->fds[i]->zInflateNeedInput;
+			set.fds[i]->ready = set.fds[i]->isCompressed && !set.fds[i]->zInflateNeedInput;
 			++ret;
 		}
 		return ret;
@@ -988,9 +988,9 @@ int checkSockets(const SocketSet *set, unsigned int timeout)
 		struct timeval tv = {(int)(timeout / 1000), (int)(timeout % 1000) * 1000};  // Cast to int to avoid narrowing needed for C++11.
 
 		FD_ZERO(&fds);
-		for (size_t i = 0; i < set->fds.size(); ++i)
+		for (size_t i = 0; i < set.fds.size(); ++i)
 		{
-			const SOCKET fd = set->fds[i]->fd[SOCK_CONNECTION];
+			const SOCKET fd = set.fds[i]->fd[SOCK_CONNECTION];
 
 			FD_SET(fd, &fds);
 		}
@@ -1005,9 +1005,9 @@ int checkSockets(const SocketSet *set, unsigned int timeout)
 		return SOCKET_ERROR;
 	}
 
-	for (size_t i = 0; i < set->fds.size(); ++i)
+	for (size_t i = 0; i < set.fds.size(); ++i)
 	{
-		set->fds[i]->ready = FD_ISSET(set->fds[i]->fd[SOCK_CONNECTION], &fds);
+		set.fds[i]->ready = FD_ISSET(set.fds[i]->fd[SOCK_CONNECTION], &fds);
 	}
 
 	return ret;
@@ -1049,7 +1049,7 @@ ssize_t readAll(Socket *sock, void *buf, size_t size, unsigned int timeout)
 		// If a timeout is set, wait for that amount of time for data to arrive (or abort)
 		if (timeout)
 		{
-			ret = checkSockets(&set, timeout);
+			ret = checkSockets(set, timeout);
 			if (ret < (ssize_t)set.fds.size()
 			    || !sock->ready)
 			{

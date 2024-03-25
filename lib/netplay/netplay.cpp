@@ -2951,7 +2951,7 @@ bool NETrecvNet(NETQUEUE *queue, uint8_t *type)
 		NETcheckPlayers();		// make sure players are still alive & well
 	}
 
-	if (socket_set == nullptr || checkSockets(socket_set, NET_READ_TIMEOUT) <= 0)
+	if (socket_set == nullptr || checkSockets(*socket_set, NET_READ_TIMEOUT) <= 0)
 	{
 		goto checkMessages;
 	}
@@ -3718,7 +3718,7 @@ void LobbyServerConnectionHandler::run()
 			bool exceededTimeout = (realTime - lastConnectionTime >= 10000);
 			// We use readLobbyResponse to display error messages and handle state changes if there's no response
 			// So if exceededTimeout, just call it with a low timeout
-			int checkSocketRet = checkSockets(waitingForConnectionFinalize, NET_READ_TIMEOUT);
+			int checkSocketRet = checkSockets(*waitingForConnectionFinalize, NET_READ_TIMEOUT);
 			if (checkSocketRet == SOCKET_ERROR)
 			{
 				debug(LOG_ERROR, "Lost connection to lobby server");
@@ -3978,7 +3978,7 @@ static void NETallowJoining()
 		tmp_connectState[i].connectState = TmpSocketInfo::TmpConnectState::PendingInitialConnect;
 	}
 
-	if (checkSockets(tmp_socket_set, NET_READ_TIMEOUT) > 0)
+	if (checkSockets(*tmp_socket_set, NET_READ_TIMEOUT) > 0)
 	{
 		for (i = 0; i < MAX_TMP_SOCKETS; ++i)
 		{
