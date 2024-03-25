@@ -709,38 +709,38 @@ ssize_t writeAll(Socket *sock, const void *buf, size_t size, size_t *rawByteCoun
 	return size;
 }
 
-void socketFlush(Socket *sock, uint8_t player, size_t *rawByteCount)
+void socketFlush(Socket& sock, uint8_t player, size_t *rawByteCount)
 {
 	size_t ignored;
 	size_t &rawBytes = rawByteCount != nullptr ? *rawByteCount : ignored;
 	rawBytes = 0;
 
-	if (!sock->isCompressed)
+	if (!sock.isCompressed)
 	{
 		return;  // Not compressed, so don't mess with zlib.
 	}
 
-	ASSERT(!sock->writeError, "Socket write error?? (Player: %" PRIu8 "", player);
+	ASSERT(!sock.writeError, "Socket write error?? (Player: %" PRIu8 "", player);
 
 	// Flush data out of zlib compression state.
 	do
 	{
-		sock->zDeflate.next_in = (Bytef *)nullptr;
-		sock->zDeflate.avail_in = 0;
-		size_t alreadyHave = sock->zDeflateOutBuf.size();
-		sock->zDeflateOutBuf.resize(alreadyHave + 1000);  // 100 bytes would probably be enough to flush the rest in one go.
-		sock->zDeflate.next_out = (Bytef *)&sock->zDeflateOutBuf[alreadyHave];
-		sock->zDeflate.avail_out = sock->zDeflateOutBuf.size() - alreadyHave;
+		sock.zDeflate.next_in = (Bytef *)nullptr;
+		sock.zDeflate.avail_in = 0;
+		size_t alreadyHave = sock.zDeflateOutBuf.size();
+		sock.zDeflateOutBuf.resize(alreadyHave + 1000);  // 100 bytes would probably be enough to flush the rest in one go.
+		sock.zDeflate.next_out = (Bytef *)&sock.zDeflateOutBuf[alreadyHave];
+		sock.zDeflate.avail_out = sock.zDeflateOutBuf.size() - alreadyHave;
 
-		int ret = deflate(&sock->zDeflate, Z_PARTIAL_FLUSH);
+		int ret = deflate(&sock.zDeflate, Z_PARTIAL_FLUSH);
 		ASSERT(ret != Z_STREAM_ERROR, "zlib compression failed!");
 
 		// Remove unused part of buffer.
-		sock->zDeflateOutBuf.resize(sock->zDeflateOutBuf.size() - sock->zDeflate.avail_out);
+		sock.zDeflateOutBuf.resize(sock.zDeflateOutBuf.size() - sock.zDeflate.avail_out);
 	}
-	while (sock->zDeflate.avail_out == 0);
+	while (sock.zDeflate.avail_out == 0);
 
-	if (sock->zDeflateOutBuf.empty())
+	if (sock.zDeflateOutBuf.empty())
 	{
 		return;  // No data to flush out.
 	}
@@ -750,8 +750,8 @@ void socketFlush(Socket *sock, uint8_t player, size_t *rawByteCount)
 	{
 		wzSemaphorePost(socketThreadSemaphore);
 	}
-	std::vector<uint8_t> &writeQueue = socketThreadWrites[sock];
-	writeQueue.insert(writeQueue.end(), sock->zDeflateOutBuf.begin(), sock->zDeflateOutBuf.end());
+	std::vector<uint8_t> &writeQueue = socketThreadWrites[&sock];
+	writeQueue.insert(writeQueue.end(), sock.zDeflateOutBuf.begin(), sock.zDeflateOutBuf.end());
 	wzMutexUnlock(socketThreadMutex);
 
 	// Primitive network logging, uncomment to use.
@@ -760,9 +760,9 @@ void socketFlush(Socket *sock, uint8_t player, size_t *rawByteCount)
 	//printf("\n");
 
 	// Data sent, don't send again.
-	rawBytes = sock->zDeflateOutBuf.size();
-	sock->zDeflateInSize = 0;
-	sock->zDeflateOutBuf.clear();
+	rawBytes = sock.zDeflateOutBuf.size();
+	sock.zDeflateInSize = 0;
+	sock.zDeflateOutBuf.clear();
 }
 
 void socketBeginCompression(Socket& sock)
