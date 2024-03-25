@@ -96,9 +96,9 @@ static SocketThreadWriteMap socketThreadWrites;
 static void socketCloseNow(Socket *sock);
 
 
-bool socketReadReady(Socket const *sock)
+bool socketReadReady(const Socket& sock)
 {
-	return sock->ready;
+	return sock.ready;
 }
 
 int getSockErr(void)

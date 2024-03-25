@@ -546,7 +546,7 @@ static size_t NET_fillBuffer(Socket **pSocket, SocketSet *pSocketSet, uint8_t *b
 	Socket *socket = *pSocket;
 	ssize_t size;
 
-	if (!socketReadReady(socket))
+	if (!socketReadReady(*socket))
 	{
 		return 0;
 	}
@@ -3725,7 +3725,7 @@ void LobbyServerConnectionHandler::run()
 				disconnect();
 				break;
 			}
-			if (exceededTimeout || (checkSocketRet > 0 && socketReadReady(rs_socket)))
+			if (exceededTimeout || (checkSocketRet > 0 && socketReadReady(*rs_socket)))
 			{
 				if (readLobbyResponse(rs_socket, NET_TIMEOUT_DELAY) == SOCKET_ERROR)
 				{
@@ -3987,7 +3987,7 @@ static void NETallowJoining()
 				continue;
 			}
 
-			if (!socketReadReady(tmp_socket[i]))
+			if (!socketReadReady(*tmp_socket[i]))
 			{
 				continue;
 			}

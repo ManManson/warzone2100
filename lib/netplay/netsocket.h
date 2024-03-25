@@ -108,7 +108,7 @@ std::vector<unsigned char> ipv4_AddressString_To_NetBinary(const std::string& ip
 std::vector<unsigned char> ipv6_AddressString_To_NetBinary(const std::string& ipv6Address);
 std::string ipv4_NetBinary_To_AddressString(const std::vector<unsigned char>& ip4NetBinaryForm);
 std::string ipv6_NetBinary_To_AddressString(const std::vector<unsigned char>& ip6NetBinaryForm);
-WZ_DECL_NONNULL(1) bool socketReadReady(Socket const *sock);            ///< Returns if checkSockets found data to read from this Socket.
+WZ_DECL_NONNULL(1) bool socketReadReady(const Socket& sock);            ///< Returns if checkSockets found data to read from this Socket.
 WZ_DECL_NONNULL(1, 2)
 ssize_t readNoInt(Socket *sock, void *buf, size_t max_size, size_t *rawByteCount = nullptr);  ///< Reads up to max_size bytes from the Socket. Raw count of bytes (after compression) returned in rawByteCount.
 WZ_DECL_NONNULL(1, 2)
