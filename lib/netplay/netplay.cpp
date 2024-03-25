@@ -577,7 +577,7 @@ static size_t NET_fillBuffer(Socket **pSocket, SocketSet *pSocketSet, uint8_t *b
 		// an error occurred, or the remote host has closed the connection.
 		if (pSocketSet != nullptr)
 		{
-			SocketSet_DelSocket(pSocketSet, socket);
+			SocketSet_DelSocket(*pSocketSet, socket);
 		}
 
 		ASSERT(size <= bufsize, "Socket buffer is too small!");
@@ -979,7 +979,7 @@ static void NETplayerCloseSocket(UDWORD index, bool quietSocketClose)
 		NETlogEntry("Player has left nicely.", SYNC_FLAG, index);
 
 		// Although we can get a error result from DelSocket, it don't really matter here.
-		SocketSet_DelSocket(socket_set, connected_bsocket[index]);
+		SocketSet_DelSocket(*socket_set, connected_bsocket[index]);
 		socketClose(connected_bsocket[index]);
 		connected_bsocket[index] = nullptr;
 	}
@@ -1739,11 +1739,11 @@ int NETclose()
 		// checking to make sure tcp_socket is still valid
 		if (tcp_socket)
 		{
-			SocketSet_DelSocket(socket_set, tcp_socket);
+			SocketSet_DelSocket(*socket_set, tcp_socket);
 		}
 		if (bsocket)
 		{
-			SocketSet_DelSocket(socket_set, bsocket);
+			SocketSet_DelSocket(*socket_set, bsocket);
 		}
 		debug(LOG_NET, "Freeing socket_set %p", static_cast<void *>(socket_set));
 		deleteSocketSet(socket_set);
@@ -1921,7 +1921,7 @@ bool NETsend(NETQUEUE queue, NetMessage const *message)
 				debug(LOG_ERROR, "Failed to send message: %s", strSockError(getSockErr()));
 				debug(LOG_ERROR, "Host connection was broken, socket %p.", static_cast<void *>(bsocket));
 				NETlogEntry("write error--client disconnect.", SYNC_FLAG, player);
-				SocketSet_DelSocket(socket_set, bsocket);            // mark it invalid
+				SocketSet_DelSocket(*socket_set, bsocket);            // mark it invalid
 				socketClose(bsocket);
 				bsocket = nullptr;
 				NetPlay.players[NetPlay.hostPlayer].heartbeat = false;	// mark host as dead
@@ -3615,7 +3615,7 @@ bool LobbyServerConnectionHandler::connect()
 
 	lastConnectionTime = realTime;
 	waitingForConnectionFinalize = allocSocketSet();
-	SocketSet_AddSocket(waitingForConnectionFinalize, rs_socket);
+	SocketSet_AddSocket(*waitingForConnectionFinalize, rs_socket);
 
 	currentState = LobbyConnectionState::Connecting_WaitingForResponse;
 	return bProcessingConnectOrDisconnectThisCall;
@@ -3862,7 +3862,7 @@ static bool quickRejectConnection(const std::string& ip)
 static void NETcloseTempSocket(unsigned int i)
 {
 	std::string rIP = getSocketTextAddress(*tmp_socket[i]);
-	SocketSet_DelSocket(tmp_socket_set, tmp_socket[i]);
+	SocketSet_DelSocket(*tmp_socket_set, tmp_socket[i]);
 	socketClose(tmp_socket[i]);
 	tmp_socket[i] = nullptr;
 	tmp_connectState[i].reset();
@@ -3963,7 +3963,7 @@ static void NETallowJoining()
 	    && (tmp_socket[i] = socketAccept(tcp_socket)) != nullptr)
 	{
 		NETinitQueue(NETnetTmpQueue(i));
-		SocketSet_AddSocket(tmp_socket_set, tmp_socket[i]);
+		SocketSet_AddSocket(*tmp_socket_set, tmp_socket[i]);
 
 		std::string rIP = getSocketTextAddress(*tmp_socket[i]);
 		connectFailed = quickRejectConnection(rIP);
@@ -4396,11 +4396,11 @@ static void NETallowJoining()
 			uint8_t index = static_cast<uint8_t>(tmp.value());
 
 			debug(LOG_NET, "freeing temp socket %p (%d), creating permanent socket.", static_cast<void *>(tmp_socket[i]), __LINE__);
-			SocketSet_DelSocket(tmp_socket_set, tmp_socket[i]);
+			SocketSet_DelSocket(*tmp_socket_set, tmp_socket[i]);
 			connected_bsocket[index] = tmp_socket[i];
 			NET_waitingForIndexChangeAckSince[index] = nullopt;
 			tmp_socket[i] = nullptr;
-			SocketSet_AddSocket(socket_set, connected_bsocket[index]);
+			SocketSet_AddSocket(*socket_set, connected_bsocket[index]);
 			NETmoveQueue(NETnetTmpQueue(i), NETnetQueue(index));
 
 			// Copy player's IP address.
@@ -4676,7 +4676,7 @@ bool NETenumerateGames(const std::function<bool (const GAMESTRUCT& game)>& handl
 		debug(LOG_NET, "Deleting tcp_socket %p", static_cast<void *>(tcp_socket));
 		if (socket_set)
 		{
-			SocketSet_DelSocket(socket_set, tcp_socket);
+			SocketSet_DelSocket(*socket_set, tcp_socket);
 		}
 		socketClose(tcp_socket);
 		tcp_socket = nullptr;
@@ -4704,14 +4704,14 @@ bool NETenumerateGames(const std::function<bool (const GAMESTRUCT& game)>& handl
 	}
 	debug(LOG_NET, "Created socket_set %p", static_cast<void *>(socket_set));
 
-	SocketSet_AddSocket(socket_set, tcp_socket);
+	SocketSet_AddSocket(*socket_set, tcp_socket);
 
 	debug(LOG_NET, "Sending list cmd");
 
 	if (writeAll(tcp_socket, "list", sizeof("list")) == SOCKET_ERROR)
 	{
 		debug(LOG_NET, "Server socket encountered error: %s", strSockError(getSockErr()));
-		SocketSet_DelSocket(socket_set, tcp_socket);		// mark it invalid
+		SocketSet_DelSocket(*socket_set, tcp_socket);		// mark it invalid
 		socketClose(tcp_socket);
 		tcp_socket = nullptr;
 
@@ -4729,7 +4729,7 @@ bool NETenumerateGames(const std::function<bool (const GAMESTRUCT& game)>& handl
 		return true; // continue enumerating
 	}))
 	{
-		SocketSet_DelSocket(socket_set, tcp_socket);		// mark it invalid
+		SocketSet_DelSocket(*socket_set, tcp_socket);		// mark it invalid
 		socketClose(tcp_socket);
 		tcp_socket = nullptr;
 
@@ -4791,7 +4791,7 @@ bool NETenumerateGames(const std::function<bool (const GAMESTRUCT& game)>& handl
 					// if ignoring the first batch, treat this as a fatal error
 					debug(LOG_NET, "Second readGameStructsList call failed");
 
-					SocketSet_DelSocket(socket_set, tcp_socket);		// mark it invalid
+					SocketSet_DelSocket(*socket_set, tcp_socket);		// mark it invalid
 					socketClose(tcp_socket);
 					tcp_socket = nullptr;
 
@@ -4815,7 +4815,7 @@ bool NETenumerateGames(const std::function<bool (const GAMESTRUCT& game)>& handl
 		}
 	}
 
-	SocketSet_DelSocket(socket_set, tcp_socket);		// mark it invalid (we are done with it)
+	SocketSet_DelSocket(*socket_set, tcp_socket);		// mark it invalid (we are done with it)
 	socketClose(tcp_socket);
 	tcp_socket = nullptr;
 
@@ -4926,7 +4926,7 @@ bool NETjoinGame(const char *host, uint32_t port, const char *playername, const 
 	debug(LOG_NET, "Created socket_set %p", static_cast<void *>(socket_set));
 
 	// tcp_socket is used to talk to host machine
-	SocketSet_AddSocket(socket_set, tcp_socket);
+	SocketSet_AddSocket(*socket_set, tcp_socket);
 
 	// Send NETCODE_VERSION_MAJOR and NETCODE_VERSION_MINOR
 	p_buffer = buffer;
@@ -4950,7 +4950,7 @@ bool NETjoinGame(const char *host, uint32_t port, const char *playername, const 
 	{
 		debug(LOG_ERROR, "Received error %d", result);
 
-		SocketSet_DelSocket(socket_set, tcp_socket);
+		SocketSet_DelSocket(*socket_set, tcp_socket);
 		socketClose(tcp_socket);
 		tcp_socket = nullptr;
 		deleteSocketSet(socket_set);

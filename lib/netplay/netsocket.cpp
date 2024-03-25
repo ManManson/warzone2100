@@ -819,32 +819,32 @@ void deleteSocketSet(SocketSet *set)
  *
  * @return true if @c socket is successfully added to @set.
  */
-void SocketSet_AddSocket(SocketSet *set, Socket *socket)
+void SocketSet_AddSocket(SocketSet& set, Socket *socket)
 {
 	/* Check whether this socket is already present in this set (i.e. it
 	 * shouldn't be added again).
 	 */
-	size_t i = std::find(set->fds.begin(), set->fds.end(), socket) - set->fds.begin();
-	if (i != set->fds.size())
+	size_t i = std::find(set.fds.begin(), set.fds.end(), socket) - set.fds.begin();
+	if (i != set.fds.size())
 	{
 		debug(LOG_NET, "Already found, socket: (set->fds[%lu]) %p", (unsigned long)i, static_cast<void *>(socket));
 		return;
 	}
 
-	set->fds.push_back(socket);
+	set.fds.push_back(socket);
 	debug(LOG_NET, "Socket added: set->fds[%lu] = %p", (unsigned long)i, static_cast<void *>(socket));
 }
 
 /**
  * Remove the given socket from the given socket set.
  */
-void SocketSet_DelSocket(SocketSet *set, Socket *socket)
+void SocketSet_DelSocket(SocketSet& set, Socket *socket)
 {
-	size_t i = std::find(set->fds.begin(), set->fds.end(), socket) - set->fds.begin();
-	if (i != set->fds.size())
+	size_t i = std::find(set.fds.begin(), set.fds.end(), socket) - set.fds.begin();
+	if (i != set.fds.size())
 	{
 		debug(LOG_NET, "Socket %p erased (set->fds[%lu])", static_cast<void *>(socket), (unsigned long)i);
-		set->fds.erase(set->fds.begin() + i);
+		set.fds.erase(set.fds.begin() + i);
 	}
 }
 

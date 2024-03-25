@@ -125,8 +125,8 @@ WZ_DECL_NONNULL(1) void socketFlush(Socket& sock, uint8_t player, size_t *rawByt
 WZ_DECL_ALLOCATION SocketSet *allocSocketSet();                         ///< Constructs a SocketSet.
 WZ_DECL_NONNULL(1) void deleteSocketSet(SocketSet *set);                ///< Destroys the SocketSet.
 
-WZ_DECL_NONNULL(1, 2) void SocketSet_AddSocket(SocketSet *set, Socket *socket);  ///< Adds a Socket to a SocketSet.
-WZ_DECL_NONNULL(1, 2) void SocketSet_DelSocket(SocketSet *set, Socket *socket);  ///< Removes a Socket from a SocketSet.
+WZ_DECL_NONNULL(1, 2) void SocketSet_AddSocket(SocketSet& set, Socket *socket);  ///< Adds a Socket to a SocketSet.
+WZ_DECL_NONNULL(1, 2) void SocketSet_DelSocket(SocketSet& set, Socket *socket);  ///< Removes a Socket from a SocketSet.
 WZ_DECL_NONNULL(1) int checkSockets(const SocketSet *set, unsigned int timeout); ///< Checks which Sockets are ready for reading. Returns the number of ready Sockets, or returns SOCKET_ERROR on error.
 
 #endif //_net_socket_h
