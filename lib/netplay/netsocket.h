@@ -110,11 +110,11 @@ std::string ipv4_NetBinary_To_AddressString(const std::vector<unsigned char>& ip
 std::string ipv6_NetBinary_To_AddressString(const std::vector<unsigned char>& ip6NetBinaryForm);
 WZ_DECL_NONNULL(1) bool socketReadReady(const Socket& sock);            ///< Returns if checkSockets found data to read from this Socket.
 WZ_DECL_NONNULL(1, 2)
-ssize_t readNoInt(Socket *sock, void *buf, size_t max_size, size_t *rawByteCount = nullptr);  ///< Reads up to max_size bytes from the Socket. Raw count of bytes (after compression) returned in rawByteCount.
+ssize_t readNoInt(Socket& sock, void *buf, size_t max_size, size_t *rawByteCount = nullptr);  ///< Reads up to max_size bytes from the Socket. Raw count of bytes (after compression) returned in rawByteCount.
 WZ_DECL_NONNULL(1, 2)
-ssize_t readAll(Socket *sock, void *buf, size_t size, unsigned timeout);///< Reads exactly size bytes from the Socket, or blocks until the timeout expires.
+ssize_t readAll(Socket& sock, void *buf, size_t size, unsigned timeout);///< Reads exactly size bytes from the Socket, or blocks until the timeout expires.
 WZ_DECL_NONNULL(1, 2)
-ssize_t writeAll(Socket *sock, const void *buf, size_t size, size_t *rawByteCount = nullptr);  ///< Nonblocking write of size bytes to the Socket. All bytes will be written asynchronously, by a separate thread. Raw count of bytes (after compression) returned in rawByteCount, which will often be 0 until the socket is flushed.
+ssize_t writeAll(Socket& sock, const void *buf, size_t size, size_t *rawByteCount = nullptr);  ///< Nonblocking write of size bytes to the Socket. All bytes will be written asynchronously, by a separate thread. Raw count of bytes (after compression) returned in rawByteCount, which will often be 0 until the socket is flushed.
 
 // Sockets, compressed.
 WZ_DECL_NONNULL(1) void socketBeginCompression(Socket& sock); ///< Makes future data sent compressed, and future data received expected to be compressed.

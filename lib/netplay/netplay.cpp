@@ -552,7 +552,7 @@ static size_t NET_fillBuffer(Socket **pSocket, SocketSet *pSocketSet, uint8_t *b
 	}
 
 	size_t rawBytes;
-	size = readNoInt(socket, bufstart, bufsize, &rawBytes);
+	size = readNoInt(*socket, bufstart, bufsize, &rawBytes);
 
 	if ((size != 0 || !socketReadDisconnected(*socket)) && size != SOCKET_ERROR)
 	{
@@ -1319,7 +1319,7 @@ static bool NETsendGAMESTRUCT(Socket *sock, const GAMESTRUCT *ourgamestruct)
 	debug(LOG_NET, "sending GAMESTRUCT, size: %u", (unsigned int)sizeof(buf));
 
 	// Send over the GAMESTRUCT
-	result = writeAll(sock, buf, sizeof(buf));
+	result = writeAll(*sock, buf, sizeof(buf));
 	if (result == SOCKET_ERROR)
 	{
 		const int err = getSockErr();
@@ -1370,7 +1370,7 @@ static bool NETrecvGAMESTRUCT(Socket *sock, GAMESTRUCT *ourgamestruct)
 	};
 
 	// Read a GAMESTRUCT from the connection
-	result = readAll(sock, buf, sizeof(buf), NET_TIMEOUT_DELAY);
+	result = readAll(*sock, buf, sizeof(buf), NET_TIMEOUT_DELAY);
 	bool failed = false;
 	if (result == SOCKET_ERROR)
 	{
@@ -1876,7 +1876,7 @@ bool NETsend(NETQUEUE queue, NetMessage const *message)
 				}
 				ssize_t rawLen   = message->rawLen();
 				size_t compressedRawLen;
-				result = writeAll(sockets[player], rawData, rawLen, &compressedRawLen);
+				result = writeAll(*sockets[player], rawData, rawLen, &compressedRawLen);
 				delete[] rawData;  // Done with the data.
 
 				if (result == rawLen)
@@ -1906,7 +1906,7 @@ bool NETsend(NETQUEUE queue, NetMessage const *message)
 			uint8_t *rawData = message->rawDataDup();
 			ssize_t rawLen   = message->rawLen();
 			size_t compressedRawLen;
-			result = writeAll(bsocket, rawData, rawLen, &compressedRawLen);
+			result = writeAll(*bsocket, rawData, rawLen, &compressedRawLen);
 			delete[] rawData;  // Done with the data.
 
 			if (result == rawLen)
@@ -3360,7 +3360,7 @@ static ssize_t readLobbyResponse(Socket *sock, unsigned int timeout)
 	ssize_t result, received = 0;
 
 	// Get status and message length
-	result = readAll(sock, &buffer, sizeof(buffer), timeout);
+	result = readAll(*sock, &buffer, sizeof(buffer), timeout);
 	if (result != sizeof(buffer))
 	{
 		goto error;
@@ -3375,7 +3375,7 @@ static ssize_t readLobbyResponse(Socket *sock, unsigned int timeout)
 		free(NetPlay.MOTD);
 	}
 	NetPlay.MOTD = (char *)malloc(MOTDLength + 1);
-	result = readAll(sock, NetPlay.MOTD, MOTDLength, timeout);
+	result = readAll(*sock, NetPlay.MOTD, MOTDLength, timeout);
 	if (result != MOTDLength)
 	{
 		goto error;
@@ -3454,7 +3454,7 @@ bool readGameStructsList(Socket *sock, unsigned int timeout, const std::function
 	uint32_t gamesavailable = 0;
 	int result = 0;
 
-	if ((result = readAll(sock, &gamesavailable, sizeof(gamesavailable), NET_TIMEOUT_DELAY)) == sizeof(gamesavailable))
+	if ((result = readAll(*sock, &gamesavailable, sizeof(gamesavailable), NET_TIMEOUT_DELAY)) == sizeof(gamesavailable))
 	{
 		gamesavailable = ntohl(gamesavailable);
 	}
@@ -3577,8 +3577,8 @@ bool LobbyServerConnectionHandler::connect()
 	}
 
 	// Get a game ID
-	if (writeAll(rs_socket, "gaId", sizeof("gaId")) == SOCKET_ERROR
-		|| readAll(rs_socket, &gameId, sizeof(gameId), 10000) != sizeof(gameId))
+	if (writeAll(*rs_socket, "gaId", sizeof("gaId")) == SOCKET_ERROR
+		|| readAll(*rs_socket, &gameId, sizeof(gameId), 10000) != sizeof(gameId))
 	{
 		free(NetPlay.MOTD);
 		if (asprintf(&NetPlay.MOTD, "Failed to retrieve a game ID: %s", strSockError(getSockErr())) == -1)
@@ -3601,7 +3601,7 @@ bool LobbyServerConnectionHandler::connect()
 	wz_command_interface_output("WZEVENT: lobbyid: %" PRIu32 "\n", gamestruct.gameId);
 
 	// Register our game with the server
-	if (writeAll(rs_socket, "addg", sizeof("addg")) == SOCKET_ERROR
+	if (writeAll(*rs_socket, "addg", sizeof("addg")) == SOCKET_ERROR
 		// and now send what the server wants
 		|| !NETsendGAMESTRUCT(rs_socket, &gamestruct))
 	{
@@ -3695,7 +3695,7 @@ void LobbyServerConnectionHandler::sendUpdateNow()
 void LobbyServerConnectionHandler::sendKeepAlive()
 {
 	ASSERT_OR_RETURN(, rs_socket != nullptr, "Null socket");
-	if (writeAll(rs_socket, "keep", sizeof("keep")) == SOCKET_ERROR)
+	if (writeAll(*rs_socket, "keep", sizeof("keep")) == SOCKET_ERROR)
 	{
 		// The socket has been invalidated, so get rid of it. (using them now may cause SIGPIPE).
 		disconnect();
@@ -3996,7 +3996,7 @@ static void NETallowJoining()
 			{
 				char *p_buffer = tmp_connectState[i].buffer;
 
-				ssize_t sizeRead = readNoInt(tmp_socket[i], p_buffer + tmp_connectState[i].usedBuffer, 8 - tmp_connectState[i].usedBuffer);
+				ssize_t sizeRead = readNoInt(*tmp_socket[i], p_buffer + tmp_connectState[i].usedBuffer, 8 - tmp_connectState[i].usedBuffer);
 				if (sizeRead != SOCKET_ERROR)
 				{
 					tmp_connectState[i].usedBuffer += sizeRead;
@@ -4047,14 +4047,14 @@ static void NETallowJoining()
 						// Copy gameId (as 32bit large big endian number)
 						push32(gamestruct.gameId);
 
-						writeAll(tmp_socket[i], buf, sizeof(buf));
+						writeAll(*tmp_socket[i], buf, sizeof(buf));
 						connectFailed = true;
 					}
 					else if (NETisCorrectVersion(major, minor))
 					{
 						result = htonl(ERROR_NOERROR);
 						memcpy(&tmp_connectState[i].buffer, &result, sizeof(result));
-						writeAll(tmp_socket[i], &tmp_connectState[i].buffer, sizeof(result));
+						writeAll(*tmp_socket[i], &tmp_connectState[i].buffer, sizeof(result));
 						socketBeginCompression(*tmp_socket[i]);
 
 						// Connection is successful.
@@ -4072,7 +4072,7 @@ static void NETallowJoining()
 						debug(LOG_ERROR, "Received an invalid version \"%" PRIu32 ".%" PRIu32 "\".", major, minor);
 						result = htonl(ERROR_WRONGVERSION);
 						memcpy(&tmp_connectState[i].buffer, &result, sizeof(result));
-						writeAll(tmp_socket[i], &tmp_connectState[i].buffer, sizeof(result));
+						writeAll(*tmp_socket[i], &tmp_connectState[i].buffer, sizeof(result));
 						NETlogEntry("Invalid game version", SYNC_FLAG, i);
 						NETaddSessionBanBadIP(tmp_connectState[i].ip);
 						connectFailed = true;
@@ -4112,7 +4112,7 @@ static void NETallowJoining()
 			else if (tmp_connectState[i].connectState == TmpSocketInfo::TmpConnectState::PendingJoinRequest)
 			{
 				uint8_t buffer[NET_BUFFER_SIZE];
-				ssize_t size = readNoInt(tmp_socket[i], buffer, sizeof(buffer));
+				ssize_t size = readNoInt(*tmp_socket[i], buffer, sizeof(buffer));
 				uint8_t rejected = 0;
 
 				if ((size == 0 && socketReadDisconnected(*tmp_socket[i])) || size == SOCKET_ERROR)
@@ -4708,7 +4708,7 @@ bool NETenumerateGames(const std::function<bool (const GAMESTRUCT& game)>& handl
 
 	debug(LOG_NET, "Sending list cmd");
 
-	if (writeAll(tcp_socket, "list", sizeof("list")) == SOCKET_ERROR)
+	if (writeAll(*tcp_socket, "list", sizeof("list")) == SOCKET_ERROR)
 	{
 		debug(LOG_NET, "Server socket encountered error: %s", strSockError(getSockErr()));
 		SocketSet_DelSocket(*socket_set, tcp_socket);		// mark it invalid
@@ -4755,7 +4755,7 @@ bool NETenumerateGames(const std::function<bool (const GAMESTRUCT& game)>& handl
 	// Hence as long as we don't treat "0" as signifying any change in behavior, this should be safe + backwards-compatible
 	#define IGNORE_FIRST_BATCH 1
 	uint32_t responseParameters = 0;
-	if ((result = readAll(tcp_socket, &responseParameters, sizeof(responseParameters), NET_TIMEOUT_DELAY)) == sizeof(responseParameters))
+	if ((result = readAll(*tcp_socket, &responseParameters, sizeof(responseParameters), NET_TIMEOUT_DELAY)) == sizeof(responseParameters))
 	{
 		responseParameters = ntohl(responseParameters);
 
@@ -4938,8 +4938,8 @@ bool NETjoinGame(const char *host, uint32_t port, const char *playername, const 
 	pushu32(NETCODE_VERSION_MAJOR);
 	pushu32(NETCODE_VERSION_MINOR);
 
-	if (writeAll(tcp_socket, buffer, sizeof(buffer)) == SOCKET_ERROR
-	    || readAll(tcp_socket, &result, sizeof(result), 1500) != sizeof(result))
+	if (writeAll(*tcp_socket, buffer, sizeof(buffer)) == SOCKET_ERROR
+	    || readAll(*tcp_socket, &result, sizeof(result), 1500) != sizeof(result))
 	{
 		debug(LOG_ERROR, "Couldn't send my version.");
 		return false;

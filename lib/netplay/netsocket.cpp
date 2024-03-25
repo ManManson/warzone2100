@@ -525,32 +525,32 @@ static int socketThreadFunction(void *)
  * Similar to read(2) with the exception that this function won't be
  * interrupted by signals (EINTR).
  */
-ssize_t readNoInt(Socket *sock, void *buf, size_t max_size, size_t *rawByteCount)
+ssize_t readNoInt(Socket& sock, void *buf, size_t max_size, size_t *rawByteCount)
 {
 	size_t ignored;
 	size_t &rawBytes = rawByteCount != nullptr ? *rawByteCount : ignored;
 	rawBytes = 0;
 
-	if (sock->fd[SOCK_CONNECTION] == INVALID_SOCKET)
+	if (sock.fd[SOCK_CONNECTION] == INVALID_SOCKET)
 	{
 		debug(LOG_ERROR, "Invalid socket");
 		setSockErr(EBADF);
 		return SOCKET_ERROR;
 	}
 
-	if (sock->isCompressed)
+	if (sock.isCompressed)
 	{
-		if (sock->zInflateNeedInput)
+		if (sock.zInflateNeedInput)
 		{
 			// No input data, read some.
 
-			sock->zInflateInBuf.resize(max_size + 1000);
+			sock.zInflateInBuf.resize(max_size + 1000);
 
 			ssize_t received;
 			do
 			{
 				//                                                  v----- This weird cast is because recv() takes a char * on windows instead of a void *...
-				received = recv(sock->fd[SOCK_CONNECTION], (char *)&sock->zInflateInBuf[0], sock->zInflateInBuf.size(), 0);
+				received = recv(sock.fd[SOCK_CONNECTION], (char *)&sock.zInflateInBuf[0], sock.zInflateInBuf.size(), 0);
 			}
 			while (received == SOCKET_ERROR && getSockErr() == EINTR);
 			if (received < 0)
@@ -558,23 +558,23 @@ ssize_t readNoInt(Socket *sock, void *buf, size_t max_size, size_t *rawByteCount
 				return received;
 			}
 
-			sock->zInflate.next_in = &sock->zInflateInBuf[0];
-			sock->zInflate.avail_in = received;
+			sock.zInflate.next_in = &sock.zInflateInBuf[0];
+			sock.zInflate.avail_in = received;
 			rawBytes = received;
 
 			if (received == 0)
 			{
-				sock->readDisconnected = true;
+				sock.readDisconnected = true;
 			}
 			else
 			{
-				sock->zInflateNeedInput = false;
+				sock.zInflateNeedInput = false;
 			}
 		}
 
-		sock->zInflate.next_out = (Bytef *)buf;
-		sock->zInflate.avail_out = max_size;
-		int ret = inflate(&sock->zInflate, Z_NO_FLUSH);
+		sock.zInflate.next_out = (Bytef *)buf;
+		sock.zInflate.avail_out = max_size;
+		int ret = inflate(&sock.zInflate, Z_NO_FLUSH);
 		ASSERT(ret != Z_STREAM_ERROR, "zlib inflate not working!");
 		char const *err = nullptr;
 		switch (ret)
@@ -589,27 +589,27 @@ ssize_t readNoInt(Socket *sock, void *buf, size_t max_size, size_t *rawByteCount
 			return -1;  // Bad data!
 		}
 
-		if (sock->zInflate.avail_out != 0)
+		if (sock.zInflate.avail_out != 0)
 		{
-			sock->zInflateNeedInput = true;
-			ASSERT(sock->zInflate.avail_in == 0, "zlib not consuming all input!");
+			sock.zInflateNeedInput = true;
+			ASSERT(sock.zInflate.avail_in == 0, "zlib not consuming all input!");
 		}
 
-		return max_size - sock->zInflate.avail_out;  // Got some data, return how much.
+		return max_size - sock.zInflate.avail_out;  // Got some data, return how much.
 	}
 
 	ssize_t received;
 	do
 	{
-		received = recv(sock->fd[SOCK_CONNECTION], (char *)buf, max_size, 0);
+		received = recv(sock.fd[SOCK_CONNECTION], (char *)buf, max_size, 0);
 		if (received == 0)
 		{
-			sock->readDisconnected = true;
+			sock.readDisconnected = true;
 		}
 	}
 	while (received == SOCKET_ERROR && getSockErr() == EINTR);
 
-	sock->ready = false;
+	sock.ready = false;
 
 	rawBytes = received;
 	return received;
@@ -626,34 +626,34 @@ bool socketReadDisconnected(const Socket& sock)
  *
  * @return @c size when successful or @c SOCKET_ERROR if an error occurred.
  */
-ssize_t writeAll(Socket *sock, const void *buf, size_t size, size_t *rawByteCount)
+ssize_t writeAll(Socket& sock, const void *buf, size_t size, size_t *rawByteCount)
 {
 	size_t ignored;
 	size_t &rawBytes = rawByteCount != nullptr ? *rawByteCount : ignored;
 	rawBytes = 0;
 
-	if (sock->fd[SOCK_CONNECTION] == INVALID_SOCKET)
+	if (sock.fd[SOCK_CONNECTION] == INVALID_SOCKET)
 	{
 		debug(LOG_ERROR, "Invalid socket (EBADF)");
 		setSockErr(EBADF);
 		return SOCKET_ERROR;
 	}
 
-	if (sock->writeError)
+	if (sock.writeError)
 	{
 		return SOCKET_ERROR;
 	}
 
 	if (size > 0)
 	{
-		if (!sock->isCompressed)
+		if (!sock.isCompressed)
 		{
 			wzMutexLock(socketThreadMutex);
 			if (socketThreadWrites.empty())
 			{
 				wzSemaphorePost(socketThreadSemaphore);
 			}
-			std::vector<uint8_t> &writeQueue = socketThreadWrites[sock];
+			std::vector<uint8_t> &writeQueue = socketThreadWrites[&sock];
 			writeQueue.insert(writeQueue.end(), static_cast<char const *>(buf), static_cast<char const *>(buf) + size);
 			wzMutexUnlock(socketThreadMutex);
 			rawBytes = size;
@@ -673,7 +673,7 @@ ssize_t writeAll(Socket *sock, const void *buf, size_t size, size_t *rawByteCoun
 			#endif
 
 			// cast away the const for earlier zlib versions
-			sock->zDeflate.next_in = (Bytef *)buf; // -Wcast-qual
+			sock.zDeflate.next_in = (Bytef *)buf; // -Wcast-qual
 
 			#if defined(__clang__)
 			#  pragma clang diagnostic pop
@@ -682,27 +682,27 @@ ssize_t writeAll(Socket *sock, const void *buf, size_t size, size_t *rawByteCoun
 			#endif
 		#else
 			// zlib >= 1.2.5.2 supports ZLIB_CONST
-			sock->zDeflate.next_in = (const Bytef *)buf;
+			sock.zDeflate.next_in = (const Bytef *)buf;
 		#endif
 
-			sock->zDeflate.avail_in = size;
-			sock->zDeflateInSize += sock->zDeflate.avail_in;
+			sock.zDeflate.avail_in = size;
+			sock.zDeflateInSize += sock.zDeflate.avail_in;
 			do
 			{
-				size_t alreadyHave = sock->zDeflateOutBuf.size();
-				sock->zDeflateOutBuf.resize(alreadyHave + size + 20);  // A bit more than size should be enough to always do everything in one go.
-				sock->zDeflate.next_out = (Bytef *)&sock->zDeflateOutBuf[alreadyHave];
-				sock->zDeflate.avail_out = sock->zDeflateOutBuf.size() - alreadyHave;
+				size_t alreadyHave = sock.zDeflateOutBuf.size();
+				sock.zDeflateOutBuf.resize(alreadyHave + size + 20);  // A bit more than size should be enough to always do everything in one go.
+				sock.zDeflate.next_out = (Bytef *)&sock.zDeflateOutBuf[alreadyHave];
+				sock.zDeflate.avail_out = sock.zDeflateOutBuf.size() - alreadyHave;
 
-				int ret = deflate(&sock->zDeflate, Z_NO_FLUSH);
+				int ret = deflate(&sock.zDeflate, Z_NO_FLUSH);
 				ASSERT(ret != Z_STREAM_ERROR, "zlib compression failed!");
 
 				// Remove unused part of buffer.
-				sock->zDeflateOutBuf.resize(sock->zDeflateOutBuf.size() - sock->zDeflate.avail_out);
+				sock.zDeflateOutBuf.resize(sock.zDeflateOutBuf.size() - sock.zDeflate.avail_out);
 			}
-			while (sock->zDeflate.avail_out == 0);
+			while (sock.zDeflate.avail_out == 0);
 
-			ASSERT(sock->zDeflate.avail_in == 0, "zlib didn't compress everything!");
+			ASSERT(sock.zDeflate.avail_in == 0, "zlib didn't compress everything!");
 		}
 	}
 
@@ -1027,17 +1027,17 @@ int checkSockets(const SocketSet& set, unsigned int timeout)
  * when the other end disconnected or a timeout occurred. Or @c SOCKET_ERROR if
  * an error occurred.
  */
-ssize_t readAll(Socket *sock, void *buf, size_t size, unsigned int timeout)
+ssize_t readAll(Socket& sock, void *buf, size_t size, unsigned int timeout)
 {
-	ASSERT(!sock->isCompressed, "readAll on compressed sockets not implemented.");
+	ASSERT(!sock.isCompressed, "readAll on compressed sockets not implemented.");
 
-	const SocketSet set = {std::vector<Socket *>(1, sock)};
+	const SocketSet set = {std::vector<Socket *>(1, &sock)};
 
 	size_t received = 0;
 
-	if (sock->fd[SOCK_CONNECTION] == INVALID_SOCKET)
+	if (sock.fd[SOCK_CONNECTION] == INVALID_SOCKET)
 	{
-		debug(LOG_ERROR, "Invalid socket (%p), sock->fd[SOCK_CONNECTION]=%" PRIuPTR"x  (error: EBADF)", static_cast<void *>(sock), static_cast<uintptr_t>(sock->fd[SOCK_CONNECTION]));
+		debug(LOG_ERROR, "Invalid socket (%p), sock->fd[SOCK_CONNECTION]=%" PRIuPTR"x  (error: EBADF)", static_cast<void *>(&sock), static_cast<uintptr_t>(sock.fd[SOCK_CONNECTION]));
 		setSockErr(EBADF);
 		return SOCKET_ERROR;
 	}
@@ -1051,24 +1051,24 @@ ssize_t readAll(Socket *sock, void *buf, size_t size, unsigned int timeout)
 		{
 			ret = checkSockets(set, timeout);
 			if (ret < (ssize_t)set.fds.size()
-			    || !sock->ready)
+			    || !sock.ready)
 			{
 				if (ret == 0)
 				{
-					debug(LOG_NET, "socket (%p) has timed out.", static_cast<void *>(sock));
+					debug(LOG_NET, "socket (%p) has timed out.", static_cast<void *>(&sock));
 					setSockErr(ETIMEDOUT);
 				}
-				debug(LOG_NET, "socket (%p) error.", static_cast<void *>(sock));
+				debug(LOG_NET, "socket (%p) error.", static_cast<void *>(&sock));
 				return SOCKET_ERROR;
 			}
 		}
 
-		ret = recv(sock->fd[SOCK_CONNECTION], &((char *)buf)[received], size - received, 0);
-		sock->ready = false;
+		ret = recv(sock.fd[SOCK_CONNECTION], &((char *)buf)[received], size - received, 0);
+		sock.ready = false;
 		if (ret == 0)
 		{
-			debug(LOG_NET, "Socket %" PRIuPTR"x disconnected.", static_cast<uintptr_t>(sock->fd[SOCK_CONNECTION]));
-			sock->readDisconnected = true;
+			debug(LOG_NET, "Socket %" PRIuPTR"x disconnected.", static_cast<uintptr_t>(sock.fd[SOCK_CONNECTION]));
+			sock.readDisconnected = true;
 			setSockErr(ECONNRESET);
 			return received;
 		}
