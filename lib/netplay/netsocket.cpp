@@ -765,9 +765,9 @@ void socketFlush(Socket *sock, uint8_t player, size_t *rawByteCount)
 	sock->zDeflateOutBuf.clear();
 }
 
-void socketBeginCompression(Socket *sock)
+void socketBeginCompression(Socket& sock)
 {
-	if (sock->isCompressed)
+	if (sock.isCompressed)
 	{
 		return;  // Nothing to do.
 	}
@@ -775,23 +775,23 @@ void socketBeginCompression(Socket *sock)
 	wzMutexLock(socketThreadMutex);
 
 	// Init deflate.
-	sock->zDeflate.zalloc = Z_NULL;
-	sock->zDeflate.zfree = Z_NULL;
-	sock->zDeflate.opaque = Z_NULL;
-	int ret = deflateInit(&sock->zDeflate, 6);
+	sock.zDeflate.zalloc = Z_NULL;
+	sock.zDeflate.zfree = Z_NULL;
+	sock.zDeflate.opaque = Z_NULL;
+	int ret = deflateInit(&sock.zDeflate, 6);
 	ASSERT(ret == Z_OK, "deflateInit failed! Sockets won't work.");
 
-	sock->zInflate.zalloc = Z_NULL;
-	sock->zInflate.zfree = Z_NULL;
-	sock->zInflate.opaque = Z_NULL;
-	sock->zInflate.avail_in = 0;
-	sock->zInflate.next_in = Z_NULL;
-	ret = inflateInit(&sock->zInflate);
+	sock.zInflate.zalloc = Z_NULL;
+	sock.zInflate.zfree = Z_NULL;
+	sock.zInflate.opaque = Z_NULL;
+	sock.zInflate.avail_in = 0;
+	sock.zInflate.next_in = Z_NULL;
+	ret = inflateInit(&sock.zInflate);
 	ASSERT(ret == Z_OK, "deflateInit failed! Sockets won't work.");
 
-	sock->zInflateNeedInput = true;
+	sock.zInflateNeedInput = true;
 
-	sock->isCompressed = true;
+	sock.isCompressed = true;
 	wzMutexUnlock(socketThreadMutex);
 }
 

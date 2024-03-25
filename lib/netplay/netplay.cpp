@@ -4055,7 +4055,7 @@ static void NETallowJoining()
 						result = htonl(ERROR_NOERROR);
 						memcpy(&tmp_connectState[i].buffer, &result, sizeof(result));
 						writeAll(tmp_socket[i], &tmp_connectState[i].buffer, sizeof(result));
-						socketBeginCompression(tmp_socket[i]);
+						socketBeginCompression(*tmp_socket[i]);
 
 						// Connection is successful.
 						connectFailed = false;
@@ -4966,7 +4966,7 @@ bool NETjoinGame(const char *host, uint32_t port, const char *playername, const 
 	// NOTE: tcp_socket = bsocket now!
 	bsocket = tcp_socket;
 	tcp_socket = nullptr;
-	socketBeginCompression(bsocket);
+	socketBeginCompression(*bsocket);
 
 	uint8_t playerType = (!asSpectator) ? NET_JOIN_PLAYER : NET_JOIN_SPECTATOR;
 	
