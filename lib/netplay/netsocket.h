@@ -24,6 +24,7 @@
 #include "lib/framework/types.h"
 #include <string>
 #include <vector>
+#include <memory>
 
 #if   defined(WZ_OS_UNIX)
 # include <arpa/inet.h>
@@ -95,10 +96,29 @@ SocketAddress *resolveHost(const char *host, unsigned port);            ///< Loo
 WZ_DECL_NONNULL(1) void deleteSocketAddress(SocketAddress *addr);       ///< Destroys the socket address.
 
 // Sockets.
+
+WZ_DECL_NONNULL(1) void socketClose(Socket* sock);                      ///< Destroys the Socket.
+
+// Using struct as a deleter since it allows the compiler not to store
+// the pointer to deleter function inside the pointer itself, thus,
+// reducing the size of `std::unique_ptr` instances.
+// In all other cases the implementation won't have another choice but to
+// store the pointer to deleter function inside the unique pointer object.
+//
+// Also, this enables construction of `UniqueSocketPtr:s` from `nullptr` implicitly,
+// since the deleter struct is default-constructible.
+struct SocketDeleter
+{
+	void operator()(Socket* s) const
+	{
+		socketClose(s);
+	}
+};
+using UniqueSocketPtr = std::unique_ptr<Socket, SocketDeleter>;
+
 Socket *socketOpen(const SocketAddress *addr, unsigned timeout);        ///< Opens a Socket, using the first address in addr.
 Socket *socketListen(unsigned int port);                                ///< Creates a listen-only Socket, which listens for incoming connections.
 WZ_DECL_NONNULL(1) Socket *socketAccept(Socket *sock);                  ///< Accepts an incoming Socket connection from a listening Socket.
-WZ_DECL_NONNULL(1) void socketClose(Socket *sock);                      ///< Destroys the Socket.
 Socket *socketOpenAny(const SocketAddress *addr, unsigned timeout);     ///< Opens a Socket, using the first address that works in addr.
 WZ_DECL_NONNULL(1) bool socketHasIPv4(const Socket& sock);
 WZ_DECL_NONNULL(1) bool socketHasIPv6(const Socket& sock);
