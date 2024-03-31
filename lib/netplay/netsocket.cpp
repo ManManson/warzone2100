@@ -1528,7 +1528,7 @@ UniqueSocketPtr socketOpenAny(const SocketAddress *addr, unsigned timeout)
 	return nullptr;
 }
 
-WZ_DECL_NONNULL(1) bool socketHasIPv4(const Socket& sock)
+bool socketHasIPv4(const Socket& sock)
 {
 	if (sock.fd[SOCK_IPV4_LISTEN] != INVALID_SOCKET)
 	{
@@ -1551,7 +1551,7 @@ WZ_DECL_NONNULL(1) bool socketHasIPv4(const Socket& sock)
 	}
 }
 
-WZ_DECL_NONNULL(1) bool socketHasIPv6(const Socket& sock)
+bool socketHasIPv6(const Socket& sock)
 {
 	return sock.fd[SOCK_IPV6_LISTEN] != INVALID_SOCKET;
 }
