@@ -116,12 +116,12 @@ struct SocketDeleter
 };
 using UniqueSocketPtr = std::unique_ptr<Socket, SocketDeleter>;
 
-Socket *socketOpen(const SocketAddress *addr, unsigned timeout);        ///< Opens a Socket, using the first address in addr.
-Socket *socketListen(unsigned int port);                                ///< Creates a listen-only Socket, which listens for incoming connections.
-WZ_DECL_NONNULL(1) Socket *socketAccept(Socket *sock);                  ///< Accepts an incoming Socket connection from a listening Socket.
-Socket *socketOpenAny(const SocketAddress *addr, unsigned timeout);     ///< Opens a Socket, using the first address that works in addr.
-WZ_DECL_NONNULL(1) bool socketHasIPv4(const Socket& sock);
-WZ_DECL_NONNULL(1) bool socketHasIPv6(const Socket& sock);
+UniqueSocketPtr socketOpen(const SocketAddress *addr, unsigned timeout);    ///< Opens a Socket, using the first address in addr.
+UniqueSocketPtr socketListen(unsigned int port);                            ///< Creates a listen-only Socket, which listens for incoming connections.
+UniqueSocketPtr socketAccept(Socket& sock);                                 ///< Accepts an incoming Socket connection from a listening Socket.
+UniqueSocketPtr socketOpenAny(const SocketAddress *addr, unsigned timeout); ///< Opens a Socket, using the first address that works in addr.
+bool socketHasIPv4(const Socket& sock);
+bool socketHasIPv6(const Socket& sock);
 
 WZ_DECL_NONNULL(1) char const *getSocketTextAddress(const Socket& sock); ///< Gets a string with the socket address.
 std::vector<unsigned char> ipv4_AddressString_To_NetBinary(const std::string& ipv4Address);

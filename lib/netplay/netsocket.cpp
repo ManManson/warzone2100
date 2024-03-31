@@ -1138,16 +1138,16 @@ void socketClose(Socket *sock)
 	wzMutexUnlock(socketThreadMutex);
 }
 
-Socket *socketAccept(Socket *sock)
+UniqueSocketPtr socketAccept(Socket& sock)
 {
 	unsigned int i;
 
 	/* Search for a socket that has a pending connection on it and accept
 	 * the first one.
 	 */
-	for (i = 0; i < ARRAY_SIZE(sock->fd); ++i)
+	for (i = 0; i < ARRAY_SIZE(sock.fd); ++i)
 	{
-		if (sock->fd[i] != INVALID_SOCKET)
+		if (sock.fd[i] != INVALID_SOCKET)
 		{
 			struct sockaddr_storage addr;
 			socklen_t addr_len = sizeof(addr);
@@ -1155,9 +1155,9 @@ Socket *socketAccept(Socket *sock)
 			unsigned int j;
 
 #if defined(SOCK_CLOEXEC)
-			const SOCKET newConn = accept4(sock->fd[i], (struct sockaddr *)&addr, &addr_len, SOCK_CLOEXEC);
+			const SOCKET newConn = accept4(sock.fd[i], (struct sockaddr *)&addr, &addr_len, SOCK_CLOEXEC);
 #else
-			const SOCKET newConn = accept(sock->fd[i], (struct sockaddr *)&addr, &addr_len);
+			const SOCKET newConn = accept(sock.fd[i], (struct sockaddr *)&addr, &addr_len);
 #endif
 			if (newConn == INVALID_SOCKET)
 			{
@@ -1165,7 +1165,7 @@ Socket *socketAccept(Socket *sock)
 				if (getSockErr() != EAGAIN
 				    && getSockErr() != EWOULDBLOCK)
 				{
-					debug(LOG_ERROR, "accept failed for socket %p: %s", static_cast<void *>(sock), strSockError(getSockErr()));
+					debug(LOG_ERROR, "accept failed for socket %p: %s", static_cast<void *>(&sock), strSockError(getSockErr()));
 				}
 
 				continue;
@@ -1205,19 +1205,19 @@ Socket *socketAccept(Socket *sock)
 
 			conn->fd[SOCK_CONNECTION] = newConn;
 
-			sock->ready = false;
+			sock.ready = false;
 
 			addressToText((const struct sockaddr *)&addr, conn->textAddress, sizeof(conn->textAddress));
 			debug(LOG_NET, "Incoming connection from [%s]:/*%%d*/ (FIXME: gives strict-aliasing error)", conn->textAddress/*, (unsigned int)ntohs(((const struct sockaddr_in*)&addr)->sin_port)*/);
 			debug(LOG_NET, "Using socket %p", static_cast<void *>(conn));
-			return conn;
+			return UniqueSocketPtr(conn);
 		}
 	}
 
 	return nullptr;
 }
 
-Socket *socketOpen(const SocketAddress *addr, unsigned timeout)
+UniqueSocketPtr socketOpen(const SocketAddress *addr, unsigned timeout)
 {
 	unsigned int i;
 	int ret;
@@ -1353,10 +1353,10 @@ Socket *socketOpen(const SocketAddress *addr, unsigned timeout)
 		}
 	}
 
-	return conn;
+	return UniqueSocketPtr(conn);
 }
 
-Socket *socketListen(unsigned int port)
+UniqueSocketPtr socketListen(unsigned int port)
 {
 	/* Enable the V4 to V6 mapping, but only when available, because it
 	 * isn't available on all platforms.
@@ -1511,20 +1511,21 @@ Socket *socketListen(unsigned int port)
 		return nullptr;
 	}
 
-	return conn;
+	return UniqueSocketPtr(conn);
 }
 
-Socket *socketOpenAny(const SocketAddress *addr, unsigned timeout)
+UniqueSocketPtr socketOpenAny(const SocketAddress *addr, unsigned timeout)
 {
-	Socket *ret = nullptr;
-	while (addr != nullptr && ret == nullptr)
+	while (addr != nullptr)
 	{
-		ret = socketOpen(addr, timeout);
-
+		auto ret = socketOpen(addr, timeout);
+		if (ret)
+		{
+			return ret;
+		}
 		addr = addr->ai_next;
 	}
-
-	return ret;
+	return nullptr;
 }
 
 WZ_DECL_NONNULL(1) bool socketHasIPv4(const Socket& sock)
