@@ -230,7 +230,7 @@ bool netPlayersUpdated;
 
 // Server-side socket (host-only) which is used to listen for client connections.
 // There's also `rs_socket` held by `LobbyServerConnectionHandler`, which is used to communicate with the lobby server.
-static Socket* server_listen_socket = nullptr;
+static IListenSocket* server_listen_socket = nullptr;
 
 static Socket *bsocket = nullptr;                  ///< Socket used to talk to the host (clients only). If bsocket != NULL, then client_transient_socket == NULL.
 static Socket *connected_bsocket[MAX_CONNECTED_PLAYERS] = { nullptr };  ///< Sockets used to talk to clients (host only).
@@ -1644,7 +1644,7 @@ int NETclose()
 	if (server_listen_socket)
 	{
 		debug(LOG_NET, "Closing server_listen_socket %p", static_cast<void *>(server_listen_socket));
-		socketClose(server_listen_socket);
+		delete server_listen_socket;
 		server_listen_socket = nullptr;
 	}
 	if (bsocket)
@@ -3824,12 +3824,13 @@ static void NETallowJoining()
 		ActivitySink::ListeningInterfaces listeningInterfaces;
 		if (server_listen_socket != nullptr)
 		{
-			listeningInterfaces.IPv4 = socketHasIPv4(*server_listen_socket);
+			const auto supportedProtocols = server_listen_socket->supportedIpVersions();
+			listeningInterfaces.IPv4 = supportedProtocols & static_cast<IListenSocket::IPVersionsMask>(IListenSocket::IPVersions::IPV4);
 			if (listeningInterfaces.IPv4)
 			{
 				listeningInterfaces.ipv4_port = NETgetGameserverPort();
 			}
-			listeningInterfaces.IPv6 = socketHasIPv6(*server_listen_socket);
+			listeningInterfaces.IPv6 = supportedProtocols & static_cast<IListenSocket::IPVersionsMask>(IListenSocket::IPVersions::IPV6);
 			if (listeningInterfaces.IPv6)
 			{
 				listeningInterfaces.ipv6_port = NETgetGameserverPort();
@@ -4491,7 +4492,7 @@ bool NEThostGame(const char *SessionName, const char *PlayerName, bool spectator
 	// will become nullptr.
 	if (!server_listen_socket)
 	{
-		server_listen_socket = socketListen(gameserver_port);
+		server_listen_socket = openListenSocket(gameserver_port);
 	}
 	if (server_listen_socket == nullptr)
 	{
@@ -5132,7 +5133,7 @@ void NETacceptIncomingConnections()
 	}
 
 	// See if there's an incoming connection
-	tmp_socket[i] = socketAccept(server_listen_socket);
+	tmp_socket[i] = server_listen_socket->accept();
 	if (!tmp_socket[i])
 	{
 		return;

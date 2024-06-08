@@ -1809,3 +1809,50 @@ bool socketOpenTCPConnectionAsync(const std::string& host, uint32_t port, OpenCo
 
 	return true;
 }
+
+TCPListenSocket::TCPListenSocket(Socket* rawSocket)
+	: listenSocket_(rawSocket)
+{}
+
+TCPListenSocket::~TCPListenSocket()
+{
+	if (listenSocket_)
+	{
+		socketClose(listenSocket_);
+	}
+}
+
+Socket* TCPListenSocket::accept()
+{
+	ASSERT(listenSocket_ != nullptr, "Internal socket handle shouldn't be null!");
+	if (!listenSocket_)
+	{
+		return nullptr;
+	}
+	return socketAccept(listenSocket_);
+}
+
+IListenSocket::IPVersionsMask TCPListenSocket::supportedIpVersions() const
+{
+	IPVersionsMask resMask = 0;
+	if (socketHasIPv4(*listenSocket_))
+	{
+		resMask |= static_cast<IPVersionsMask>(IPVersions::IPV4);
+	}
+	if (socketHasIPv6(*listenSocket_))
+	{
+		resMask |= static_cast<IPVersionsMask>(IPVersions::IPV6);
+	}
+	return resMask;
+}
+
+IListenSocket* openListenSocket(uint16_t port)
+{
+	// FIXME: TCPListenSocket impl hardcoded for now.
+	Socket* s = socketListen(port);
+	if (s == nullptr)
+	{
+		return nullptr;
+	}
+	return new TCPListenSocket(s);
+}
