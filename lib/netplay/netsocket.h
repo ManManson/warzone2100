@@ -24,6 +24,7 @@
 #include "lib/framework/types.h"
 #include <string>
 #include <vector>
+#include <type_traits>
 
 #if   defined(WZ_OS_UNIX)
 # include <arpa/inet.h>
@@ -161,5 +162,44 @@ public:
 typedef std::function<void (OpenConnectionResult&& result)> OpenConnectionToHostResultCallback;
 bool socketOpenTCPConnectionAsync(const std::string& host, uint32_t port, OpenConnectionToHostResultCallback callback);
 OpenConnectionResult socketOpenTCPConnectionSync(const char *host, uint32_t port);
+
+/// <summary>
+/// Server-side listen socket abstraction.
+/// Need only `listenSocket()` and `acceptSocket()` functions.
+/// </summary>
+class IListenSocket
+{
+public:
+
+	virtual ~IListenSocket() = default;
+
+	enum class IPVersions : uint8_t
+	{
+		IPV4 = 0b00000001,
+		IPV6 = 0b00000010
+	};
+	using IPVersionsMask = std::underlying_type_t<IPVersions>;
+
+	// Accept incoming client connection on the current server-side listen socket
+	virtual Socket* accept() = 0;
+	virtual IPVersionsMask supportedIpVersions() const = 0;
+};
+
+class TCPListenSocket : public IListenSocket
+{
+public:
+
+	TCPListenSocket(Socket* rawSocket);
+	virtual ~TCPListenSocket() override;
+
+	virtual Socket* accept() override;
+	virtual IPVersionsMask supportedIpVersions() const override;
+
+private:
+
+	Socket* listenSocket_;
+};
+
+IListenSocket* openListenSocket(uint16_t port);
 
 #endif //_net_socket_h
