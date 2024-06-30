@@ -782,8 +782,8 @@ private:
 
 	// state when handling initial connection join
 	uint32_t startTime = 0;
-	Socket* client_transient_socket = nullptr;
-	SocketSet* tmp_joining_socket_set = nullptr;
+	IClientConnection* client_transient_socket = nullptr;
+	IConnectionPollGroup* tmp_joining_socket_set = nullptr;
 	NETQUEUE tmpJoiningQUEUE = {};
 	NetQueuePair *tmpJoiningQueuePair = nullptr;
 	char initialAckBuffer[10] = {'\0'};
@@ -1096,8 +1096,8 @@ void WzJoiningGameScreen_HandlerRoot::processOpenConnectionResult(size_t connect
 
 	if (NETgetEnableTCPNoDelay())
 	{
-		// Enable TCP_NODELAY
-		socketSetTCPNoDelay(*client_transient_socket, true);
+		// Disable use of Nagle Algorithm for the TCP socket (i.e. enable TCP_NODELAY option)
+		client_transient_socket->useNagleAlgorithm(true);
 	}
 
 	// Send initial connection data: NETCODE_VERSION_MAJOR and NETCODE_VERSION_MINOR
@@ -1111,14 +1111,14 @@ void WzJoiningGameScreen_HandlerRoot::processOpenConnectionResult(size_t connect
 	pushu32(NETGetMajorVersion());
 	pushu32(NETGetMinorVersion());
 
-	if (writeAll(*client_transient_socket, buffer, sizeof(buffer)) == SOCKET_ERROR)
+	if (client_transient_socket->writeAll(buffer, sizeof(buffer), nullptr) == SOCKET_ERROR)
 	{
 		debug(LOG_ERROR, "Couldn't send my version.");
 		closeConnectionAttempt();
 		return;
 	}
 
-	tmp_joining_socket_set = allocSocketSet();
+	tmp_joining_socket_set = newTCPconnectionPollGroup();
 	if (tmp_joining_socket_set == nullptr)
 	{
 		debug(LOG_ERROR, "Cannot create socket set - out of memory?");
@@ -1128,7 +1128,7 @@ void WzJoiningGameScreen_HandlerRoot::processOpenConnectionResult(size_t connect
 	debug(LOG_NET, "Created socket_set %p", static_cast<void *>(tmp_joining_socket_set));
 
 	// `client_transient_socket` is used to talk to host machine
-	SocketSet_AddSocket(*tmp_joining_socket_set, client_transient_socket);
+	tmp_joining_socket_set->add(client_transient_socket);
 
 	// Create temporary NETQUEUE
 	auto NETnetJoinTmpQueue = [&]()
@@ -1186,7 +1186,7 @@ bool WzJoiningGameScreen_HandlerRoot::joiningSocketNETsend()
 	uint8_t *rawData = message->rawDataDup();
 	ssize_t rawLen   = message->rawLen();
 	size_t compressedRawLen = 0;
-	ssize_t result = writeAll(*client_transient_socket, rawData, rawLen, &compressedRawLen);
+	ssize_t result = client_transient_socket->writeAll(rawData, rawLen, &compressedRawLen);
 	delete[] rawData;  // Done with the data.
 	queue->popMessageForNet();
 	if (result == rawLen)
@@ -1200,7 +1200,7 @@ bool WzJoiningGameScreen_HandlerRoot::joiningSocketNETsend()
 		debug(LOG_ERROR, "Failed to send message (type: %" PRIu8 ", rawLen: %zu, compressedRawLen: %zu) to host", message->type, message->rawLen(), compressedRawLen);
 		return false;
 	}
-	socketFlush(*client_transient_socket, NET_HOST_ONLY);  // Make sure the message was completely sent.
+	client_transient_socket->flush(nullptr);  // Make sure the message was completely sent.
 	ASSERT(queue->numMessagesForNet() == 0, "Queue not empty (%u messages remaining).", queue->numMessagesForNet());
 	return true;
 }
@@ -1211,14 +1211,14 @@ void WzJoiningGameScreen_HandlerRoot::closeConnectionAttempt()
 	{
 		if (tmp_joining_socket_set)
 		{
-			SocketSet_DelSocket(*tmp_joining_socket_set, client_transient_socket);
+			tmp_joining_socket_set->remove(client_transient_socket);
 		}
-		socketClose(client_transient_socket);
+		delete client_transient_socket;
 		client_transient_socket = nullptr;
 	}
 	if (tmp_joining_socket_set)
 	{
-		deleteSocketSet(tmp_joining_socket_set);
+		delete tmp_joining_socket_set;
 		tmp_joining_socket_set = nullptr;
 	}
 	if (tmpJoiningQueuePair)
@@ -1278,15 +1278,15 @@ void WzJoiningGameScreen_HandlerRoot::processJoining()
 	if (currentJoiningState == JoiningState::AwaitingInitialNetcodeHandshakeAck)
 	{
 		// read in data, if we have it
-		if (checkSockets(*tmp_joining_socket_set, NET_READ_TIMEOUT) > 0)
+		if (tmp_joining_socket_set->checkSockets(NET_READ_TIMEOUT) > 0)
 		{
-			if (!socketReadReady(*client_transient_socket))
+			if (!client_transient_socket->readReady())
 			{
 				return; // wait for next check
 			}
 
 			char *p_buffer = initialAckBuffer;
-			ssize_t sizeRead = readNoInt(*client_transient_socket, p_buffer + usedInitialAckBuffer, expectedInitialAckSize - usedInitialAckBuffer);
+			ssize_t sizeRead = client_transient_socket->readNoInt(p_buffer + usedInitialAckBuffer, expectedInitialAckSize - usedInitialAckBuffer, nullptr);
 			if (sizeRead != SOCKET_ERROR)
 			{
 				usedInitialAckBuffer += sizeRead;
@@ -1318,7 +1318,7 @@ void WzJoiningGameScreen_HandlerRoot::processJoining()
 				}
 
 				// transition to net message mode (enable compression, wait for messages)
-				socketBeginCompression(*client_transient_socket);
+				client_transient_socket->enableCompression();
 				currentJoiningState = JoiningState::ProcessingJoinMessages;
 				// permit fall-through to currentJoiningState == JoiningState::ProcessingJoinMessage case below
 			}
@@ -1329,17 +1329,17 @@ void WzJoiningGameScreen_HandlerRoot::processJoining()
 	if (currentJoiningState == JoiningState::ProcessingJoinMessages)
 	{
 		// read in data, if we have it
-		if (checkSockets(*tmp_joining_socket_set, NET_READ_TIMEOUT) > 0)
+		if (tmp_joining_socket_set->checkSockets(NET_READ_TIMEOUT) > 0)
 		{
-			if (!socketReadReady(*client_transient_socket))
+			if (!client_transient_socket->readReady())
 			{
 				return; // wait for next check
 			}
 
 			uint8_t readBuffer[NET_BUFFER_SIZE];
-			ssize_t size = readNoInt(*client_transient_socket, readBuffer, sizeof(readBuffer));
+			ssize_t size = client_transient_socket->readNoInt(readBuffer, sizeof(readBuffer), nullptr);
 
-			if ((size == 0 && socketReadDisconnected(*client_transient_socket)) || size == SOCKET_ERROR)
+			if ((size == 0 && client_transient_socket->readDisconnected()) || size == SOCKET_ERROR)
 			{
 				// disconnect or programmer error
 				if (size == 0)

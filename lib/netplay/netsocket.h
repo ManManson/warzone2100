@@ -132,6 +132,8 @@ WZ_DECL_NONNULL(2) void SocketSet_AddSocket(SocketSet& set, Socket *socket);  //
 WZ_DECL_NONNULL(2) void SocketSet_DelSocket(SocketSet& set, Socket *socket);  ///< Removes a Socket from a SocketSet.
 int checkSockets(const SocketSet& set, unsigned int timeout); ///< Checks which Sockets are ready for reading. Returns the number of ready Sockets, or returns SOCKET_ERROR on error.
 
+class IClientConnection;
+
 // Higher-level functions for opening a connection / socket
 struct OpenConnectionResult
 {
@@ -141,7 +143,7 @@ public:
 	, errorString(errorString)
 	{ }
 
-	OpenConnectionResult(Socket* open_socket)
+	OpenConnectionResult(IClientConnection* open_socket)
 	: open_socket(open_socket)
 	{ }
 public:
@@ -152,16 +154,57 @@ public:
 	OpenConnectionResult(OpenConnectionResult&&) = default;
 	OpenConnectionResult& operator=(OpenConnectionResult&&) = default;
 public:
-	struct SocketDeleter {
-		void operator()(Socket* b) { if (b) { socketClose(b); } }
-	};
-	std::unique_ptr<Socket, SocketDeleter> open_socket;
+
+	std::unique_ptr<IClientConnection> open_socket;
 	int error = 0;
 	std::string errorString;
 };
 typedef std::function<void (OpenConnectionResult&& result)> OpenConnectionToHostResultCallback;
 bool socketOpenTCPConnectionAsync(const std::string& host, uint32_t port, OpenConnectionToHostResultCallback callback);
 OpenConnectionResult socketOpenTCPConnectionSync(const char *host, uint32_t port);
+
+class IClientConnection
+{
+public:
+
+	virtual ~IClientConnection() = default;
+
+	virtual ssize_t readAll(void* buf, size_t size, unsigned timeout) = 0;
+	virtual ssize_t readNoInt(void* buf, size_t max_size, size_t* rawByteCount) = 0;
+	virtual ssize_t writeAll(const void* buf, size_t size, size_t* rawByteCount) = 0;
+	virtual bool readReady() const = 0;
+	virtual void flush(size_t* rawByteCount) = 0;
+	virtual bool readDisconnected() const = 0;
+	virtual void enableCompression() = 0;
+	virtual void useNagleAlgorithm(bool enable) = 0;
+	virtual std::string textAddress() const = 0;
+};
+
+IClientConnection* TCPconnectionOpenAny(const SocketAddress* addr, unsigned timeout);
+
+class TCPClientConnection : public IClientConnection
+{
+public:
+
+	TCPClientConnection(Socket* rawSocket);
+	virtual ~TCPClientConnection() override;
+
+	virtual ssize_t readAll(void* buf, size_t size, unsigned timeout) override;
+	virtual ssize_t readNoInt(void* buf, size_t maxSize, size_t* rawByteCount) override;
+	virtual ssize_t writeAll(const void* buf, size_t size, size_t* rawByteCount) override;
+	virtual bool readReady() const override;
+	virtual void flush(size_t* rawByteCount) override;
+	virtual bool readDisconnected() const override;
+	virtual void enableCompression() override;
+	virtual void useNagleAlgorithm(bool enable) override;
+	virtual std::string textAddress() const override;
+
+private:
+
+	Socket* socket_;
+
+	friend class TCPConnectionPollGroup;
+};
 
 /// <summary>
 /// Server-side listen socket abstraction.
@@ -181,7 +224,7 @@ public:
 	using IPVersionsMask = std::underlying_type_t<IPVersions>;
 
 	// Accept incoming client connection on the current server-side listen socket
-	virtual Socket* accept() = 0;
+	virtual IClientConnection* accept() = 0;
 	virtual IPVersionsMask supportedIpVersions() const = 0;
 };
 
@@ -192,7 +235,7 @@ public:
 	TCPListenSocket(Socket* rawSocket);
 	virtual ~TCPListenSocket() override;
 
-	virtual Socket* accept() override;
+	virtual IClientConnection* accept() override;
 	virtual IPVersionsMask supportedIpVersions() const override;
 
 private:
@@ -201,5 +244,34 @@ private:
 };
 
 IListenSocket* openListenSocket(uint16_t port);
+
+class IConnectionPollGroup
+{
+public:
+
+	virtual ~IConnectionPollGroup() = default;
+
+	virtual int checkSockets(unsigned timeout) = 0;
+	virtual void add(IClientConnection* conn) = 0;
+	virtual void remove(IClientConnection* conn) = 0;
+};
+
+class TCPConnectionPollGroup : public IConnectionPollGroup
+{
+public:
+
+	TCPConnectionPollGroup(SocketSet* sset);
+	virtual ~TCPConnectionPollGroup() override;
+
+	virtual int checkSockets(unsigned timeout) override;
+	virtual void add(IClientConnection* conn) override;
+	virtual void remove(IClientConnection* conn) override;
+
+private:
+
+	SocketSet* sset_;
+};
+
+IConnectionPollGroup* newTCPconnectionPollGroup();
 
 #endif //_net_socket_h
