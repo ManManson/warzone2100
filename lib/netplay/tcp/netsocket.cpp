@@ -46,6 +46,9 @@
 // Already included Winsock2.h which defines TCP_NODELAY
 #endif
 
+namespace tcp
+{
+
 enum
 {
 	SOCK_CONNECTION,
@@ -125,6 +128,8 @@ void setSockErr(int error)
 	WSASetLastError(error);
 #endif
 }
+
+} // namespace tcp
 
 #if defined(WZ_OS_WIN)
 typedef int (WINAPI *GETADDRINFO_DLL_FUNC)(const char *node, const char *service,
@@ -214,6 +219,9 @@ static void freeaddrinfo(struct addrinfo *res)
 	freeaddrinfo_dll_func(res);
 }
 #endif
+
+namespace tcp
+{
 
 static int addressToText(const struct sockaddr *addr, char *buf, size_t size)
 {
@@ -1746,239 +1754,4 @@ void SOCKETshutdown()
 #endif
 }
 
-OpenConnectionResult socketOpenTCPConnectionSync(const char *host, uint32_t port)
-{
-	SocketAddress *hosts = resolveHost(host, port);
-	if (hosts == nullptr)
-	{
-		int sErr = getSockErr();
-		return OpenConnectionResult((sErr != 0) ? sErr : -1, astringf("Cannot resolve host \"%s\": [%d]: %s", host, sErr, strSockError(sErr)));
-	}
-
-	IClientConnection* client_transient_socket = TCPconnectionOpenAny(hosts, 15000);
-	int sockOpenErr = getSockErr();
-	deleteSocketAddress(hosts);
-
-	if (client_transient_socket == nullptr)
-	{
-		return OpenConnectionResult((sockOpenErr != 0) ? sockOpenErr : -1, astringf("Cannot connect to [%s]:%d, [%d]:%s", host, port, sockOpenErr, strSockError(sockOpenErr)));
-	}
-
-	return OpenConnectionResult(client_transient_socket);
-}
-
-struct OpenConnectionRequest
-{
-	std::string host;
-	uint32_t port = 0;
-	OpenConnectionToHostResultCallback callback;
-};
-
-static int openDirectTCPConnectionAsyncImpl(void* data)
-{
-	OpenConnectionRequest* pRequestInfo = (OpenConnectionRequest*)data;
-	if (!pRequestInfo)
-	{
-		return 1;
-	}
-
-	pRequestInfo->callback(socketOpenTCPConnectionSync(pRequestInfo->host.c_str(), pRequestInfo->port));
-	delete pRequestInfo;
-	return 0;
-}
-
-bool socketOpenTCPConnectionAsync(const std::string& host, uint32_t port, OpenConnectionToHostResultCallback callback)
-{
-	// spawn background thread to handle this
-	auto pRequest = new OpenConnectionRequest();
-	pRequest->host = host;
-	pRequest->port = port;
-	pRequest->callback = callback;
-
-	WZ_THREAD * pOpenConnectionThread = wzThreadCreate(openDirectTCPConnectionAsyncImpl, pRequest);
-	if (pOpenConnectionThread == nullptr)
-	{
-		debug(LOG_ERROR, "Failed to create thread for opening connection");
-		delete pRequest;
-		return false;
-	}
-
-	wzThreadDetach(pOpenConnectionThread);
-	// the thread handles deleting pRequest
-	pOpenConnectionThread = nullptr;
-
-	return true;
-}
-
-//
-// TCPClientConnection
-//
-
-TCPClientConnection::TCPClientConnection(Socket* rawSocket)
-	: socket_(rawSocket)
-{
-	ASSERT(socket_ != nullptr, "Null socket passed to TCPClientConnection ctor");
-}
-
-TCPClientConnection::~TCPClientConnection()
-{
-	if (socket_)
-	{
-		::socketClose(socket_);
-	}
-}
-
-ssize_t TCPClientConnection::readAll(void* buf, size_t size, unsigned timeout)
-{
-	return ::readAll(*socket_, buf, size, timeout);
-}
-ssize_t TCPClientConnection::readNoInt(void* buf, size_t maxSize, size_t* rawByteCount)
-{
-	return ::readNoInt(*socket_, buf, maxSize, rawByteCount);
-}
-
-ssize_t TCPClientConnection::writeAll(const void* buf, size_t size, size_t* rawByteCount)
-{
-	return ::writeAll(*socket_, buf, size, rawByteCount);
-}
-
-bool TCPClientConnection::readReady() const
-{
-	return ::socketReadReady(*socket_);
-}
-
-void TCPClientConnection::flush(size_t* rawByteCount)
-{
-	::socketFlush(*socket_, std::numeric_limits<uint8_t>::max()/*unused*/, rawByteCount);
-}
-
-bool TCPClientConnection::readDisconnected() const
-{
-	return ::socketReadDisconnected(*socket_);
-}
-
-void TCPClientConnection::enableCompression()
-{
-	::socketBeginCompression(*socket_);
-}
-
-void TCPClientConnection::useNagleAlgorithm(bool enable)
-{
-	::socketSetTCPNoDelay(*socket_, !enable);
-}
-
-std::string TCPClientConnection::textAddress() const
-{
-	return ::getSocketTextAddress(*socket_);
-}
-
-IClientConnection* TCPconnectionOpenAny(const SocketAddress* addr, unsigned timeout)
-{
-	auto* s = ::socketOpenAny(addr, timeout);
-	if (!s)
-	{
-		return nullptr;
-	}
-	return new TCPClientConnection(s);
-}
-
-//
-// TCPListenSocket
-//
-
-TCPListenSocket::TCPListenSocket(Socket* rawSocket)
-	: listenSocket_(rawSocket)
-{}
-
-TCPListenSocket::~TCPListenSocket()
-{
-	if (listenSocket_)
-	{
-		::socketClose(listenSocket_);
-	}
-}
-
-IClientConnection* TCPListenSocket::accept()
-{
-	ASSERT(listenSocket_ != nullptr, "Internal socket handle shouldn't be null!");
-	if (!listenSocket_)
-	{
-		return nullptr;
-	}
-	auto* s = ::socketAccept(listenSocket_);
-	if (!s)
-	{
-		return nullptr;
-	}
-	return new TCPClientConnection(s);
-}
-
-IListenSocket::IPVersionsMask TCPListenSocket::supportedIpVersions() const
-{
-	IPVersionsMask resMask = 0;
-	if (::socketHasIPv4(*listenSocket_))
-	{
-		resMask |= static_cast<IPVersionsMask>(IPVersions::IPV4);
-	}
-	if (::socketHasIPv6(*listenSocket_))
-	{
-		resMask |= static_cast<IPVersionsMask>(IPVersions::IPV6);
-	}
-	return resMask;
-}
-
-IListenSocket* openListenSocket(uint16_t port)
-{
-	// FIXME: TCPListenSocket impl hardcoded for now.
-	Socket* s = ::socketListen(port);
-	if (s == nullptr)
-	{
-		return nullptr;
-	}
-	return new TCPListenSocket(s);
-}
-
-//
-// TCPConnectionPollGroup
-//
-
-TCPConnectionPollGroup::TCPConnectionPollGroup(SocketSet* sset)
-	: sset_(sset)
-{}
-
-TCPConnectionPollGroup::~TCPConnectionPollGroup()
-{
-	if (sset_)
-	{
-		::deleteSocketSet(sset_);
-	}
-}
-
-int TCPConnectionPollGroup::checkSockets(unsigned timeout)
-{
-	return ::checkSockets(*sset_, timeout);
-}
-
-void TCPConnectionPollGroup::add(IClientConnection* conn)
-{
-	auto* tcpConn = dynamic_cast<TCPClientConnection*>(conn);
-	ASSERT_OR_RETURN(, tcpConn != nullptr, "Expected to have TCPClientConnection instance");
-	::SocketSet_AddSocket(*sset_, tcpConn->socket_);
-}
-
-void TCPConnectionPollGroup::remove(IClientConnection* conn)
-{
-	auto tcpConn = dynamic_cast<TCPClientConnection*>(conn);
-	ASSERT_OR_RETURN(, tcpConn != nullptr, "Expected to have TCPClientConnection instance");
-	::SocketSet_DelSocket(*sset_, tcpConn->socket_);
-}
-
-IConnectionPollGroup* newTCPconnectionPollGroup()
-{
-	auto* sset = ::allocSocketSet();
-	if (!sset)
-	{
-		return nullptr;
-	}
-	return new TCPConnectionPollGroup(sset);
-}
+} // namespace tcp

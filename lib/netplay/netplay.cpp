@@ -47,7 +47,13 @@
 #include "netplay.h"
 #include "netlog.h"
 #include "netreplay.h"
-#include "netsocket.h"
+#include "lib/netplay/tcp/netsocket.h"
+#include "lib/netplay/client_connection.h"
+#include "lib/netplay/listen_socket.h"
+#include "lib/netplay/connection_poll_group.h"
+#include "lib/netplay/tcp/tcp_client_connection.h"
+#include "lib/netplay/tcp/tcp_listen_socket.h"
+#include "lib/netplay/tcp/tcp_connection_poll_group.h"
 #include "netpermissions.h"
 #include "sync_debug.h"
 #include "port_mapping_manager.h"
@@ -563,7 +569,7 @@ static size_t NET_fillBuffer(IClientConnection** pSocket, IConnectionPollGroup* 
 		}
 		else
 		{
-			debug(LOG_NET, "%s socket %p is now invalid", strSockError(getSockErr()), static_cast<void *>(socket));
+			debug(LOG_NET, "%s socket %p is now invalid", tcp::strSockError(tcp::getSockErr()), static_cast<void*>(socket));
 		}
 
 		// an error occurred, or the remote host has closed the connection.
@@ -1314,13 +1320,13 @@ static bool NETsendGAMESTRUCT(IClientConnection* sock, const GAMESTRUCT *ourgame
 	result = sock->writeAll(buf, sizeof(buf), nullptr);
 	if (result == SOCKET_ERROR)
 	{
-		const int err = getSockErr();
+		const int err = tcp::getSockErr();
 
 		// If packet could not be sent, we should inform user of the error.
-		debug(LOG_ERROR, "Failed to send GAMESTRUCT. Reason: %s", strSockError(err));
+		debug(LOG_ERROR, "Failed to send GAMESTRUCT. Reason: %s", tcp::strSockError(err));
 		debug(LOG_ERROR, "Please make sure TCP ports %u & %u are open!", masterserver_port, gameserver_port);
 
-		setSockErr(err);
+		tcp::setSockErr(err);
 		return false;
 	}
 
@@ -1364,7 +1370,7 @@ static bool NETrecvGAMESTRUCT(IClientConnection& sock, GAMESTRUCT *ourgamestruct
 	bool failed = false;
 	if (result == SOCKET_ERROR)
 	{
-		debug(LOG_ERROR, "Lobby server connection error: %s", strSockError(getSockErr()));
+		debug(LOG_ERROR, "Lobby server connection error: %s", tcp::strSockError(tcp::getSockErr()));
 		failed = true;
 	}
 	else if ((unsigned)result != sizeof(buf))
@@ -1522,7 +1528,7 @@ int NETinit(bool bFirstCall)
 	NETlogEntry("NETinit!", SYNC_FLAG, selectedPlayer);
 	NET_InitPlayers(true, true);
 
-	SOCKETinit();
+	tcp::SOCKETinit();
 
 	if (bFirstCall)
 	{
@@ -1570,7 +1576,7 @@ int NETshutdown()
 	}
 	NetPlay.MOTD = nullptr;
 	NETdeleteQueue();
-	SOCKETshutdown();
+	tcp::SOCKETshutdown();
 
 	// Reset net usage statistics.
 	nStats = nZeroStats;
@@ -1780,7 +1786,7 @@ bool NETsend(NETQUEUE queue, NetMessage const *message)
 				else if (result == SOCKET_ERROR)
 				{
 					// Write error, most likely client disconnect.
-					debug(LOG_ERROR, "Failed to send message (type: %" PRIu8 ", rawLen: %zu, compressedRawLen: %zu) to %" PRIu8 ": %s", message->type, message->rawLen(), compressedRawLen, player, strSockError(getSockErr()));
+					debug(LOG_ERROR, "Failed to send message (type: %" PRIu8 ", rawLen: %zu, compressedRawLen: %zu) to %" PRIu8 ": %s", message->type, message->rawLen(), compressedRawLen, player, tcp::strSockError(tcp::getSockErr()));
 					if (!isTmpQueue)
 					{
 						netSendPendingDisconnectPlayerIndexes.insert(player);
@@ -1810,7 +1816,7 @@ bool NETsend(NETQUEUE queue, NetMessage const *message)
 			else if (result == SOCKET_ERROR)
 			{
 				// Write error, most likely host disconnect.
-				debug(LOG_ERROR, "Failed to send message: %s", strSockError(getSockErr()));
+				debug(LOG_ERROR, "Failed to send message: %s", tcp::strSockError(tcp::getSockErr()));
 				debug(LOG_ERROR, "Host connection was broken, socket %p.", static_cast<void *>(bsocket));
 				NETlogEntry("write error--client disconnect.", SYNC_FLAG, player);
 				client_socket_set->remove(bsocket);            // mark it invalid
@@ -3299,7 +3305,7 @@ error:
 		{
 			free(NetPlay.MOTD);
 		}
-		if (asprintf(&NetPlay.MOTD, "Error while connecting to the lobby server: %s\nMake sure port %d can receive incoming connections.", strSockError(getSockErr()), gameserver_port) == -1)
+		if (asprintf(&NetPlay.MOTD, "Error while connecting to the lobby server: %s\nMake sure port %d can receive incoming connections.", tcp::strSockError(tcp::getSockErr()), gameserver_port) == -1)
 		{
 			NetPlay.MOTD = nullptr;
 		}
@@ -3346,7 +3352,7 @@ bool readGameStructsList(IClientConnection& sock, unsigned int timeout, const st
 	{
 		if (result == SOCKET_ERROR)
 		{
-			debug(LOG_NET, "Server socket encountered error: %s", strSockError(getSockErr()));
+			debug(LOG_NET, "Server socket encountered error: %s", tcp::strSockError(tcp::getSockErr()));
 		}
 		else
 		{
@@ -3420,18 +3426,18 @@ bool LobbyServerConnectionHandler::connect()
 
 	bool bProcessingConnectOrDisconnectThisCall = true;
 	uint32_t gameId = 0;
-	SocketAddress *const hosts = resolveHost(masterserver_name, masterserver_port);
+	SocketAddress *const hosts = tcp::resolveHost(masterserver_name, masterserver_port);
 
 	if (hosts == nullptr)
 	{
-		int sockErrInt = getSockErr();
-		debug(LOG_ERROR, "Cannot resolve masterserver \"%s\": %s", masterserver_name, strSockError(sockErrInt));
+		int sockErrInt = tcp::getSockErr();
+		debug(LOG_ERROR, "Cannot resolve masterserver \"%s\": %s", masterserver_name, tcp::strSockError(sockErrInt));
 		free(NetPlay.MOTD);
 		if (asprintf(&NetPlay.MOTD, _("Could not resolve masterserver name (%s)!"), masterserver_name) == -1)
 		{
 			NetPlay.MOTD = nullptr;
 		}
-		wz_command_interface_output("WZEVENT: lobbyerror (%u): Cannot resolve lobby server: %s\n", 0, strSockError(sockErrInt));
+		wz_command_interface_output("WZEVENT: lobbyerror (%u): Cannot resolve lobby server: %s\n", 0, tcp::strSockError(sockErrInt));
 		server_not_there = true;
 		return bProcessingConnectOrDisconnectThisCall;
 	}
@@ -3445,16 +3451,16 @@ bool LobbyServerConnectionHandler::connect()
 
 	// try each address from resolveHost until we successfully connect.
 	rs_socket = TCPconnectionOpenAny(hosts, 1500);
-	int sockOpenErr = getSockErr();
-	deleteSocketAddress(hosts);
+	int sockOpenErr = tcp::getSockErr();
+	tcp::deleteSocketAddress(hosts);
 
 	// No address succeeded.
 	if (rs_socket == nullptr)
 	{
-		debug(LOG_ERROR, "Cannot connect to masterserver \"%s:%d\": %s", masterserver_name, masterserver_port, strSockError(sockOpenErr));
+		debug(LOG_ERROR, "Cannot connect to masterserver \"%s:%d\": %s", masterserver_name, masterserver_port, tcp::strSockError(sockOpenErr));
 		free(NetPlay.MOTD);
 		if (asprintf(&NetPlay.MOTD, _("Error connecting to the lobby server: %s.\nMake sure port %d can receive incoming connections.\nIf you're using a router configure it to enable UPnP/NAT-PMP/PCP\n or to forward the port to your system."),
-					 strSockError(getSockErr()), masterserver_port) == -1)
+					 tcp::strSockError(tcp::getSockErr()), masterserver_port) == -1)
 		{
 			NetPlay.MOTD = nullptr;
 		}
@@ -3467,7 +3473,7 @@ bool LobbyServerConnectionHandler::connect()
 		|| rs_socket->readAll(&gameId, sizeof(gameId), 10000) != sizeof(gameId))
 	{
 		free(NetPlay.MOTD);
-		if (asprintf(&NetPlay.MOTD, "Failed to retrieve a game ID: %s", strSockError(getSockErr())) == -1)
+		if (asprintf(&NetPlay.MOTD, "Failed to retrieve a game ID: %s", tcp::strSockError(tcp::getSockErr())) == -1)
 		{
 			NetPlay.MOTD = nullptr;
 		}
@@ -3491,7 +3497,7 @@ bool LobbyServerConnectionHandler::connect()
 		// and now send what the server wants
 		|| !NETsendGAMESTRUCT(rs_socket, &gamestruct))
 	{
-		debug(LOG_ERROR, "Failed to register game with server: %s", strSockError(getSockErr()));
+		debug(LOG_ERROR, "Failed to register game with server: %s", tcp::strSockError(tcp::getSockErr()));
 		disconnect();
 		return bProcessingConnectOrDisconnectThisCall;
 	}
@@ -4000,7 +4006,7 @@ static void NETallowJoining()
 					}
 					else
 					{
-						debug(LOG_NET, "Client socket encountered error: %s", strSockError(getSockErr()));
+						debug(LOG_NET, "Client socket encountered error: %s", tcp::strSockError(tcp::getSockErr()));
 					}
 					NETlogEntry("Client socket disconnected (allowJoining)", SYNC_FLAG, i);
 					debug(LOG_NET, "freeing temp socket %p (%d)", static_cast<void *>(tmp_socket[i]), __LINE__);
@@ -4493,11 +4499,11 @@ bool NEThostGame(const char *SessionName, const char *PlayerName, bool spectator
 	// will become nullptr.
 	if (!server_listen_socket)
 	{
-		server_listen_socket = openListenSocket(gameserver_port);
+		server_listen_socket = openTCPListenSocket(gameserver_port);
 	}
 	if (server_listen_socket == nullptr)
 	{
-		debug(LOG_ERROR, "Cannot connect to master self: %s", strSockError(getSockErr()));
+		debug(LOG_ERROR, "Cannot connect to master self: %s", tcp::strSockError(tcp::getSockErr()));
 		return false;
 	}
 	debug(LOG_NET, "New server_listen_socket = %p", static_cast<void *>(server_listen_socket));
@@ -4508,7 +4514,7 @@ bool NEThostGame(const char *SessionName, const char *PlayerName, bool spectator
 	}
 	if (server_socket_set == nullptr)
 	{
-		debug(LOG_ERROR, "Cannot create socket set: %s", strSockError(getSockErr()));
+		debug(LOG_ERROR, "Cannot create socket set: %s", tcp::strSockError(tcp::getSockErr()));
 		return false;
 	}
 	// allocate socket storage for all possible players
@@ -4616,21 +4622,21 @@ bool NETenumerateGames(const std::function<bool (const GAMESTRUCT& game)>& handl
 		debug(LOG_ERROR, "Likely missing NETinit(true) - this won't return any results");
 		return false;
 	}
-	if ((hosts = resolveHost(masterserver_name, masterserver_port)) == nullptr)
+	if ((hosts = tcp::resolveHost(masterserver_name, masterserver_port)) == nullptr)
 	{
-		debug(LOG_ERROR, "Cannot resolve hostname \"%s\": %s", masterserver_name, strSockError(getSockErr()));
+		debug(LOG_ERROR, "Cannot resolve hostname \"%s\": %s", masterserver_name, tcp::strSockError(tcp::getSockErr()));
 		setLobbyError(ERROR_CONNECTION);
 		return false;
 	}
 
 	IClientConnection* sock = TCPconnectionOpenAny(hosts, 15000);
 
-	deleteSocketAddress(hosts);
+	tcp::deleteSocketAddress(hosts);
 	hosts = nullptr;
 
 	if (sock == nullptr)
 	{
-		debug(LOG_ERROR, "Cannot connect to \"%s:%d\": %s", masterserver_name, masterserver_port, strSockError(getSockErr()));
+		debug(LOG_ERROR, "Cannot connect to \"%s:%d\": %s", masterserver_name, masterserver_port, tcp::strSockError(tcp::getSockErr()));
 		setLobbyError(ERROR_CONNECTION);
 		return false;
 	}
@@ -4639,7 +4645,7 @@ bool NETenumerateGames(const std::function<bool (const GAMESTRUCT& game)>& handl
 
 	if (sock->writeAll("list", sizeof("list"), nullptr) == SOCKET_ERROR)
 	{
-		debug(LOG_NET, "Server socket encountered error: %s", strSockError(getSockErr()));
+		debug(LOG_NET, "Server socket encountered error: %s", tcp::strSockError(tcp::getSockErr()));
 		// mark it invalid
 		delete sock;
 
@@ -5106,7 +5112,7 @@ void NETacceptIncomingConnections()
 		tmp_socket_set = newTCPconnectionPollGroup();
 		if (tmp_socket_set == nullptr)
 		{
-			debug(LOG_ERROR, "Cannot create socket set: %s", strSockError(getSockErr()));
+			debug(LOG_ERROR, "Cannot create socket set: %s", tcp::strSockError(tcp::getSockErr()));
 			return;
 		}
 		// FIXME: I guess initialization of allowjoining is here now... - FlexCoral

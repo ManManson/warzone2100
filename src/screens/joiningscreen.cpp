@@ -29,7 +29,11 @@
 #include "lib/ivis_opengl/pieblitfunc.h"
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/netplay/netplay.h"
-#include "lib/netplay/netsocket.h"
+#include "lib/netplay/client_connection.h"
+#include "lib/netplay/open_connection_result.h"
+#include "lib/netplay/tcp/tcp_client_connection.h"
+#include "lib/netplay/tcp/tcp_connection_poll_group.h"
+#include "lib/netplay/tcp/netsocket.h"
 
 #include "../hci.h"
 #include "../activity.h"
@@ -1084,7 +1088,7 @@ void WzJoiningGameScreen_HandlerRoot::processOpenConnectionResult(size_t connect
 		{
 			debug(LOG_ERROR, "%s", result.errorString.c_str());
 			// Done trying connections - all failed
-			const char* pSocketErrorStr = strSockError(result.error);
+			const char* pSocketErrorStr = tcp::strSockError(result.error);
 			auto localizedError = astringf(_("Failed to open connection: [%d] %s"), result.error, (pSocketErrorStr) ? pSocketErrorStr : "<unknown>");
 			handleFailure(FailureDetails::makeFromInternalError(WzString::fromUtf8(localizedError)));
 		}
@@ -1348,7 +1352,7 @@ void WzJoiningGameScreen_HandlerRoot::processJoining()
 				}
 				else
 				{
-					debug(LOG_NET, "Client socket encountered error: %s", strSockError(getSockErr()));
+					debug(LOG_NET, "Client socket encountered error: %s", tcp::strSockError(tcp::getSockErr()));
 				}
 				NETlogEntry("Client socket disconnected (allowJoining)", SYNC_FLAG, startTime);
 				debug(LOG_NET, "freeing temp socket %p (%d)", static_cast<void *>(client_transient_socket), __LINE__);

@@ -26,8 +26,8 @@ add_dependencies(autorevision_netcodeversion autorevision) # Ensure ordering and
 ############################
 # netplay library
 
-file(GLOB HEADERS "*.h")
-file(GLOB SRC "*.cpp")
+file(GLOB_RECURSE HEADERS "*.h")
+file(GLOB_RECURSE SRC "*.cpp")
 
 find_package (Threads REQUIRED)
 find_package (ZLIB REQUIRED)

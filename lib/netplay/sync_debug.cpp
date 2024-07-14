@@ -29,7 +29,7 @@
 #include "lib/gamelib/gtime.h"
 #include "nettypes.h"
 #include "netplay.h"
-#include "netsocket.h" // solely to bring in `htonl` function
+#include "lib/netplay/tcp/netsocket.h" // solely to bring in `htonl` function
 
 #include <physfs.h>
 
