@@ -418,12 +418,11 @@ void sendPlayerGameTime()
 			continue;
 		}
 
-		NETbeginEncode(NETgameQueue(player), GAME_GAME_TIME);
-		NETuint32_t(&latencyTicks);
-		NETuint32_t(&checkTime);
-		NETuint16_t(&checkCrc);
-		NETuint16_t(&wantedLatency);
-		NETend();
+		auto w = NETbeginEncode(NETgameQueue(player), GAME_GAME_TIME);
+		w.NETuint32_t(&latencyTicks);
+		w.NETuint32_t(&checkTime);
+		w.NETuint16_t(&checkCrc);
+		w.NETuint16_t(&wantedLatency);
 	}
 
 	debugVerboseLogSyncIfNeeded();
@@ -456,12 +455,13 @@ void recvPlayerGameTime(NETQUEUE queue)
 	uint32_t checkTime = 0;
 	GameCrcType checkCrc = 0;
 
-	NETbeginDecode(queue, GAME_GAME_TIME);
-	NETuint32_t(&latencyTicks);
-	NETuint32_t(&checkTime);
-	NETuint16_t(&checkCrc);
-	NETuint16_t(&wantedLatencies[queue.index]);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, GAME_GAME_TIME);
+		r.NETuint32_t(&latencyTicks);
+		r.NETuint32_t(&checkTime);
+		r.NETuint16_t(&checkCrc);
+		r.NETuint16_t(&wantedLatencies[queue.index]);
+	}
 
 	gameQueueTime[queue.index] = checkTime + latencyTicks * GAME_TICKS_PER_UPDATE;  // gameTime when future messages shall be processed.
 

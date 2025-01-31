@@ -79,8 +79,8 @@ void NETsetNoSendOverNetwork(NETQUEUE queue);  ///< Used to mark that a game que
 void NETmoveQueue(NETQUEUE src, NETQUEUE dst); ///< Used for moving the tmpQueue to a netQueue, once a newly-connected client is assigned a player number.
 void NETswapQueues(NETQUEUE src, NETQUEUE dst); ///< Used for swapping two netQueues, when swapping a player index (i.e. player <-> spectator-only slot). Dangerous and rare.
 void NETdeleteQueue();					///< Delete queues for cleanup
-void NETbeginEncode(NETQUEUE queue, uint8_t type);
-void NETbeginDecode(NETQUEUE queue, uint8_t type);
+MessageWriter NETbeginEncode(NETQUEUE queue, uint8_t type);
+MessageReader NETbeginDecode(NETQUEUE queue, uint8_t type);
 bool NETend();
 void NETflushGameQueues();
 void NETpop(NETQUEUE queue);

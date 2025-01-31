@@ -164,7 +164,7 @@ void sendStrategyPlanUpdate(uint32_t forPlayer)
 		}
 		// Only send to active (connected) human players - *NOT* AIs (which would effectively just have to send this to the host)
 		if (isHumanPlayer(player))
-		{
+		{// FIXME!!!!!!!!!
 			if (NETbeginEncodeSecured(NETnetQueue(player), NET_TEAM_STRATEGY))
 			{
 				uint32_t sender = forPlayer;
@@ -182,7 +182,7 @@ bool recvStrategyPlanUpdate(NETQUEUE queue)
 	uint32_t sender = MAX_CONNECTED_PLAYERS;
 	std::vector<uint8_t> weaponStates;
 	std::vector<uint8_t> unitStates;
-
+	// FIXME!!!!!!!!!!!!!!
 	if (!NETbeginDecodeSecured(queue, NET_TEAM_STRATEGY))
 	{
 		return false;

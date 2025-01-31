@@ -77,7 +77,7 @@ void sendOptions()
 	ASSERT_OR_RETURN(, GetGameMode() != GS_NORMAL, "sendOptions shouldn't be called after the game has started");
 
 	game.modHashes = getModHashList();
-
+	// FIXME!!!!!!!!!!!
 	NETbeginEncode(NETbroadcastQueue(), NET_OPTIONS);
 
 	// First send information about the game
@@ -174,6 +174,7 @@ bool recvOptions(NETQUEUE queue)
 	MULTIPLAYERGAME priorGameInfo = game;
 
 	debug(LOG_NET, "Receiving options from host");
+	// FIXME!!!!!!!!!!!!!!
 	NETbeginDecode(queue, NET_OPTIONS);
 
 	// Get general information about the game
@@ -400,9 +401,8 @@ bool recvOptions(NETQUEUE queue)
 		NET_addDownloadingWZFile(WZFile(pFileHandle, filename, hash));
 
 		// Request the map/mod from the host
-		NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_FILE_REQUESTED);
-		NETbin(hash.bytes, hash.Bytes);
-		NETend();
+		auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_FILE_REQUESTED);
+		w.NETbin(hash.bytes, hash.Bytes);
 
 		return FileRequestResult::StartingDownload;  // Starting download now.
 	};
@@ -544,15 +544,14 @@ bool hostCampaign(const char *SessionName, char *hostPlayerName, bool spectatorH
 bool sendLeavingMsg()
 {
 	debug(LOG_NET, "We are leaving 'nicely'");
-	NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_PLAYER_LEAVING);
 	{
+		auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_PLAYER_LEAVING);
 		bool host = NetPlay.isHost;
 		uint32_t id = selectedPlayer;
 
-		NETuint32_t(&id);
-		NETbool(&host);
+		w.NETuint32_t(&id);
+		w.NETbool(&host);
 	}
-	NETend();
 	NETflush();
 
 	return true;
@@ -649,9 +648,8 @@ void playerResponding()
 	}
 
 	// Tell the world we're here
-	NETbeginEncode(NETbroadcastQueue(), NET_PLAYERRESPONDING);
-	NETuint32_t(&selectedPlayer);
-	NETend();
+	auto w = NETbeginEncode(NETbroadcastQueue(), NET_PLAYERRESPONDING);
+	w.NETuint32_t(&selectedPlayer);
 }
 
 // ////////////////////////////////////////////////////////////////////////////
@@ -831,15 +829,12 @@ void sendHostConfig()
 {
 	ASSERT_HOST_ONLY(return);
 
-	NETbeginEncode(NETbroadcastQueue(), NET_HOST_CONFIG);
-
+	auto w = NETbeginEncode(NETbroadcastQueue(), NET_HOST_CONFIG);
 	// Send the list of host-set player chat permissions
 	for (unsigned i = 0; i < MAX_CONNECTED_PLAYERS; i++)
 	{
-		NETbool(&ingame.hostChatPermissions[i]);
+		w.NETbool(&ingame.hostChatPermissions[i]);
 	}
-
-	NETend();
 }
 
 // ////////////////////////////////////////////////////////////////////////////
@@ -852,16 +847,14 @@ bool recvHostConfig(NETQUEUE queue)
 	std::array<bool, MAX_CONNECTED_PLAYERS> priorHostChatPermissions = ingame.hostChatPermissions;
 
 	debug(LOG_NET, "Receiving host_config from host");
-	NETbeginDecode(queue, NET_HOST_CONFIG);
-
-	// Host-set player chat permissions
-	for (unsigned int i = 0; i < MAX_CONNECTED_PLAYERS; i++)
 	{
-		NETbool(&ingame.hostChatPermissions[i]);
+		auto r = NETbeginDecode(queue, NET_HOST_CONFIG);
+		// Host-set player chat permissions
+		for (unsigned int i = 0; i < MAX_CONNECTED_PLAYERS; i++)
+		{
+			r.NETbool(&ingame.hostChatPermissions[i]);
+		}
 	}
-
-	NETend();
-
 	informOnHostChatPermissionChanges(priorHostChatPermissions);
 
 	return true;

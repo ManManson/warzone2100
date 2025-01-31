@@ -398,9 +398,8 @@ static void sendPlayerLeft(uint32_t playerIndex)
 
 	uint32_t forcedPlayerIndex = whosResponsible(playerIndex);
 	NETQUEUE(*netQueueType)(unsigned) = forcedPlayerIndex != selectedPlayer ? NETgameQueueForced : NETgameQueue;
-	NETbeginEncode(netQueueType(forcedPlayerIndex), GAME_PLAYER_LEFT);
-	NETuint32_t(&playerIndex);
-	NETend();
+	auto w = NETbeginEncode(netQueueType(forcedPlayerIndex), GAME_PLAYER_LEFT);
+	w.NETuint32_t(&playerIndex);
 }
 
 static void addConsolePlayerLeftMessage(unsigned playerIndex)
@@ -424,9 +423,10 @@ static void addConsolePlayerJoinMessage(unsigned playerIndex)
 void recvPlayerLeft(NETQUEUE queue)
 {
 	uint32_t playerIndex = 0;
-	NETbeginDecode(queue, GAME_PLAYER_LEFT);
-	NETuint32_t(&playerIndex);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, GAME_PLAYER_LEFT);
+		r.NETuint32_t(&playerIndex);
+	}
 
 	addConsolePlayerLeftMessage(playerIndex);
 
@@ -497,9 +497,10 @@ bool MultiPlayerLeave(UDWORD playerIndex)
 
 		if (bDisplayMultiJoiningStatus) // if still waiting for players to load *or* waiting for game to start...
 		{
-			NETbeginEncode(NETbroadcastQueue(), NET_PLAYER_DROPPED);
-			NETuint32_t(&playerIndex);
-			NETend();
+			{
+				auto w = NETbeginEncode(NETbroadcastQueue(), NET_PLAYER_DROPPED);
+				w.NETuint32_t(&playerIndex);
+			}
 			// only set ingame.JoiningInProgress[player_id] to false
 			// when the game starts, it will handle the GAME_PLAYER_LEFT message in their queue properly
 			ingame.JoiningInProgress[playerIndex] = false;
@@ -600,12 +601,13 @@ bool sendDataCheck()
 {
 	int i = 0;
 
-	NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_DATA_CHECK);		// only need to send to HOST
-	for (i = 0; i < DATA_MAXDATA; i++)
 	{
-		NETuint32_t(&DataHash[i]);
+		auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_DATA_CHECK);		// only need to send to HOST
+		for (i = 0; i < DATA_MAXDATA; i++)
+		{
+			w.NETuint32_t(&DataHash[i]);
+		}
 	}
-	NETend();
 	debug(LOG_NET, "sent hash to host");
 	return true;
 }
@@ -622,12 +624,13 @@ bool recvDataCheck(NETQUEUE queue)
 		return false;
 	}
 
-	NETbeginDecode(queue, NET_DATA_CHECK);
-	for (i = 0; i < DATA_MAXDATA; i++)
 	{
-		NETuint32_t(&tempBuffer[i]);
+		auto r = NETbeginDecode(queue, NET_DATA_CHECK);
+		for (i = 0; i < DATA_MAXDATA; i++)
+		{
+			r.NETuint32_t(&tempBuffer[i]);
+		}
 	}
-	NETend();
 
 	if (player >= MAX_CONNECTED_PLAYERS) // invalid player number.
 	{

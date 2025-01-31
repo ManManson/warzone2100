@@ -186,9 +186,8 @@ void sendProcessDebugMappings(bool val)
 	{
 		return;
 	}
-	NETbeginEncode(NETgameQueue(selectedPlayer), GAME_DEBUG_MODE);
-	NETbool(&val);
-	NETend();
+	auto w = NETbeginEncode(NETgameQueue(selectedPlayer), GAME_DEBUG_MODE);
+	w.NETbool(&val);
 }
 
 #if !defined(__clang__) && defined(__GNUC__) && (12 <= __GNUC__)
@@ -219,9 +218,10 @@ static std::string getWantedDebugMappingStatuses(const DebugInputManager& dbgInp
 void recvProcessDebugMappings(NETQUEUE queue)
 {
 	bool val = false;
-	NETbeginDecode(queue, GAME_DEBUG_MODE);
-	NETbool(&val);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, GAME_DEBUG_MODE);
+		r.NETbool(&val);
+	}
 
 	DebugInputManager& dbgInputManager = gInputManager.debugManager();
 	bool oldDebugMode = dbgInputManager.debugMappingsAllowed();

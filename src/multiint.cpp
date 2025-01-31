@@ -2548,12 +2548,9 @@ static bool SendTeamRequest(UBYTE player, UBYTE chosenTeam)
 	}
 	else
 	{
-		NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_TEAMREQUEST);
-
-		NETuint8_t(&player);
-		NETuint8_t(&chosenTeam);
-
-		NETend();
+		auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_TEAMREQUEST);
+		w.NETuint8_t(&player);
+		w.NETuint8_t(&chosenTeam);
 
 	}
 	return true;
@@ -2563,12 +2560,12 @@ bool recvTeamRequest(NETQUEUE queue)
 {
 	ASSERT_HOST_ONLY(return true);
 
-	NETbeginDecode(queue, NET_TEAMREQUEST);
-
 	UBYTE player, team;
-	NETuint8_t(&player);
-	NETuint8_t(&team);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, NET_TEAMREQUEST);
+		r.NETuint8_t(&player);
+		r.NETuint8_t(&team);
+	}
 
 	if (player >= MAX_PLAYERS || team >= MAX_PLAYERS)
 	{
@@ -2622,10 +2619,9 @@ static bool SendReadyRequest(UBYTE player, bool bReady)
 	}
 	else
 	{
-		NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_READY_REQUEST);
-		NETuint8_t(&player);
-		NETbool(&bReady);
-		NETend();
+		auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_READY_REQUEST);
+		w.NETuint8_t(&player);
+		w.NETbool(&bReady);
 	}
 	return true;
 }
@@ -2634,13 +2630,13 @@ bool recvReadyRequest(NETQUEUE queue)
 {
 	ASSERT_HOST_ONLY(return true);
 
-	NETbeginDecode(queue, NET_READY_REQUEST);
-
 	UBYTE player;
 	bool bReady = false;
-	NETuint8_t(&player);
-	NETbool(&bReady);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, NET_READY_REQUEST);
+		r.NETuint8_t(&player);
+		r.NETbool(&bReady);
+	}
 
 	if (player >= MAX_CONNECTED_PLAYERS)
 	{
@@ -2827,10 +2823,9 @@ bool SendColourRequest(UBYTE player, UBYTE col)
 	else
 	{
 		// clients tell the host which color they want
-		NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_COLOURREQUEST);
-		NETuint8_t(&player);
-		NETuint8_t(&col);
-		NETend();
+		auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_COLOURREQUEST);
+		w.NETuint8_t(&player);
+		w.NETuint8_t(&col);
 	}
 	return true;
 }
@@ -2880,10 +2875,9 @@ static bool SendFactionRequest(UBYTE player, UBYTE faction)
 	else
 	{
 		// clients tell the host which color they want
-		NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_FACTIONREQUEST);
-		NETuint8_t(&player);
-		NETuint8_t(&faction);
-		NETend();
+		auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_FACTIONREQUEST);
+		w.NETuint8_t(&player);
+		w.NETuint8_t(&faction);
 	}
 	return true;
 }
@@ -2898,10 +2892,9 @@ static bool SendPositionRequest(UBYTE player, UBYTE position)
 	{
 		debug(LOG_NET, "Requesting the host to change our position. From %d to %d", player, position);
 		// clients tell the host which position they want
-		NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_POSITIONREQUEST);
-		NETuint8_t(&player);
-		NETuint8_t(&position);
-		NETend();
+		auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_POSITIONREQUEST);
+		w.NETuint8_t(&player);
+		w.NETuint8_t(&position);
 	}
 	return true;
 }
@@ -2910,12 +2903,13 @@ bool recvFactionRequest(NETQUEUE queue)
 {
 	ASSERT_HOST_ONLY(return true);
 
-	NETbeginDecode(queue, NET_FACTIONREQUEST);
-
 	UBYTE player, faction;
-	NETuint8_t(&player);
-	NETuint8_t(&faction);
-	NETend();
+
+	{
+		auto r = NETbeginDecode(queue, NET_FACTIONREQUEST);
+		r.NETuint8_t(&player);
+		r.NETuint8_t(&faction);
+	}
 
 	if (player >= MAX_PLAYERS)
 	{
@@ -2946,12 +2940,12 @@ bool recvColourRequest(NETQUEUE queue)
 {
 	ASSERT_HOST_ONLY(return true);
 
-	NETbeginDecode(queue, NET_COLOURREQUEST);
-
 	UBYTE player, col;
-	NETuint8_t(&player);
-	NETuint8_t(&col);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, NET_COLOURREQUEST);
+		r.NETuint8_t(&player);
+		r.NETuint8_t(&col);
+	}
 
 	if (player >= MAX_PLAYERS)
 	{
@@ -2975,12 +2969,12 @@ bool recvPositionRequest(NETQUEUE queue)
 {
 	ASSERT_HOST_ONLY(return true);
 
-	NETbeginDecode(queue, NET_POSITIONREQUEST);
-
 	UBYTE	player, position;
-	NETuint8_t(&player);
-	NETuint8_t(&position);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, NET_POSITIONREQUEST);
+		r.NETuint8_t(&player);
+		r.NETuint8_t(&position);
+	}
 	debug(LOG_NET, "Host received position request from player %d to %d", player, position);
 
 	if (player >= MAX_PLAYERS || position >= MAX_PLAYERS)
@@ -3024,10 +3018,9 @@ static bool SendPlayerSlotTypeRequest(uint32_t player, bool isSpectator)
 
 	debug(LOG_NET, "Requesting the host to change our slot type. From %s to %s", originalPlayerSlotType, desiredPlayerSlotType);
 	// clients tell the host which player slot type they want (but the host may not allow)
-	NETbeginEncode(NETnetQueue((!NetPlay.isHost) ? NetPlay.hostPlayer : player), NET_PLAYER_SLOTTYPE_REQUEST);
-	NETuint32_t(&player);
-	NETbool(&isSpectator);
-	NETend();
+	auto w = NETbeginEncode(NETnetQueue((!NetPlay.isHost) ? NetPlay.hostPlayer : player), NET_PLAYER_SLOTTYPE_REQUEST);
+	w.NETuint32_t(&player);
+	w.NETbool(&isSpectator);
 	return true;
 }
 
@@ -3038,10 +3031,11 @@ static bool recvPlayerSlotTypeRequestAndPop(WzMultiplayerOptionsTitleUI& titleUI
 
 	uint32_t playerIndex;
 	bool desiredIsSpectator = false;
-	NETbeginDecode(queue, NET_PLAYER_SLOTTYPE_REQUEST);
-	NETuint32_t(&playerIndex);
-	NETbool(&desiredIsSpectator);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, NET_PLAYER_SLOTTYPE_REQUEST);
+		r.NETuint32_t(&playerIndex);
+		r.NETbool(&desiredIsSpectator);
+	}
 
 	NETpop(queue); // this function *must* handle popping the message itself since, if a player index switch occurs, the queue may be invalidated
 
@@ -3286,10 +3280,11 @@ static SwapPlayerIndexesResult recvSwapPlayerIndexes(NETQUEUE queue, const std::
 	uint32_t playerIndexA;
 	uint32_t playerIndexB;
 
-	NETbeginDecode(queue, NET_PLAYER_SWAP_INDEX);
-	NETuint32_t(&playerIndexA);
-	NETuint32_t(&playerIndexB);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, NET_PLAYER_SWAP_INDEX);
+		r.NETuint32_t(&playerIndexA);
+		r.NETuint32_t(&playerIndexB);
+	}
 
 	if (!ingame.localJoiningInProgress)  // Only if game hasn't actually started yet.
 	{
@@ -3354,10 +3349,11 @@ static SwapPlayerIndexesResult recvSwapPlayerIndexes(NETQUEUE queue, const std::
 		bool selectedPlayerWasSpectator = wasSpectator[(playerIndexA == selectedPlayer) ? 0 : 1];
 
 		// Send an acknowledgement that we received and are processing the player index swap for us
-		NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_PLAYER_SWAP_INDEX_ACK);
-		NETuint32_t(&oldPlayerIndex);
-		NETuint32_t(&newPlayerIndex);
-		NETend();
+		{
+			auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_PLAYER_SWAP_INDEX_ACK);
+			w.NETuint32_t(&oldPlayerIndex);
+			w.NETuint32_t(&newPlayerIndex);
+		}
 
 		// 1.) Basically what happens in NETjoinGame after receiving NET_ACCEPTED
 
@@ -4889,10 +4885,10 @@ static void SendFireUp()
 	uint32_t randomSeed = rand();  // Pick a random random seed for the synchronised random number generator.
 
 	debug(LOG_INFO, "Sending NET_FIREUP");
-
-	NETbeginEncode(NETbroadcastQueue(), NET_FIREUP);
-	NETuint32_t(&randomSeed);
-	NETend();
+	{
+		auto w = NETbeginEncode(NETbroadcastQueue(), NET_FIREUP);
+		w.NETuint32_t(&randomSeed);
+	}
 	printSearchPath();
 	gameSRand(randomSeed);  // Set the seed for the synchronised random number generator. The clients will use the same seed.
 }
@@ -4905,11 +4901,12 @@ void kickPlayer(uint32_t player_id, const char *reason, LOBBY_ERROR_TYPES type, 
 	debug(LOG_INFO, "Kicking player %u (%s). Reason: %s", (unsigned int)player_id, getPlayerName(player_id), reason);
 
 	// send a kick msg
-	NETbeginEncode(NETbroadcastQueue(), NET_KICK);
-	NETuint32_t(&player_id);
-	NETstring(reason, MAX_KICK_REASON);
-	NETenum(&type);
-	NETend();
+	{
+		auto w = NETbeginEncode(NETbroadcastQueue(), NET_KICK);
+		w.NETuint32_t(&player_id);
+		w.NETstring(reason, MAX_KICK_REASON);
+		w.NETenum(&type);
+	}
 	NETflush();
 	wzDelay(300);
 
@@ -5710,6 +5707,7 @@ static void stopJoining(std::shared_ptr<WzTitleUI> parent)
 	{
 		// annouce we are leaving...
 		debug(LOG_NET, "Host is quitting game...");
+		// FIXME!!!!!!!!!
 		NETbeginEncode(NETbroadcastQueue(), NET_HOST_DROPPED);
 		NETend();
 		sendLeavingMsg();								// say goodbye
@@ -7119,9 +7117,10 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 				Sha256 hash;
 				hash.setZero();
 
-				NETbeginDecode(queue, NET_FILE_CANCELLED);
-				NETbin(hash.bytes, hash.Bytes);
-				NETend();
+				{
+					auto r = NETbeginDecode(queue, NET_FILE_CANCELLED);
+					r.NETbin(hash.bytes, hash.Bytes);
+				}
 
 				debug(LOG_WARNING, "Received file cancel request from player %u, they weren't expecting the file.", queue.index);
 				auto &pWzFiles = NetPlay.players[queue.index].wzFiles;
@@ -7277,11 +7276,10 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 
 				resetReadyStatus(false);
 
-				NETbeginDecode(queue, NET_PLAYER_DROPPED);
 				{
-					NETuint32_t(&player_id);
+					auto r = NETbeginDecode(queue, NET_PLAYER_DROPPED);
+					r.NETuint32_t(&player_id);
 				}
-				NETend();
 
 				if (player_id >= MAX_CONNECTED_PLAYERS)
 				{
@@ -7317,10 +7315,11 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 
 				resetReadyStatus(false);
 
-				NETbeginDecode(queue, NET_PLAYERRESPONDING);
-				// the player that has just responded
-				NETuint32_t(&player_id);
-				NETend();
+				{
+					auto r = NETbeginDecode(queue, NET_PLAYERRESPONDING);
+					// the player that has just responded
+					r.NETuint32_t(&player_id);
+				}
 
 				if (player_id >= MAX_CONNECTED_PLAYERS)
 				{
@@ -7353,9 +7352,10 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 			if (ingame.localOptionsReceived)
 			{
 				uint32_t randomSeed = 0;
-				NETbeginDecode(queue, NET_FIREUP);
-				NETuint32_t(&randomSeed);
-				NETend();
+				{
+					auto r = NETbeginDecode(queue, NET_FIREUP);
+					r.NETuint32_t(&randomSeed);
+				}
 
 				gameSRand(randomSeed);  // Set the seed for the synchronised random number generator, using the seed given by the host.
 
@@ -7382,11 +7382,12 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 				char reason[MAX_KICK_REASON];
 				LOBBY_ERROR_TYPES KICK_TYPE = ERROR_NOERROR;
 
-				NETbeginDecode(queue, NET_KICK);
-				NETuint32_t(&player_id);
-				NETstring(reason, MAX_KICK_REASON);
-				NETenum(&KICK_TYPE);
-				NETend();
+				{
+					auto r = NETbeginDecode(queue, NET_KICK);
+					r.NETuint32_t(&player_id);
+					r.NETstring(reason, MAX_KICK_REASON);
+					r.NETenum(&KICK_TYPE);
+				}
 
 				if (player_id >= MAX_CONNECTED_PLAYERS)
 				{
@@ -7433,6 +7434,7 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 				break;
 			}
 		case NET_HOST_DROPPED:
+			// FIXME!!!!!!!!!!!!
 			NETbeginDecode(queue, NET_HOST_DROPPED);
 			NETend();
 			stopJoining(std::make_shared<WzMsgBoxTitleUI>(WzString(_("Connection lost:")), WzString(_("No connection to host.")), parent));

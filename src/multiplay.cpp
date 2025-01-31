@@ -838,15 +838,16 @@ static void recvSyncRequest(NETQUEUE queue)
 	int32_t req_id, x, y, obj_id, obj_id2, player_id, player_id2;
 	BASE_OBJECT *psObj = nullptr, *psObj2 = nullptr;
 
-	NETbeginDecode(queue, GAME_SYNC_REQUEST);
-	NETint32_t(&req_id);
-	NETint32_t(&x);
-	NETint32_t(&y);
-	NETint32_t(&obj_id);
-	NETint32_t(&player_id);
-	NETint32_t(&obj_id2);
-	NETint32_t(&player_id2);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, GAME_SYNC_REQUEST);
+		r.NETint32_t(&req_id);
+		r.NETint32_t(&x);
+		r.NETint32_t(&y);
+		r.NETint32_t(&obj_id);
+		r.NETint32_t(&player_id);
+		r.NETint32_t(&obj_id2);
+		r.NETint32_t(&player_id2);
+	}
 
 	syncDebug("sync request received from%d req_id%d x%u y%u %obj1 %obj2", queue.index, req_id, x, y, obj_id, obj_id2);
 	if (obj_id)
@@ -860,32 +861,31 @@ static void recvSyncRequest(NETQUEUE queue)
 	triggerEventSyncRequest(queue.index, req_id, x, y, psObj, psObj2);
 }
 
-static void sendObj(const BASE_OBJECT *psObj)
+static void sendObj(MessageWriter& w, const BASE_OBJECT *psObj)
 {
 	if (psObj)
 	{
 		int32_t obj_id = psObj->id;
 		int32_t player = psObj->player;
-		NETint32_t(&obj_id);
-		NETint32_t(&player);
+		w.NETint32_t(&obj_id);
+		w.NETint32_t(&player);
 	}
 	else
 	{
 		int32_t dummy = 0;
-		NETint32_t(&dummy);
-		NETint32_t(&dummy);
+		w.NETint32_t(&dummy);
+		w.NETint32_t(&dummy);
 	}
 }
 
 void sendSyncRequest(int32_t req_id, int32_t x, int32_t y, const BASE_OBJECT *psObj, const BASE_OBJECT *psObj2)
 {
-	NETbeginEncode(NETgameQueue(selectedPlayer), GAME_SYNC_REQUEST);
-	NETint32_t(&req_id);
-	NETint32_t(&x);
-	NETint32_t(&y);
-	sendObj(psObj);
-	sendObj(psObj2);
-	NETend();
+	auto w = NETbeginEncode(NETgameQueue(selectedPlayer), GAME_SYNC_REQUEST);
+	w.NETint32_t(&req_id);
+	w.NETint32_t(&x);
+	w.NETint32_t(&y);
+	sendObj(w, psObj);
+	sendObj(w, psObj2);
 }
 
 static inline std::chrono::seconds maxDataCheck2WaitSeconds()
@@ -929,9 +929,10 @@ static bool sendDataCheck2()
 				continue;
 			}
 
-			NETbeginEncode(NETnetQueue(player), NET_DATA_CHECK2);
-			NETuint32_t(&NetPlay.hostPlayer);
-			NETend();
+			{
+				auto w = NETbeginEncode(NETnetQueue(player), NET_DATA_CHECK2);
+				w.NETuint32_t(&NetPlay.hostPlayer);
+			}
 			if (!ingame.lastSentPlayerDataCheck2[player].has_value())
 			{
 				ingame.lastSentPlayerDataCheck2[player] = now;
@@ -942,31 +943,30 @@ static bool sendDataCheck2()
 	}
 
 	// For a player, respond to the host
-	NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_DATA_CHECK2);		// only need to send to HOST
-	NETuint32_t(&selectedPlayer);
-	NETuint32_t(&realSelectedPlayer);
+	auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_DATA_CHECK2);		// only need to send to HOST
+	w.NETuint32_t(&selectedPlayer);
+	w.NETuint32_t(&realSelectedPlayer);
 	std::unordered_map<uint16_t, uint32_t> layers;
 	widgForEachOverlayScreen([&layers](const std::shared_ptr<W_SCREEN> &pScreen, uint16_t zOrder) -> bool {
 		layers[zOrder]++;
 		return true;
 	});
 	uint32_t layersSize = static_cast<uint32_t>(layers.size());
-	NETuint32_t(&layersSize);
+	w.NETuint32_t(&layersSize);
 	for (auto& layer : layers)
 	{
 		uint16_t zOrder = layer.first;
-		NETuint16_t(&zOrder);
-		NETuint32_t(&layer.second);
+		w.NETuint16_t(&zOrder);
+		w.NETuint32_t(&layer.second);
 	}
 	for (size_t i = 0; i < DATA_MAXDATA; i++)
 	{
-		NETuint32_t(&DataHash[i]);
+		w.NETuint32_t(&DataHash[i]);
 	}
 	int8_t aiIndex = NetPlay.players[realSelectedPlayer].ai;
-	NETint8_t(&aiIndex);
+	w.NETint8_t(&aiIndex);
 	bool bValue = godMode;
-	NETbool(&bValue);
-	NETend();
+	w.NETbool(&bValue);
 	return true;
 }
 
@@ -983,34 +983,36 @@ static bool recvDataCheck2(NETQUEUE queue)
 	if (!NetPlay.isHost) // the host can send NET_DATA_CHECK2 messages to clients to request a check
 	{
 		ASSERT_OR_RETURN(false, NetPlay.hostPlayer == queue.index, "Non-host player (%u) is sending NET_DATA_CHECK2 to us??", queue.index);
-		NETbeginDecode(queue, NET_DATA_CHECK2);
-		NETuint32_t(&recvSelectedPlayer);
-		NETend();
+		{
+			auto r = NETbeginDecode(queue, NET_DATA_CHECK2);
+			r.NETuint32_t(&recvSelectedPlayer);
+		}
 		ASSERT_OR_RETURN(false, NetPlay.hostPlayer == recvSelectedPlayer, "Non-host player (selectedPlayer: %u) is sending NET_DATA_CHECK2 to us??", recvSelectedPlayer);
 		sendDataCheck2();
 		return true;
 	}
 
-	NETbeginDecode(queue, NET_DATA_CHECK2);
-	NETuint32_t(&recvSelectedPlayer);
-	NETuint32_t(&recvRealSelectedPlayer);
 	uint32_t layersSize = 0;
 	uint16_t zOrder = 0;
 	uint32_t layerCount = 0;
-	NETuint32_t(&layersSize);
-	for (uint32_t i = 0; i < layersSize; ++i)
 	{
-		NETuint16_t(&zOrder);
-		NETuint32_t(&layerCount);
-		layers[zOrder] = layerCount;
+		auto r = NETbeginDecode(queue, NET_DATA_CHECK2);
+		r.NETuint32_t(&recvSelectedPlayer);
+		r.NETuint32_t(&recvRealSelectedPlayer);
+		r.NETuint32_t(&layersSize);
+		for (uint32_t i = 0; i < layersSize; ++i)
+		{
+			r.NETuint16_t(&zOrder);
+			r.NETuint32_t(&layerCount);
+			layers[zOrder] = layerCount;
+		}
+		for (size_t i = 0; i < DATA_MAXDATA; ++i)
+		{
+			r.NETuint32_t(&tempBuffer[i]);
+		}
+		r.NETint8_t(&aiIndex);
+		r.NETbool(&recvGM);
 	}
-	for (size_t i = 0; i < DATA_MAXDATA; ++i)
-	{
-		NETuint32_t(&tempBuffer[i]);
-	}
-	NETint8_t(&aiIndex);
-	NETbool(&recvGM);
-	NETend();
 
 	if (player >= MAX_CONNECTED_PLAYERS) // invalid player number.
 	{
@@ -1395,11 +1397,10 @@ bool recvMessage()
 			{
 				uint32_t player_id;
 
-				NETbeginDecode(queue, NET_PLAYER_DROPPED);
 				{
-					NETuint32_t(&player_id);
+					auto r = NETbeginDecode(queue, NET_PLAYER_DROPPED);
+					r.NETuint32_t(&player_id);
 				}
-				NETend();
 
 				if (player_id >= MAX_CONNECTED_PLAYERS)
 				{
@@ -1431,10 +1432,11 @@ bool recvMessage()
 
 				resetReadyStatus(false);
 
-				NETbeginDecode(queue, NET_PLAYERRESPONDING);
-				// the player that has just responded
-				NETuint32_t(&player_id);
-				NETend();
+				{
+					auto r = NETbeginDecode(queue, NET_PLAYERRESPONDING);
+					// the player that has just responded
+					r.NETuint32_t(&player_id);
+				}
 				if (player_id >= MAX_CONNECTED_PLAYERS)
 				{
 					debug(LOG_ERROR, "Bad NET_PLAYERRESPONDING received, ID is %d", (int)player_id);
@@ -1488,11 +1490,12 @@ bool recvMessage()
 				char reason[MAX_KICK_REASON];
 				LOBBY_ERROR_TYPES KICK_TYPE = ERROR_NOERROR;
 
-				NETbeginDecode(queue, NET_KICK);
-				NETuint32_t(&player_id);
-				NETstring(reason, MAX_KICK_REASON);
-				NETenum(&KICK_TYPE);
-				NETend();
+				{
+					auto r = NETbeginDecode(queue, NET_KICK);
+					r.NETuint32_t(&player_id);
+					r.NETstring(reason, MAX_KICK_REASON);
+					r.NETenum(&KICK_TYPE);
+				}
 
 				if (player_id == NetPlay.hostPlayer)
 				{
@@ -1586,11 +1589,9 @@ void HandleBadParam(const char *msg, const int from, const int actual)
 bool SendResearch(uint8_t player, uint32_t index, bool trigger)
 {
 	// Send the player that is researching the topic and the topic itself
-	NETbeginEncode(NETgameQueue(selectedPlayer), GAME_DEBUG_FINISH_RESEARCH);
-	NETuint8_t(&player);
-	NETuint32_t(&index);
-	NETend();
-
+	auto w = NETbeginEncode(NETgameQueue(selectedPlayer), GAME_DEBUG_FINISH_RESEARCH);
+	w.NETuint8_t(&player);
+	w.NETuint32_t(&index);
 	return true;
 }
 
@@ -1602,10 +1603,11 @@ static bool recvResearch(NETQUEUE queue)
 	int				i;
 	PLAYER_RESEARCH	*pPlayerRes;
 
-	NETbeginDecode(queue, GAME_DEBUG_FINISH_RESEARCH);
-	NETuint8_t(&player);
-	NETuint32_t(&index);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, GAME_DEBUG_FINISH_RESEARCH);
+		r.NETuint8_t(&player);
+		r.NETuint32_t(&index);
+	}
 
 	const DebugInputManager& dbgInputManager = gInputManager.debugManager();
 	if (!dbgInputManager.debugMappingsAllowed() && bMultiPlayer)
@@ -1662,25 +1664,26 @@ bool sendResearchStatus(const STRUCTURE *psBuilding, uint32_t index, uint8_t pla
 		return true;
 	}
 
-	NETbeginEncode(NETgameQueue(selectedPlayer), GAME_RESEARCHSTATUS);
-	NETuint8_t(&player);
-	NETbool(&bStart);
-
-	// If we know the building researching it then send its ID
-	if (psBuilding)
 	{
-		uint32_t buildingID = psBuilding->id;
-		NETuint32_t(&buildingID);
-	}
-	else
-	{
-		uint32_t zero = 0;
-		NETuint32_t(&zero);
-	}
+		auto w = NETbeginEncode(NETgameQueue(selectedPlayer), GAME_RESEARCHSTATUS);
+		w.NETuint8_t(&player);
+		w.NETbool(&bStart);
 
-	// Finally the topic in question
-	NETuint32_t(&index);
-	NETend();
+		// If we know the building researching it then send its ID
+		if (psBuilding)
+		{
+			uint32_t buildingID = psBuilding->id;
+			w.NETuint32_t(&buildingID);
+		}
+		else
+		{
+			uint32_t zero = 0;
+			w.NETuint32_t(&zero);
+		}
+
+		// Finally the topic in question
+		w.NETuint32_t(&index);
+	}
 
 	// Tell UI to remove from the list of available research.
 	MakeResearchStartedPending(&asPlayerResList[player][index]);
@@ -1718,12 +1721,13 @@ bool recvResearchStatus(NETQUEUE queue)
 	bool bStart = false;
 	uint32_t			index, structRef;
 
-	NETbeginDecode(queue, GAME_RESEARCHSTATUS);
-	NETuint8_t(&player);
-	NETbool(&bStart);
-	NETuint32_t(&structRef);
-	NETuint32_t(&index);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, GAME_RESEARCHSTATUS);
+		r.NETuint8_t(&player);
+		r.NETbool(&bStart);
+		r.NETuint32_t(&structRef);
+		r.NETuint32_t(&index);
+	}
 
 	syncDebug("player%d, bStart%d, structRef%u, index%u", player, bStart, structRef, index);
 
@@ -1868,22 +1872,22 @@ NetworkTextMessage::NetworkTextMessage(int32_t messageSender, char const *messag
 
 void NetworkTextMessage::enqueue(NETQUEUE queue)
 {
-	NETbeginEncode(queue, NET_TEXTMSG);
-	NETint32_t(&sender);
-	NETbool(&teamSpecific);
-	NETstring(text, MAX_CONSOLE_STRING_LENGTH);
-	NETend();
+	auto w = NETbeginEncode(queue, NET_TEXTMSG);
+	w.NETint32_t(&sender);
+	w.NETbool(&teamSpecific);
+	w.NETstring(text, MAX_CONSOLE_STRING_LENGTH);
 }
 
 bool NetworkTextMessage::receive(NETQUEUE queue)
 {
 	memset(text, 0x0, sizeof(text));
 
-	NETbeginDecode(queue, NET_TEXTMSG);
-	NETint32_t(&sender);
-	NETbool(&teamSpecific);
-	NETstring(text, MAX_CONSOLE_STRING_LENGTH);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, NET_TEXTMSG);
+		r.NETint32_t(&sender);
+		r.NETbool(&teamSpecific);
+		r.NETstring(text, MAX_CONSOLE_STRING_LENGTH);
+	}
 
 	if (whosResponsible(sender) != queue.index)
 	{
@@ -1953,16 +1957,15 @@ bool sendBeacon(int32_t locX, int32_t locY, int32_t forPlayer, int32_t sender, c
 
 	// I assume this is correct, looks like it sends it to ONLY that person, and the routine
 	// kf_AddHelpBlip() iterates for each player it needs.
-	NETbeginEncode(NETnetQueue(sendPlayer), NET_BEACONMSG);    // send to the player who is hosting 'to' player (might be himself if human and not AI)
-	NETint32_t(&sender);                                // save the actual sender
+	auto w = NETbeginEncode(NETnetQueue(sendPlayer), NET_BEACONMSG);    // send to the player who is hosting 'to' player (might be himself if human and not AI)
+	w.NETint32_t(&sender);                                // save the actual sender
 
 	// save the actual player that is to get this msg on the source machine (source can host many AIs)
-	NETint32_t(&forPlayer);                             // save the actual receiver (might not be the same as the one we are actually sending to, in case of AIs)
-	NETint32_t(&locX);                                  // save location
-	NETint32_t(&locY);
+	w.NETint32_t(&forPlayer);                             // save the actual receiver (might not be the same as the one we are actually sending to, in case of AIs)
+	w.NETint32_t(&locX);                                  // save location
+	w.NETint32_t(&locY);
 
-	NETstring(pStr, MAX_CONSOLE_STRING_LENGTH); // copy message in.
-	NETend();
+	w.NETstring(pStr, MAX_CONSOLE_STRING_LENGTH); // copy message in.
 
 	return true;
 }
@@ -2009,11 +2012,12 @@ bool recvTextMessageAI(NETQUEUE queue)
 	char	msg[MAX_CONSOLE_STRING_LENGTH];
 	char	newmsg[MAX_CONSOLE_STRING_LENGTH];
 
-	NETbeginDecode(queue, NET_AITEXTMSG);
-	NETuint32_t(&sender);			//in-game player index ('normal' one)
-	NETuint32_t(&receiver);			//in-game player index
-	NETstring(newmsg, MAX_CONSOLE_STRING_LENGTH);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, NET_AITEXTMSG);
+		r.NETuint32_t(&sender);			//in-game player index ('normal' one)
+		r.NETuint32_t(&receiver);			//in-game player index
+		r.NETstring(newmsg, MAX_CONSOLE_STRING_LENGTH);
+	}
 
 	if (whosResponsible(sender) != queue.index)
 	{
@@ -2036,10 +2040,11 @@ bool recvSpecInGameTextMessage(NETQUEUE queue)
 	UDWORD	sender;
 	char	newmsg[MAX_CONSOLE_STRING_LENGTH] = {};
 
-	NETbeginDecode(queue, NET_SPECTEXTMSG);
-	NETuint32_t(&sender);			//in-game player index ('normal' one)
-	NETstring(newmsg, MAX_CONSOLE_STRING_LENGTH);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, NET_SPECTEXTMSG);
+		r.NETuint32_t(&sender);			//in-game player index ('normal' one)
+		r.NETstring(newmsg, MAX_CONSOLE_STRING_LENGTH);
+	}
 
 	if (whosResponsible(sender) != queue.index)
 	{
@@ -2089,9 +2094,10 @@ bool recvDestroyFeature(NETQUEUE queue)
 	FEATURE *pF;
 	uint32_t	id;
 
-	NETbeginDecode(queue, GAME_DEBUG_REMOVE_FEATURE);
-	NETuint32_t(&id);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, GAME_DEBUG_REMOVE_FEATURE);
+		r.NETuint32_t(&id);
+	}
 
 	const DebugInputManager& dbgInputManager = gInputManager.debugManager();
 	if (!dbgInputManager.debugMappingsAllowed() && bMultiPlayer)
@@ -2126,9 +2132,10 @@ bool recvMapFileRequested(NETQUEUE queue)
 
 	Sha256 hash;
 	hash.setZero();
-	NETbeginDecode(queue, NET_FILE_REQUESTED);
-	NETbin(hash.bytes, hash.Bytes);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, NET_FILE_REQUESTED);
+		r.NETbin(hash.bytes, hash.Bytes);
+	}
 
 	auto files = NetPlay.players[player].wzFiles;
 	ASSERT_OR_RETURN(false, files != nullptr, "wzFiles is uninitialized?? (Player: %" PRIu32 ")", player);
@@ -2176,6 +2183,7 @@ bool recvMapFileRequested(NETQUEUE queue)
 		// NOTE: if we get here, then the game is basically over, The host can't send the file for whatever reason...
 		// Which also means, that we can't continue.
 		debug(LOG_NET, "***Host has a file issue, and is being forced to quit!***");
+		// FIXME!!!!!!!!!!!
 		NETbeginEncode(NETbroadcastQueue(), NET_HOST_DROPPED);
 		NETend();
 		abort();
@@ -2449,13 +2457,14 @@ static bool recvBeacon(NETQUEUE queue)
 	int32_t sender, receiver, locX, locY;
 	char    msg[MAX_CONSOLE_STRING_LENGTH];
 
-	NETbeginDecode(queue, NET_BEACONMSG);
-	NETint32_t(&sender);            // the actual sender
-	NETint32_t(&receiver);          // the actual receiver (might not be the same as the one we are actually sending to, in case of AIs)
-	NETint32_t(&locX);
-	NETint32_t(&locY);
-	NETstring(msg, sizeof(msg));    // Receive the actual message
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, NET_BEACONMSG);
+		r.NETint32_t(&sender);            // the actual sender
+		r.NETint32_t(&receiver);          // the actual receiver (might not be the same as the one we are actually sending to, in case of AIs)
+		r.NETint32_t(&locX);
+		r.NETint32_t(&locY);
+		r.NETstring(msg, sizeof(msg));    // Receive the actual message
+	}
 
 	if (!canGiveOrdersFor(queue.index, sender))
 	{

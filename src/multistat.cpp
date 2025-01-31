@@ -252,29 +252,27 @@ bool sendMultiStats(uint32_t playerIndex, optional<uint32_t> recipientPlayerInde
 		queue = NETnetQueue(recipientPlayerIndex.value());
 	}
 	// Now send it to all other players
-	NETbeginEncode(queue, NET_PLAYER_STATS);
+	auto w = NETbeginEncode(queue, NET_PLAYER_STATS);
 	// Send the ID of the player's stats we're updating
-	NETuint32_t(&playerIndex);
+	w.NETuint32_t(&playerIndex);
 
-	NETauto(playerStats[playerIndex].autorating);
+	w.NETauto(playerStats[playerIndex].autorating);
 
 	// Send over the actual stats
-	NETuint32_t(&playerStats[playerIndex].played);
-	NETuint32_t(&playerStats[playerIndex].wins);
-	NETuint32_t(&playerStats[playerIndex].losses);
-	NETuint32_t(&playerStats[playerIndex].totalKills);
-	NETuint32_t(&playerStats[playerIndex].totalScore);
-	NETuint32_t(&playerStats[playerIndex].recentKills);
-	NETuint32_t(&playerStats[playerIndex].recentScore);
+	w.NETuint32_t(&playerStats[playerIndex].played);
+	w.NETuint32_t(&playerStats[playerIndex].wins);
+	w.NETuint32_t(&playerStats[playerIndex].losses);
+	w.NETuint32_t(&playerStats[playerIndex].totalKills);
+	w.NETuint32_t(&playerStats[playerIndex].totalScore);
+	w.NETuint32_t(&playerStats[playerIndex].recentKills);
+	w.NETuint32_t(&playerStats[playerIndex].recentScore);
 
 	EcKey::Key identity;
 	if (!playerStats[playerIndex].identity.empty())
 	{
 		identity = playerStats[playerIndex].identity.toBytes(EcKey::Public);
 	}
-	NETbytes(&identity);
-	NETend();
-
+	w.NETbytes(&identity);
 	return true;
 }
 
@@ -461,14 +459,13 @@ bool recvMultiStats(NETQUEUE queue)
 {
 	uint32_t playerIndex;
 
-	NETbeginDecode(queue, NET_PLAYER_STATS);
+	auto r = NETbeginDecode(queue, NET_PLAYER_STATS);
 	// Retrieve the ID number of the player for which we need to
 	// update the stats
-	NETuint32_t(&playerIndex);
+	r.NETuint32_t(&playerIndex);
 
 	if (playerIndex >= MAX_CONNECTED_PLAYERS)
 	{
-		NETend();
 		return false;
 	}
 
@@ -476,29 +473,28 @@ bool recvMultiStats(NETQUEUE queue)
 	if (playerIndex != queue.index && queue.index != NetPlay.hostPlayer)
 	{
 		HandleBadParam("NET_PLAYER_STATS given incorrect params.", playerIndex, queue.index);
-		NETend();
 		return false;
 	}
 
 	PLAYERSTATS::Autorating receivedAutorating;
-	NETauto(receivedAutorating);
+	r.NETauto(receivedAutorating);
 	bool processAutoratingData = false;
 
 	// we don't what to update ourselves, we already know our score (FIXME: rewrite setMultiStats())
 	if (!myResponsibility(playerIndex))
 	{
 		// Retrieve the actual stats
-		NETuint32_t(&playerStats[playerIndex].played);
-		NETuint32_t(&playerStats[playerIndex].wins);
-		NETuint32_t(&playerStats[playerIndex].losses);
-		NETuint32_t(&playerStats[playerIndex].totalKills);
-		NETuint32_t(&playerStats[playerIndex].totalScore);
-		NETuint32_t(&playerStats[playerIndex].recentKills);
-		NETuint32_t(&playerStats[playerIndex].recentScore);
+		r.NETuint32_t(&playerStats[playerIndex].played);
+		r.NETuint32_t(&playerStats[playerIndex].wins);
+		r.NETuint32_t(&playerStats[playerIndex].losses);
+		r.NETuint32_t(&playerStats[playerIndex].totalKills);
+		r.NETuint32_t(&playerStats[playerIndex].totalScore);
+		r.NETuint32_t(&playerStats[playerIndex].recentKills);
+		r.NETuint32_t(&playerStats[playerIndex].recentScore);
 
 		EcKey::Key identity;
-		NETbytes(&identity);
-		NETend();
+		r.NETbytes(&identity);
+		r.close()
 
 		if (multiStatsSetIdentity(playerIndex, identity, false))
 		{
@@ -508,7 +504,7 @@ bool recvMultiStats(NETQUEUE queue)
 	}
 	else
 	{
-		NETend();
+		r.close();
 		processAutoratingData = true;
 	}
 

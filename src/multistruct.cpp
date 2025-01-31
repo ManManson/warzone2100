@@ -82,12 +82,13 @@ bool recvBuildFinished(NETQUEUE queue)
 	uint32_t	type, typeindex;
 	uint8_t		player;
 
-	NETbeginDecode(queue, GAME_DEBUG_ADD_STRUCTURE);
-	NETuint32_t(&structId);	// get the struct id.
-	NETuint32_t(&type); 	// Kind of building.
-	NETPosition(&pos);      // pos
-	NETuint8_t(&player);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, GAME_DEBUG_ADD_STRUCTURE);
+		r.NETuint32_t(&structId);	// get the struct id.
+		r.NETuint32_t(&type); 	// Kind of building.
+		r.NETPosition(&pos);      // pos
+		r.NETuint8_t(&player);
+	}
 
 	ASSERT_OR_RETURN(false, player < MAX_PLAYERS, "invalid player %u", player);
 
@@ -162,9 +163,10 @@ bool recvDestroyStructure(NETQUEUE queue)
 	uint32_t structID;
 	STRUCTURE *psStruct;
 
-	NETbeginDecode(queue, GAME_DEBUG_REMOVE_STRUCTURE);
-	NETuint32_t(&structID);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, GAME_DEBUG_REMOVE_STRUCTURE);
+		r.NETuint32_t(&structID);
+	}
 
 	const DebugInputManager& dbgInputManager = gInputManager.debugManager();
 	if (!dbgInputManager.debugMappingsAllowed() && bMultiPlayer)
@@ -210,12 +212,13 @@ bool recvLasSat(NETQUEUE queue)
 	STRUCTURE	*psStruct;
 	uint32_t	id, targetid;
 
-	NETbeginDecode(queue, GAME_LASSAT);
-	NETuint8_t(&player);
-	NETuint32_t(&id);
-	NETuint32_t(&targetid);
-	NETuint8_t(&targetplayer);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, GAME_LASSAT);
+		r.NETuint8_t(&player);
+		r.NETuint32_t(&id);
+		r.NETuint32_t(&targetid);
+		r.NETuint8_t(&targetplayer);
+	}
 
 	psStruct = IdToStruct(id, player);
 	psObj	 = IdToPointer(targetid, targetplayer);
@@ -260,31 +263,30 @@ void sendStructureInfo(STRUCTURE *psStruct, STRUCTURE_INFO structureInfo_, DROID
 	uint32_t structId = psStruct->id;
 	uint8_t  structureInfo = structureInfo_;
 
-	NETbeginEncode(NETgameQueue(selectedPlayer), GAME_STRUCTUREINFO);
-	NETuint8_t(&player);
-	NETuint32_t(&structId);
-	NETuint8_t(&structureInfo);
+	auto w = NETbeginEncode(NETgameQueue(selectedPlayer), GAME_STRUCTUREINFO);
+	w.NETuint8_t(&player);
+	w.NETuint32_t(&structId);
+	w.NETuint8_t(&structureInfo);
 	if (structureInfo_ == STRUCTUREINFO_MANUFACTURE)
 	{
 		int32_t droidType = pT->droidType;
 		WzString name = pT->name;
-		NETwzstring(name);
-		NETuint32_t(&pT->multiPlayerID);
-		NETint32_t(&droidType);
-		NETuint8_t(&pT->asParts[COMP_BODY]);
-		NETuint8_t(&pT->asParts[COMP_BRAIN]);
-		NETuint8_t(&pT->asParts[COMP_PROPULSION]);
-		NETuint8_t(&pT->asParts[COMP_REPAIRUNIT]);
-		NETuint8_t(&pT->asParts[COMP_ECM]);
-		NETuint8_t(&pT->asParts[COMP_SENSOR]);
-		NETuint8_t(&pT->asParts[COMP_CONSTRUCT]);
-		NETint8_t(&pT->numWeaps);
+		w.NETwzstring(name);
+		w.NETuint32_t(&pT->multiPlayerID);
+		w.NETint32_t(&droidType);
+		w.NETuint8_t(&pT->asParts[COMP_BODY]);
+		w.NETuint8_t(&pT->asParts[COMP_BRAIN]);
+		w.NETuint8_t(&pT->asParts[COMP_PROPULSION]);
+		w.NETuint8_t(&pT->asParts[COMP_REPAIRUNIT]);
+		w.NETuint8_t(&pT->asParts[COMP_ECM]);
+		w.NETuint8_t(&pT->asParts[COMP_SENSOR]);
+		w.NETuint8_t(&pT->asParts[COMP_CONSTRUCT]);
+		w.NETint8_t(&pT->numWeaps);
 		for (int i = 0; i < pT->numWeaps; i++)
 		{
-			NETuint32_t(&pT->asWeaps[i]);
+			w.NETuint32_t(&pT->asWeaps[i]);
 		}
 	}
-	NETend();
 }
 
 void recvStructureInfo(NETQUEUE queue)
@@ -296,34 +298,35 @@ void recvStructureInfo(NETQUEUE queue)
 	DROID_TEMPLATE t, *pT = &t;
 	int32_t droidType;
 
-	NETbeginDecode(queue, GAME_STRUCTUREINFO);
-	NETuint8_t(&player);
-	NETuint32_t(&structId);
-	NETuint8_t(&structureInfo);
-	if (structureInfo == STRUCTUREINFO_MANUFACTURE)
 	{
-		WzString name;
-		NETwzstring(name);
-		pT->name = name;
-		NETuint32_t(&pT->multiPlayerID);
-		NETint32_t(&droidType);
-		NETuint8_t(&pT->asParts[COMP_BODY]);
-		NETuint8_t(&pT->asParts[COMP_BRAIN]);
-		NETuint8_t(&pT->asParts[COMP_PROPULSION]);
-		NETuint8_t(&pT->asParts[COMP_REPAIRUNIT]);
-		NETuint8_t(&pT->asParts[COMP_ECM]);
-		NETuint8_t(&pT->asParts[COMP_SENSOR]);
-		NETuint8_t(&pT->asParts[COMP_CONSTRUCT]);
-		NETint8_t(&pT->numWeaps);
-		ASSERT_OR_RETURN(, pT->numWeaps >= 0 && pT->numWeaps <= ARRAY_SIZE(pT->asWeaps), "Bad numWeaps %d", pT->numWeaps);
-		for (int i = 0; i < pT->numWeaps; i++)
+		auto r = NETbeginDecode(queue, GAME_STRUCTUREINFO);
+		r.NETuint8_t(&player);
+		r.NETuint32_t(&structId);
+		r.NETuint8_t(&structureInfo);
+		if (structureInfo == STRUCTUREINFO_MANUFACTURE)
 		{
-			NETuint32_t(&pT->asWeaps[i]);
+			WzString name;
+			r.NETwzstring(name);
+			pT->name = name;
+			r.NETuint32_t(&pT->multiPlayerID);
+			r.NETint32_t(&droidType);
+			r.NETuint8_t(&pT->asParts[COMP_BODY]);
+			r.NETuint8_t(&pT->asParts[COMP_BRAIN]);
+			r.NETuint8_t(&pT->asParts[COMP_PROPULSION]);
+			r.NETuint8_t(&pT->asParts[COMP_REPAIRUNIT]);
+			r.NETuint8_t(&pT->asParts[COMP_ECM]);
+			r.NETuint8_t(&pT->asParts[COMP_SENSOR]);
+			r.NETuint8_t(&pT->asParts[COMP_CONSTRUCT]);
+			r.NETint8_t(&pT->numWeaps);
+			ASSERT_OR_RETURN(, pT->numWeaps >= 0 && pT->numWeaps <= ARRAY_SIZE(pT->asWeaps), "Bad numWeaps %d", pT->numWeaps);
+			for (int i = 0; i < pT->numWeaps; i++)
+			{
+				r.NETuint32_t(&pT->asWeaps[i]);
+			}
+			pT->droidType = (DROID_TYPE)droidType;
+			pT = copyTemplate(player, pT);
 		}
-		pT->droidType = (DROID_TYPE)droidType;
-		pT = copyTemplate(player, pT);
 	}
-	NETend();
 
 	psStruct = IdToStruct(structId, player);
 

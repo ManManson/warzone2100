@@ -70,12 +70,13 @@ bool recvGift(NETQUEUE queue)
 	int		audioTrack;
 	uint32_t droidID;
 
-	NETbeginDecode(queue, GAME_GIFT);
-	NETuint8_t(&type);
-	NETuint8_t(&from);
-	NETuint8_t(&to);
-	NETuint32_t(&droidID);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, GAME_GIFT);
+		r.NETuint8_t(&type);
+		r.NETuint8_t(&from);
+		r.NETuint8_t(&to);
+		r.NETuint32_t(&droidID);
+	}
 
 	if (!canGiveOrdersFor(queue.index, from))
 	{
@@ -191,13 +192,13 @@ static void giftAutoGame(uint8_t from, uint8_t to, bool send)
 	if (send)
 	{
 		uint8_t subType = AUTOGAME_GIFT;
-
-		NETbeginEncode(NETgameQueue(selectedPlayer), GAME_GIFT);
-		NETuint8_t(&subType);
-		NETuint8_t(&from);
-		NETuint8_t(&to);
-		NETuint32_t(&dummy);
-		NETend();
+		{
+			auto w = NETbeginEncode(NETgameQueue(selectedPlayer), GAME_GIFT);
+			w.NETuint8_t(&subType);
+			w.NETuint8_t(&from);
+			w.NETuint8_t(&to);
+			w.NETuint32_t(&dummy);
+		}
 		debug(LOG_SYNC, "We (%d) are telling %d we want to enable/disable a autogame", from, to);
 	}
 	// If we are receiving the "gift"
@@ -222,13 +223,11 @@ void giftRadar(uint8_t from, uint8_t to, bool send)
 	if (send)
 	{
 		uint8_t subType = RADAR_GIFT;
-
-		NETbeginEncode(NETgameQueue(selectedPlayer), GAME_GIFT);
-		NETuint8_t(&subType);
-		NETuint8_t(&from);
-		NETuint8_t(&to);
-		NETuint32_t(&dummy);
-		NETend();
+		auto w = NETbeginEncode(NETgameQueue(selectedPlayer), GAME_GIFT);
+		w.NETuint8_t(&subType);
+		w.NETuint8_t(&from);
+		w.NETuint8_t(&to);
+		w.NETuint32_t(&dummy);
 	}
 	// If we are receiving the gift
 	else
@@ -333,13 +332,14 @@ static void sendGiftDroids(uint8_t from, uint8_t to)
 		}
 		if ((*psD)->selected)
 		{
-			NETbeginEncode(NETgameQueue(selectedPlayer), GAME_GIFT);
-			NETuint8_t(&giftType);
-			NETuint8_t(&from);
-			NETuint8_t(&to);
-			// Add the droid to the packet
-			NETuint32_t(&(*psD)->id);
-			NETend();
+			{
+				auto w = NETbeginEncode(NETgameQueue(selectedPlayer), GAME_GIFT);
+				w.NETuint8_t(&giftType);
+				w.NETuint8_t(&from);
+				w.NETuint8_t(&to);
+				// Add the droid to the packet
+				w.NETuint32_t(&(*psD)->id);
+			}
 
 			// Decrement the number of droids left to send
 			--totalToSend;
@@ -358,12 +358,11 @@ static void giftResearch(uint8_t from, uint8_t to, bool send)
 	{
 		uint8_t giftType = RESEARCH_GIFT;
 
-		NETbeginEncode(NETgameQueue(selectedPlayer), GAME_GIFT);
-		NETuint8_t(&giftType);
-		NETuint8_t(&from);
-		NETuint8_t(&to);
-		NETuint32_t(&dummy);
-		NETend();
+		auto w = NETbeginEncode(NETgameQueue(selectedPlayer), GAME_GIFT);
+		w.NETuint8_t(&giftType);
+		w.NETuint8_t(&from);
+		w.NETuint8_t(&to);
+		w.NETuint32_t(&dummy);
 	}
 	else if (alliancesCanGiveResearchAndRadar(game.alliance))
 	{
@@ -393,12 +392,11 @@ void giftPower(uint8_t from, uint8_t to, uint32_t amount, bool send)
 	{
 		uint8_t giftType = POWER_GIFT;
 
-		NETbeginEncode(NETgameQueue(selectedPlayer), GAME_GIFT);
-		NETuint8_t(&giftType);
-		NETuint8_t(&from);
-		NETuint8_t(&to);
-		NETuint32_t(&amount);
-		NETend();
+		auto w = NETbeginEncode(NETgameQueue(selectedPlayer), GAME_GIFT);
+		w.NETuint8_t(&giftType);
+		w.NETuint8_t(&from);
+		w.NETuint8_t(&to);
+		w.NETuint32_t(&amount);
 	}
 	else
 	{
@@ -637,12 +635,11 @@ void formAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio, bool allow
 
 void sendAlliance(uint8_t from, uint8_t to, uint8_t state, int32_t value)
 {
-	NETbeginEncode(NETgameQueue(selectedPlayer), GAME_ALLIANCE);
-	NETuint8_t(&from);
-	NETuint8_t(&to);
-	NETuint8_t(&state);
-	NETint32_t(&value);
-	NETend();
+	auto w = NETbeginEncode(NETgameQueue(selectedPlayer), GAME_ALLIANCE);
+	w.NETuint8_t(&from);
+	w.NETuint8_t(&to);
+	w.NETuint8_t(&state);
+	w.NETint32_t(&value);
 }
 
 bool recvAlliance(NETQUEUE queue, bool allowAudio)
@@ -650,12 +647,13 @@ bool recvAlliance(NETQUEUE queue, bool allowAudio)
 	uint8_t to, from, state;
 	int32_t value;
 
-	NETbeginDecode(queue, GAME_ALLIANCE);
-	NETuint8_t(&from);
-	NETuint8_t(&to);
-	NETuint8_t(&state);
-	NETint32_t(&value);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, GAME_ALLIANCE);
+		r.NETuint8_t(&from);
+		r.NETuint8_t(&to);
+		r.NETuint8_t(&state);
+		r.NETint32_t(&value);
+	}
 
 	if (!canGiveOrdersFor(queue.index, from))
 	{
@@ -760,28 +758,24 @@ void  technologyGiveAway(const STRUCTURE *pS)
  */
 void sendMultiPlayerFeature(uint32_t ref, uint32_t x, uint32_t y, uint32_t id)
 {
-	NETbeginEncode(NETgameQueue(selectedPlayer), GAME_DEBUG_ADD_FEATURE);
-	{
-		NETuint32_t(&ref);
-		NETuint32_t(&x);
-		NETuint32_t(&y);
-		NETuint32_t(&id);
-	}
-	NETend();
+	auto w = NETbeginEncode(NETgameQueue(selectedPlayer), GAME_DEBUG_ADD_FEATURE);
+	w.NETuint32_t(&ref);
+	w.NETuint32_t(&x);
+	w.NETuint32_t(&y);
+	w.NETuint32_t(&id);
 }
 
 void recvMultiPlayerFeature(NETQUEUE queue)
 {
 	uint32_t ref = 0xff, x = 0, y = 0, id = 0;
 
-	NETbeginDecode(queue, GAME_DEBUG_ADD_FEATURE);
 	{
-		NETuint32_t(&ref);
-		NETuint32_t(&x);
-		NETuint32_t(&y);
-		NETuint32_t(&id);
+		auto r = NETbeginDecode(queue, GAME_DEBUG_ADD_FEATURE);
+		r.NETuint32_t(&ref);
+		r.NETuint32_t(&x);
+		r.NETuint32_t(&y);
+		r.NETuint32_t(&id);
 	}
-	NETend();
 
 	const DebugInputManager& dbgInputManager = gInputManager.debugManager();
 	if (!dbgInputManager.debugMappingsAllowed() && bMultiPlayer)

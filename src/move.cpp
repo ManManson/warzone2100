@@ -123,6 +123,7 @@ bool moveSetFormationSpeedLimiting(uint32_t player, bool enabled)
 		auto currentPlayer = static_cast<uint8_t>(player);
 		uint8_t optType = SYNC_OPT_FORMATION_SPEED_LIMITING;
 		uint8_t value = (enabled) ? 1 : 0;
+		// FIXME!!!!!!!!!!
 		NETbeginEncode(NETgameQueue(currentPlayer), GAME_SYNC_OPT_CHANGE);
 		NETuint8_t(&currentPlayer);		// player
 		NETuint8_t(&optType);
@@ -162,11 +163,12 @@ bool recvSyncOptChange(NETQUEUE queue)
 	uint8_t optType;
 	uint8_t	value;
 
-	NETbeginDecode(queue, GAME_SYNC_OPT_CHANGE);
-	NETuint8_t(&player); // the player
-	NETuint8_t(&optType);
-	NETuint8_t(&value);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, GAME_SYNC_OPT_CHANGE);
+		r.NETuint8_t(&player); // the player
+		r.NETuint8_t(&optType);
+		r.NETuint8_t(&value);
+	}
 
 	if (!canGiveOrdersFor(queue.index, player))
 	{

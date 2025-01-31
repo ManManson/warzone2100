@@ -120,14 +120,13 @@ void resetLobbyChangePlayerVote(uint32_t player)
 
 void sendLobbyChangeVoteData(uint8_t currentVote)
 {
-	NETbeginEncode(NETbroadcastQueue(), NET_VOTE);
-	NETuint32_t(&selectedPlayer);
+	auto w = NETbeginEncode(NETbroadcastQueue(), NET_VOTE);
+	w.NETuint32_t(&selectedPlayer);
 	uint32_t voteID = 0;
-	NETuint32_t(&voteID);
+	w.NETuint32_t(&voteID);
 	uint8_t voteType = static_cast<uint8_t>(NetVoteType::LOBBY_SETTING_CHANGE);
-	NETuint8_t(&voteType);
-	NETuint8_t(&currentVote);
-	NETend();
+	w.NETuint8_t(&voteType);
+	w.NETuint8_t(&currentVote);
 }
 
 uint8_t getLobbyChangeVoteTotal()
@@ -172,13 +171,12 @@ static void recvLobbyChangeVote(uint32_t player, uint8_t newVote)
 
 void sendPlayerKickedVote(uint32_t voteID, uint8_t newVote)
 {
-	NETbeginEncode(NETbroadcastQueue(), NET_VOTE);
-	NETuint32_t(&selectedPlayer);
-	NETuint32_t(&voteID);
+	auto w = NETbeginEncode(NETbroadcastQueue(), NET_VOTE);
+	w.NETuint32_t(&selectedPlayer);
+	w.NETuint32_t(&voteID);
 	uint8_t voteType = static_cast<uint8_t>(NetVoteType::KICK_PLAYER);
-	NETuint8_t(&voteType);
-	NETuint8_t(&newVote);
-	NETend();
+	w.NETuint8_t(&voteType);
+	w.NETuint8_t(&newVote);
 }
 
 static void recvPlayerKickVote(uint32_t voteID, uint32_t sender, uint8_t newVote)
@@ -237,12 +235,13 @@ bool recvVote(NETQUEUE queue)
 	uint8_t voteType = 0;
 	uint8_t newVote = 0;
 
-	NETbeginDecode(queue, NET_VOTE);
-	NETuint32_t(&player);
-	NETuint32_t(&voteID);
-	NETuint8_t(&voteType);
-	NETuint8_t(&newVote);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, NET_VOTE);
+		r.NETuint32_t(&player);
+		r.NETuint32_t(&voteID);
+		r.NETuint8_t(&voteType);
+		r.NETuint8_t(&newVote);
+	}
 
 	if (player >= MAX_PLAYERS)
 	{
@@ -376,13 +375,12 @@ static bool sendVoteRequest(NetVoteType type, uint32_t voteID = 0, uint32_t targ
 	ASSERT_HOST_ONLY(return false);
 
 	//setup a vote popup for the clients
-	NETbeginEncode(NETbroadcastQueue(), NET_VOTE_REQUEST);
-	NETuint32_t(&selectedPlayer);
-	NETuint32_t(&targetPlayer);
-	NETuint32_t(&voteID);
+	auto w = NETbeginEncode(NETbroadcastQueue(), NET_VOTE_REQUEST);
+	w.NETuint32_t(&selectedPlayer);
+	w.NETuint32_t(&targetPlayer);
+	w.NETuint32_t(&voteID);
 	uint8_t voteType = static_cast<uint8_t>(type);
-	NETuint8_t(&voteType);
-	NETend();
+	w.NETuint8_t(&voteType);
 
 	return true;
 }
@@ -393,12 +391,13 @@ bool recvVoteRequest(NETQUEUE queue)
 	uint32_t targetPlayer = MAX_PLAYERS;
 	uint32_t voteID = 0;
 	uint8_t voteType = 0;
-	NETbeginDecode(queue, NET_VOTE_REQUEST);
-	NETuint32_t(&sender);
-	NETuint32_t(&targetPlayer);
-	NETuint32_t(&voteID);
-	NETuint8_t(&voteType);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, NET_VOTE_REQUEST);
+		r.NETuint32_t(&sender);
+		r.NETuint32_t(&targetPlayer);
+		r.NETuint32_t(&voteID);
+		r.NETuint8_t(&voteType);
+	}
 
 	if (sender >= MAX_PLAYERS)
 	{

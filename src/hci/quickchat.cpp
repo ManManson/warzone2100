@@ -3056,6 +3056,7 @@ void sendQuickChat(WzQuickChatMessage message, uint32_t fromPlayer, WzQuickChatT
 		}
 		else
 		{
+			// FIXME!!!!!!!!!
 			NETbeginEncode(queue, NET_QUICK_CHAT_MSG);
 		}
 
@@ -3168,7 +3169,7 @@ bool recvQuickChat(NETQUEUE queue)
 	optional<WzQuickChatMessageData> messageData;
 
 	WzQuickChatMessage msgEnumVal;
-
+	// FIXME!!!!!!!!!!!
 	if (expectingSecuredMessage)
 	{
 		if (!NETbeginDecodeSecured(queue, NET_QUICK_CHAT_MSG))

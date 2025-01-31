@@ -429,11 +429,10 @@ static void sendDebugSync(uint8_t* buf, uint32_t bufLen, uint32_t time)
 	// Save our own, before sending, so that if we have 2 clients running on the same computer, to guarantee that it is done saving before the other client saves on top.
 	dumpDebugSync(buf, bufLen, time, selectedPlayer);
 
-	NETbeginEncode(NETbroadcastQueue(), NET_DEBUG_SYNC);
-	NETuint32_t(&time);
-	NETuint32_t(&bufLen);
-	NETbin(buf, bufLen);
-	NETend();
+	auto w = NETbeginEncode(NETbroadcastQueue(), NET_DEBUG_SYNC);
+	w.NETuint32_t(&time);
+	w.NETuint32_t(&bufLen);
+	w.NETbin(buf, bufLen);
 }
 
 static uint8_t debugSyncTmpBuf[2000000];
@@ -478,12 +477,13 @@ void recvDebugSync(NETQUEUE queue)
 	uint32_t time = 0;
 	uint32_t bufLen = 0;
 
-	NETbeginDecode(queue, NET_DEBUG_SYNC);
-	NETuint32_t(&time);
-	NETuint32_t(&bufLen);
-	bufLen = MIN(bufLen, ARRAY_SIZE(debugSyncTmpBuf));
-	NETbin(debugSyncTmpBuf, bufLen);
-	NETend();
+	{
+		auto r = NETbeginDecode(queue, NET_DEBUG_SYNC);
+		r.NETuint32_t(&time);
+		r.NETuint32_t(&bufLen);
+		bufLen = MIN(bufLen, ARRAY_SIZE(debugSyncTmpBuf));
+		r.NETbin(debugSyncTmpBuf, bufLen);
+	}
 
 	dumpDebugSync(debugSyncTmpBuf, bufLen, time, queue.index);
 

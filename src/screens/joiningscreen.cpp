@@ -1453,11 +1453,12 @@ void WzJoiningGameScreen_HandlerRoot::processJoining()
 			uint8_t index;
 			uint32_t hostPlayer = MAX_CONNECTED_PLAYERS + 1; // invalid host index
 
-			NETbeginDecode(tmpJoiningQUEUE, NET_ACCEPTED);
-			// Retrieve the player ID the game host arranged for us
-			NETuint8_t(&index);
-			NETuint32_t(&hostPlayer); // and the host player idx
-			NETend();
+			{
+				auto r = NETbeginDecode(tmpJoiningQUEUE, NET_ACCEPTED);
+				// Retrieve the player ID the game host arranged for us
+				r.NETuint8_t(&index);
+				r.NETuint32_t(&hostPlayer); // and the host player idx
+			}
 			NETpop(tmpJoiningQUEUE);
 
 			if (hostPlayer >= MAX_CONNECTED_PLAYERS)
@@ -1496,10 +1497,11 @@ void WzJoiningGameScreen_HandlerRoot::processJoining()
 			uint8_t rejection = 0;
 			char reason[MAX_JOIN_REJECT_REASON] = {};
 
-			NETbeginDecode(tmpJoiningQUEUE, NET_REJECTED);
-			NETuint8_t(&rejection);
-			NETstring(reason, MAX_JOIN_REJECT_REASON);
-			NETend();
+			{
+				auto r = NETbeginDecode(tmpJoiningQUEUE, NET_REJECTED);
+				r.NETuint8_t(&rejection);
+				r.NETstring(reason, MAX_JOIN_REJECT_REASON);
+			}
 			NETpop(tmpJoiningQUEUE);
 
 			debug(LOG_NET, "NET_REJECTED received. Error code: %u", (unsigned int) rejection);
@@ -1530,9 +1532,10 @@ void WzJoiningGameScreen_HandlerRoot::processJoining()
 			updateJoiningStatus(_("Requesting to join game"));
 
 			std::vector<uint8_t> challenge(NETgetJoinConnectionNETPINGChallengeSize(), 0);
-			NETbeginDecode(tmpJoiningQUEUE, NET_PING);
-			NETbytes(&challenge, NETgetJoinConnectionNETPINGChallengeSize() * 4);
-			NETend();
+			{
+				auto r = NETbeginDecode(tmpJoiningQUEUE, NET_PING);
+				r.NETbytes(&challenge, NETgetJoinConnectionNETPINGChallengeSize() * 4);
+			}
 			NETpop(tmpJoiningQUEUE);
 
 			EcKey::Sig challengeResponse = playerIdentity.sign(challenge.data(), challenge.size());
@@ -1540,14 +1543,17 @@ void WzJoiningGameScreen_HandlerRoot::processJoining()
 			uint8_t playerType = (!asSpectator) ? NET_JOIN_PLAYER : NET_JOIN_SPECTATOR;
 			const auto& modListStr = getModList();
 
-			NETbeginEncode(tmpJoiningQUEUE, NET_JOIN);
-			NETstring(playerName.toUtf8().c_str(), std::min<uint16_t>(StringSize, playerName.toUtf8().size() + 1));
-			NETstring(modListStr.c_str(), std::min<uint16_t>(modlist_string_size, modListStr.size() + 1));
-			NETstring(gamePassword, sizeof(gamePassword));
-			NETuint8_t(&playerType);
-			NETbytes(&identity);
-			NETbytes(&challengeResponse);
-			NETend(); // because of QUEUE_TRANSIENT_JOIN type, this won't trigger a NETsend() - we must write ourselves
+			{
+				auto w = NETbeginEncode(tmpJoiningQUEUE, NET_JOIN);
+				w.NETstring(playerName.toUtf8().c_str(), std::min<uint16_t>(StringSize, playerName.toUtf8().size() + 1));
+				w.NETstring(modListStr.c_str(), std::min<uint16_t>(modlist_string_size, modListStr.size() + 1));
+				w.NETstring(gamePassword, sizeof(gamePassword));
+				w.NETuint8_t(&playerType);
+				w.NETbytes(&identity);
+				w.NETbytes(&challengeResponse);
+				// FIXME!!!!!!!!!!
+				//NETend(); // because of QUEUE_TRANSIENT_JOIN type, this won't trigger a NETsend() - we must write ourselves
+			}
 			joiningSocketNETsend();
 			// and now we wait for the host to respond with a further message
 			return;

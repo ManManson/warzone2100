@@ -137,11 +137,10 @@ void InGameChatMessage::sendToAiPlayer(uint32_t receiver)
 		return;
 	}
 
-	NETbeginEncode(NETnetQueue(responsiblePlayer), NET_AITEXTMSG);
-	NETuint32_t(&sender);
-	NETuint32_t(&receiver);
-	NETstring(text, MAX_CONSOLE_STRING_LENGTH);
-	NETend();
+	auto w = NETbeginEncode(NETnetQueue(responsiblePlayer), NET_AITEXTMSG);
+	w.NETuint32_t(&sender);
+	w.NETuint32_t(&receiver);
+	w.NETstring(text, MAX_CONSOLE_STRING_LENGTH);
 }
 
 void InGameChatMessage::sendToAiPlayers()
@@ -189,10 +188,9 @@ void InGameChatMessage::sendToSpectators()
 
 void InGameChatMessage::enqueueSpectatorMessage(NETQUEUE queue, char const* formattedMsg)
 {
-	NETbeginEncode(queue, NET_SPECTEXTMSG);
-	NETuint32_t(&sender);
-	NETstring(formattedMsg, MAX_CONSOLE_STRING_LENGTH);
-	NETend();
+	auto w = NETbeginEncode(queue, NET_SPECTEXTMSG);
+	w.NETuint32_t(&sender);
+	w.NETstring(formattedMsg, MAX_CONSOLE_STRING_LENGTH);
 }
 
 void InGameChatMessage::addReceiverByPosition(uint32_t playerPosition)
