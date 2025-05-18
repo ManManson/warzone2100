@@ -52,6 +52,7 @@ set (SRC
 	"wz_connection_provider.cpp"
 	"wzfile.cpp"
 	"zlib_compression_adapter.cpp"
+	"zstd_compression_adapter.cpp"
 	"tcp/tcp_address_resolver.cpp"
 	"tcp/netsocket.cpp"
 	"tcp/sock_error.cpp"
@@ -81,6 +82,7 @@ endif()
 
 find_package (Threads REQUIRED)
 find_package (ZLIB REQUIRED)
+find_package (zstd REQUIRED)
 
 # Attempt to find Miniupnpc (minimum supported API version = 9)
 # NOTE: This is not available on every platform / distro
@@ -108,7 +110,7 @@ set_property(TARGET netplay PROPERTY FOLDER "lib")
 include(WZTargetConfiguration)
 WZ_TARGET_CONFIGURATION(netplay)
 target_link_libraries(netplay
-	PRIVATE framework re2::re2 nlohmann_json plum-static Threads::Threads ZLIB::ZLIB fmt::fmt
+	PRIVATE framework re2::re2 nlohmann_json plum-static Threads::Threads ZLIB::ZLIB fmt::fmt zstd::libzstd
 	PUBLIC tl::expected)
 
 if(WZ_USE_IMPORTED_MINIUPNPC)
