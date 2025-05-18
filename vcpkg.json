@@ -77,7 +77,8 @@
 		{
 			"name": "protobuf",
 			"platform": "!emscripten"
-		}
+		},
+		"zstd"
 	],
 	"default-features": [
 		"vulkan"
