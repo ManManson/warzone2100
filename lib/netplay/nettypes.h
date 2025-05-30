@@ -110,6 +110,24 @@ void NETstring(char const *str, uint16_t maxlen);  ///< Encode-only version of N
 void NETbin(uint8_t *str, uint32_t len);
 void NETbytes(std::vector<uint8_t> *vec, unsigned maxLen = 10000);
 
+// New overloads that accept MessageReader:
+void NETuint8_t(MessageReader& r, uint8_t* ip);
+void NETint8_t(MessageReader &r, int8_t *ip);
+void NETuint16_t(MessageReader& r, uint16_t* ip);
+void NETint16_t(MessageReader &r, int16_t *ip);
+void NETuint32_t(MessageReader& r, uint32_t* ip);
+void NETint32_t(MessageReader &r, int32_t *ip);
+void NETuint64_t(MessageReader& r, uint64_t* ip);
+void NETint64_t(MessageReader &r, int64_t *ip);
+void NETbool(MessageReader &r, bool *bp);
+void NETwzstring(MessageReader &r, WzString &str);
+void NETstring(MessageReader &r, char *str, uint16_t maxlen);
+void NETbin(MessageReader &r, uint8_t *str, uint32_t len);
+void NETbytes(MessageReader &r, std::vector<uint8_t> *vec, unsigned maxLen = 10000);
+void NETPosition(MessageReader& r, Position* pos);
+void NETRotation(MessageReader& r, Rotation* rot);
+void NETVector2i(MessageReader& r, Vector2i* vec);
+
 PACKETDIR NETgetPacketDir();
 
 template <typename EnumT>

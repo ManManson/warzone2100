@@ -1112,3 +1112,149 @@ void NETshutdownReplay()
 
 	bIsReplay = false;
 }
+
+// New overloads implementation 
+void NETuint8_t(MessageReader& r, uint8_t* ip)
+{
+	r.byte(*ip);
+}
+
+void NETint8_t(MessageReader &r, int8_t *ip)
+{
+    r.byte(reinterpret_cast<uint8_t &>(*ip));
+}
+
+void NETuint16_t(MessageReader& r, uint16_t* ip)
+{
+	uint8_t b[2];
+	r.byte(b[0]);
+	r.byte(b[1]);
+	*ip = (b[0] << 8) | b[1];
+}
+
+void NETint16_t(MessageReader &r, int16_t *ip)
+{
+    uint8_t b[2];
+    r.byte(b[0]);
+	r.byte(b[1]);
+    *ip = (b[0] << 8) | b[1];
+}
+
+void NETuint32_t(MessageReader& r, uint32_t* ip)
+{
+	uint32_t v = 0;
+	bool moreBytes;
+	size_t n;
+	for (n = 0; ; ++n)
+	{
+		uint8_t b;
+		r.byte(b);
+		moreBytes = decode_uint32_t(b, v, n);
+		if (!moreBytes)
+		{
+			break;
+		}
+	}
+	*ip = v;
+}
+
+void NETint32_t(MessageReader &r, int32_t *ip)
+{
+	uint32_t v = 0;
+	NETuint32_t(r, &v);
+	// Non-negative values: value*2
+	// Negative values:     -value*2 - 1
+	// Example: int32_t -5 -4 -3 -2 -1  0  1  2  3  4  5
+	// becomes uint32_t  9  7  5  3  1  0  2  4  6  8 10
+
+	// Handle sign bit properly to avoid unsigned/signed issues
+	const bool isNegative = (v & 1) != 0;
+	v >>= 1;
+	*ip = isNegative ? (-(int32_t)v + 1) : (int32_t)v;
+}
+
+void NETuint64_t(MessageReader& r, uint64_t* ip)
+{
+	uint32_t b[2];
+	NETuint32_t(r, &b[0]);
+	NETuint32_t(r, &b[1]);
+	*ip = (uint64_t)b[0] << 32 | b[1];
+}
+
+void NETint64_t(MessageReader &r, int64_t *ip)
+{
+    uint32_t b[2];
+    NETuint32_t(r, &b[0]);
+    NETuint32_t(r, &b[1]);
+    *ip = (uint64_t)b[0] << 32 | b[1];
+}
+
+void NETbool(MessageReader &r, bool *bp)
+{
+    uint8_t b;
+    r.byte(b);
+    *bp = b != 0;
+}
+
+void NETwzstring(MessageReader &r, WzString &str)
+{
+    std::vector<uint16_t> u16_characters;
+    uint32_t len;
+    NETuint32_t(r, &len);
+
+    u16_characters.resize(len);
+    for (uint32_t i = 0; i < len; i++)
+    {
+        uint16_t c;
+        NETuint16_t(r, &c);
+        u16_characters[i] = c;
+    }
+    str = WzString::fromUtf16(u16_characters);
+}
+
+void NETstring(MessageReader &r, char *str, uint16_t maxlen)
+{
+    uint16_t len;
+    NETuint16_t(r, &len);
+    len = std::min(len, maxlen);
+
+    r.bytes((uint8_t *)str, len);
+    str[len] = '\0';
+}
+
+void NETbin(MessageReader &r, uint8_t *str, uint32_t len)
+{
+    r.bytes(str, len);
+}
+
+void NETbytes(MessageReader &r, std::vector<uint8_t> *vec, unsigned maxLen)
+{
+    uint32_t len;
+    NETuint32_t(r, &len);
+    len = std::min<uint32_t>(len, maxLen);
+    vec->clear();
+    if (r.valid())
+    {
+        r.bytesVector(*vec, len);
+    }
+}
+
+void NETPosition(MessageReader& r, Position* pos)
+{
+	NETint32_t(r, &pos->x);
+	NETint32_t(r, &pos->y);
+	NETint32_t(r, &pos->z);
+}
+
+void NETRotation(MessageReader& r, Rotation* rot)
+{
+	NETuint16_t(r, &rot->direction);
+	NETuint16_t(r, &rot->pitch);
+	NETuint16_t(r, &rot->roll);
+}
+
+void NETVector2i(MessageReader& r, Vector2i* vec)
+{
+	NETint32_t(r, &vec->x);
+	NETint32_t(r, &vec->y);
+}
