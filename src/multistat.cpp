@@ -139,18 +139,18 @@ static void NETauto(PLAYERSTATS::Autorating &ar)
 	if (game.blindMode != BLIND_MODE::NONE)
 	{
 		bool tmp = false; // no valid autorating in blind mode
-		NETauto(tmp); // ar.valid
+		NETbool(&tmp); // ar.valid
 		return;
 	}
-	NETauto(ar.valid);
+	NETbool(&ar.valid);
 	if (ar.valid)
 	{
-		NETauto(ar.dummy);
+		NETbool(&ar.dummy);
 		NETauto(ar.star);
-		NETauto(ar.medal);
-		NETauto(ar.level);
+		NETuint8_t(&ar.medal);
+		NETuint8_t(&ar.level);
 		NETauto(ar.elo);
-		NETauto(ar.autohoster);
+		NETbool(&ar.autohoster);
 		NETauto(ar.details);
 		NETauto(ar.altName);
 		NETauto(ar.altNameTextColorOverride);

@@ -480,7 +480,7 @@ static void NETQueuedDroidInfo(QueuedDroidInfo *info)
 		}
 		else
 		{
-			NETauto(info->pos);
+			NETVector2i(&info->pos);
 		}
 		if (info->order == DORDER_BUILD || info->order == DORDER_LINEBUILD)
 		{
@@ -489,11 +489,11 @@ static void NETQueuedDroidInfo(QueuedDroidInfo *info)
 		}
 		if (info->order == DORDER_LINEBUILD)
 		{
-			NETauto(info->pos2);
+			NETVector2i(&info->pos2);
 		}
 		if (info->order == DORDER_BUILDMODULE)
 		{
-			NETauto(info->index);
+			NETuint32_t(&info->index);
 		}
 		NETbool(&info->add);
 		break;
