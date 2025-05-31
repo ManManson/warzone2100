@@ -70,6 +70,10 @@ public:
 	{
 		message->data.insert(message->data.end(), pIn, pIn + numBytes);
 	}
+	void bytes(const uint8_t* pIn, size_t numBytes) const
+	{
+		message->data.insert(message->data.end(), pIn, pIn + numBytes);
+	}
 	void bytesVector(std::vector<uint8_t> &vIn, size_t numBytes) const
 	{
 		message->data.insert(message->data.end(), vIn.begin(), vIn.begin() + std::min(numBytes, vIn.size()));

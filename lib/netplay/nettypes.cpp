@@ -1113,7 +1113,7 @@ void NETshutdownReplay()
 	bIsReplay = false;
 }
 
-// New overloads implementation 
+// New overloads implementation
 void NETuint8_t(MessageReader& r, uint8_t* ip)
 {
 	r.byte(*ip);
@@ -1121,7 +1121,7 @@ void NETuint8_t(MessageReader& r, uint8_t* ip)
 
 void NETint8_t(MessageReader &r, int8_t *ip)
 {
-    r.byte(reinterpret_cast<uint8_t &>(*ip));
+	NETuint8_t(r, reinterpret_cast<uint8_t*>(ip));
 }
 
 void NETuint16_t(MessageReader& r, uint16_t* ip)
@@ -1134,43 +1134,41 @@ void NETuint16_t(MessageReader& r, uint16_t* ip)
 
 void NETint16_t(MessageReader &r, int16_t *ip)
 {
-    uint8_t b[2];
-    r.byte(b[0]);
-	r.byte(b[1]);
-    *ip = (b[0] << 8) | b[1];
+	NETuint16_t(r, reinterpret_cast<uint16_t*>(ip));
 }
 
 void NETuint32_t(MessageReader& r, uint32_t* ip)
 {
 	uint32_t v = 0;
-	bool moreBytes;
-	size_t n;
-	for (n = 0; ; ++n)
+	bool moreBytes = true;
+	for (size_t n = 0; moreBytes; ++n)
 	{
-		uint8_t b;
+		uint8_t b = 0;
 		r.byte(b);
 		moreBytes = decode_uint32_t(b, v, n);
-		if (!moreBytes)
-		{
-			break;
-		}
 	}
 	*ip = v;
 }
 
 void NETint32_t(MessageReader &r, int32_t *ip)
 {
-	uint32_t v = 0;
-	NETuint32_t(r, &v);
 	// Non-negative values: value*2
 	// Negative values:     -value*2 - 1
 	// Example: int32_t -5 -4 -3 -2 -1  0  1  2  3  4  5
 	// becomes uint32_t  9  7  5  3  1  0  2  4  6  8 10
 
-	// Handle sign bit properly to avoid unsigned/signed issues
-	const bool isNegative = (v & 1) != 0;
-	v >>= 1;
-	*ip = isNegative ? (-(int32_t)v + 1) : (int32_t)v;
+#if defined( _MSC_VER )
+	#pragma warning( push )
+	#pragma warning( disable : 4146 ) // warning C4146: unary minus operator applied to unsigned type, result still unsigned
+#endif
+
+	uint32_t b = 0;
+	NETuint32_t(r, &b);
+	*ip = b >> 1 ^ -(b & 1);
+
+#if defined( _MSC_VER )
+	#pragma warning( pop )
+#endif
 }
 
 void NETuint64_t(MessageReader& r, uint64_t* ip)
@@ -1183,16 +1181,13 @@ void NETuint64_t(MessageReader& r, uint64_t* ip)
 
 void NETint64_t(MessageReader &r, int64_t *ip)
 {
-    uint32_t b[2];
-    NETuint32_t(r, &b[0]);
-    NETuint32_t(r, &b[1]);
-    *ip = (uint64_t)b[0] << 32 | b[1];
+	NETuint64_t(reinterpret_cast<uint64_t*>(ip));
 }
 
 void NETbool(MessageReader &r, bool *bp)
 {
     uint8_t b;
-    r.byte(b);
+	NETuint8_t(r, &b);
     *bp = b != 0;
 }
 
@@ -1229,14 +1224,23 @@ void NETbin(MessageReader &r, uint8_t *str, uint32_t len)
 
 void NETbytes(MessageReader &r, std::vector<uint8_t> *vec, unsigned maxLen)
 {
-    uint32_t len;
-    NETuint32_t(r, &len);
-    len = std::min<uint32_t>(len, maxLen);
-    vec->clear();
-    if (r.valid())
-    {
-        r.bytesVector(*vec, len);
-    }
+	/*
+	 * Strings sent over the network are prefixed with their length, sent as an
+	 * unsigned 16-bit integer, not including \0 termination.
+	 */
+
+	uint32_t len = 0;
+	NETuint32_t(r, &len);
+	if (len > maxLen)
+	{
+		debug(LOG_ERROR, "NETbytes: Decoding packet, length %u truncated at %u", len, maxLen);
+	}
+	len = std::min<unsigned>(len, maxLen);  // Truncate length if necessary.
+	if (r.valid())
+	{
+		vec->clear();
+		r.bytesVector(*vec, len);
+	}
 }
 
 void NETPosition(MessageReader& r, Position* pos)
@@ -1257,4 +1261,158 @@ void NETVector2i(MessageReader& r, Vector2i* vec)
 {
 	NETint32_t(r, &vec->x);
 	NETint32_t(r, &vec->y);
+}
+
+// MessageWriter overloads for encoding
+void NETuint8_t(MessageWriter& w, uint8_t val)
+{
+	w.byte(val);
+}
+
+void NETint8_t(MessageWriter& w, int8_t val)
+{
+	NETuint8_t(w, static_cast<uint8_t>(val));
+}
+
+void NETuint16_t(MessageWriter& w, uint16_t val)
+{
+	uint8_t b[2] = { uint8_t(val >> 8), uint8_t(val) };
+	NETuint8_t(w, b[0]);
+	NETuint8_t(w, b[1]);
+}
+
+void NETint16_t(MessageWriter& w, int16_t val)
+{
+	NETuint16_t(w, static_cast<uint16_t>(val));
+}
+
+void NETuint32_t(MessageWriter& w, uint32_t val)
+{
+	uint32_t v = val;
+	bool moreBytes = true;
+	for (int n = 0; moreBytes; ++n)
+	{
+		uint8_t b = 0;
+		moreBytes = encode_uint32_t(b, v, n);
+		NETuint8_t(w, b);
+	}
+}
+
+void NETint32_t(MessageWriter& w, int32_t val)
+{
+	// Non-negative values: value*2
+	// Negative values:     -value*2 - 1
+	// Example: int32_t -5 -4 -3 -2 -1  0  1  2  3  4  5
+	// becomes uint32_t  9  7  5  3  1  0  2  4  6  8 10
+
+#if defined( _MSC_VER )
+	#pragma warning( push )
+	#pragma warning( disable : 4146 ) // warning C4146: unary minus operator applied to unsigned type, result still unsigned
+#endif
+
+	uint32_t b = (uint32_t)val << 1 ^ (-((uint32_t)val >> 31));
+	NETuint32_t(w, b);
+
+#if defined( _MSC_VER )
+	#pragma warning( pop )
+#endif
+}
+
+void NETuint64_t(MessageWriter& w, uint64_t val)
+{
+	uint32_t b[2] = { uint32_t(val >> 32), uint32_t(val) };
+	NETuint32_t(w, b[0]);
+	NETuint32_t(w, b[1]);
+}
+
+void NETint64_t(MessageWriter& w, int64_t val)
+{
+	NETuint64_t(w, static_cast<uint64_t>(val));
+}
+
+void NETbool(MessageWriter& w, bool val)
+{
+	uint8_t i = !!val;
+	NETuint8_t(w, i);
+}
+
+void NETwzstring(MessageWriter& w, const WzString& str)
+{
+	// NOTE: To be backwards-compatible with the old NETqstring (QString-based) function,
+	// this uses UTF-16 encoding.
+
+	const std::vector<uint16_t> u16_characters = str.toUtf16();
+	ASSERT(u16_characters.size() <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()), "u16_characters.size() exceeds uint32_t max");
+
+	uint32_t len = static_cast<uint32_t>(std::min(u16_characters.size(), static_cast<size_t>(std::numeric_limits<uint32_t>::max())));
+	NETuint32_t(w, len);
+	for (uint32_t i = 0; i < len; ++i)
+	{
+		NETuint16_t(w, u16_characters[i]);
+	}
+}
+
+void NETstring(MessageWriter& w, const char* str, uint16_t maxlen)
+{
+	/*
+	 * Strings sent over the network are prefixed with their length, sent as an
+	 * unsigned 16-bit integer, not including \0 termination.
+	 */
+
+	uint16_t len = 0;
+	size_t cappedStrLen = strnlen1(str, maxlen);
+	len = static_cast<uint16_t>((cappedStrLen > 0) ? (cappedStrLen - 1) : 0);
+	NETuint16_t(w, len);
+
+	// Truncate length if necessary
+	uint16_t maxReadLen = (maxlen > 0) ? static_cast<uint16_t>(maxlen - 1) : 0;
+	if (len > maxReadLen)
+	{
+		debug(LOG_ERROR, "NETstring: Encoding packet, length %u truncated at %u", len, maxlen);
+		len = maxReadLen;
+	}
+	w.bytes(reinterpret_cast<const uint8_t*>(str), len);
+}
+
+void NETbin(MessageWriter& w, const uint8_t* str, uint32_t len)
+{
+	w.bytes(str, len);
+}
+
+void NETbytes(MessageWriter& w, const std::vector<uint8_t>& vec, unsigned maxLen)
+{
+	/*
+	 * Strings sent over the network are prefixed with their length, sent as an
+	 * unsigned 16-bit integer, not including \0 termination.
+	 */
+
+	ASSERT(vec.size() <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()), "vec.size() exceeds uint32_t max");
+	uint32_t len = static_cast<uint32_t>(std::min(vec.size(), static_cast<size_t>(std::numeric_limits<uint32_t>::max())));
+	if (len > maxLen)
+	{
+		debug(LOG_ERROR, "NETbytes: Encoding packet, length %u truncated at %u", len, maxLen);
+	}
+	len = std::min<unsigned>(len, maxLen);  // Truncate length if necessary.
+	NETuint32_t(w, len);
+	w.bytes(vec.data(), len);
+}
+
+void NETPosition(MessageWriter& w, const Position& pos)
+{
+	NETint32_t(w, pos.x);
+	NETint32_t(w, pos.y);
+	NETint32_t(w, pos.z);
+}
+
+void NETRotation(MessageWriter& w, const Rotation& rot)
+{
+	NETuint16_t(w, rot.direction);
+	NETuint16_t(w, rot.pitch);
+	NETuint16_t(w, rot.roll);
+}
+
+void NETVector2i(MessageWriter& w, const Vector2i& vec)
+{
+	NETint32_t(w, vec.x);
+	NETint32_t(w, vec.y);
 }

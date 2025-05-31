@@ -128,6 +128,24 @@ void NETPosition(MessageReader& r, Position* pos);
 void NETRotation(MessageReader& r, Rotation* rot);
 void NETVector2i(MessageReader& r, Vector2i* vec);
 
+// New overloads that accept MessageWriter:
+void NETuint8_t(MessageWriter& w, uint8_t val);
+void NETint8_t(MessageWriter& w, int8_t val);
+void NETuint16_t(MessageWriter& w, uint16_t val);
+void NETint16_t(MessageWriter& w, int16_t val);
+void NETuint32_t(MessageWriter& w, uint32_t val);       ///< Encodes small values (< 1 672 576) in at most 3 bytes, large values (≥ 45 776 896) in 5 bytes.
+void NETint32_t(MessageWriter& w, int32_t val);         ///< Encodes small values (< 836 288) in at most 3 bytes, large values (≥ 22 888 448) in 5 bytes.
+void NETuint64_t(MessageWriter& w, uint64_t val);
+void NETint64_t(MessageWriter& w, int64_t val);
+void NETbool(MessageWriter& w, bool val);
+void NETwzstring(MessageWriter& w, const WzString& str);
+void NETstring(MessageWriter& w, const char* str, uint16_t maxlen);
+void NETbin(MessageWriter& w, const uint8_t* str, uint32_t len);
+void NETbytes(MessageWriter& w, const std::vector<uint8_t>& vec, unsigned maxLen = 10000);
+void NETPosition(MessageWriter& w, const Position& pos);
+void NETRotation(MessageWriter& w, const Rotation& rot);
+void NETVector2i(MessageWriter& w, const Vector2i& vec);
+
 PACKETDIR NETgetPacketDir();
 
 template <typename EnumT>
