@@ -83,6 +83,16 @@ PACKETDIR NETgetPacketDir()
 	return NetDir;
 }
 
+MessageWriter& globalWriter()
+{
+	return writer;
+}
+
+MessageReader& globalReader()
+{
+	return reader;
+}
+
 // The queue(q, v) functions (de)serialise the object v to/from q, depending on whether q is a MessageWriter or MessageReader.
 
 template<class Q>
@@ -1236,9 +1246,9 @@ void NETbytes(MessageReader &r, std::vector<uint8_t> *vec, unsigned maxLen)
 		debug(LOG_ERROR, "NETbytes: Decoding packet, length %u truncated at %u", len, maxLen);
 	}
 	len = std::min<unsigned>(len, maxLen);  // Truncate length if necessary.
+	vec->clear();
 	if (r.valid())
 	{
-		vec->clear();
 		r.bytesVector(*vec, len);
 	}
 }
@@ -1261,6 +1271,16 @@ void NETVector2i(MessageReader& r, Vector2i* vec)
 {
 	NETint32_t(r, &vec->x);
 	NETint32_t(r, &vec->y);
+}
+
+void NETnetMessage(MessageReader& r, NetMessage const** msg)
+{
+	NetMessage* m = new NetMessage();
+
+	NETuint8_t(r, &m->type);
+	NETbytes(r, &m->data, std::numeric_limits<uint32_t>::max());
+
+	*msg = m;
 }
 
 // MessageWriter overloads for encoding
@@ -1415,4 +1435,10 @@ void NETVector2i(MessageWriter& w, const Vector2i& vec)
 {
 	NETint32_t(w, vec.x);
 	NETint32_t(w, vec.y);
+}
+
+void NETnetMessage(MessageWriter& w, const NetMessage& msg)
+{
+	NETuint8_t(w, msg.type);
+	NETbytes(w, msg.data, std::numeric_limits<uint32_t>::max());
 }

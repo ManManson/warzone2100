@@ -127,6 +127,7 @@ void NETbytes(MessageReader &r, std::vector<uint8_t> *vec, unsigned maxLen = 100
 void NETPosition(MessageReader& r, Position* pos);
 void NETRotation(MessageReader& r, Rotation* rot);
 void NETVector2i(MessageReader& r, Vector2i* vec);
+void NETnetMessage(MessageReader& r, NetMessage const** msg);  ///< Must delete the NETMESSAGE.
 
 // New overloads that accept MessageWriter:
 void NETuint8_t(MessageWriter& w, uint8_t val);
@@ -145,6 +146,10 @@ void NETbytes(MessageWriter& w, const std::vector<uint8_t>& vec, unsigned maxLen
 void NETPosition(MessageWriter& w, const Position& pos);
 void NETRotation(MessageWriter& w, const Rotation& rot);
 void NETVector2i(MessageWriter& w, const Vector2i& vec);
+void NETnetMessage(MessageWriter& w, const NetMessage& msg);
+
+MessageWriter& globalWriter();
+MessageReader& globalReader();
 
 PACKETDIR NETgetPacketDir();
 
