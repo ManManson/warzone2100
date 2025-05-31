@@ -122,6 +122,7 @@ void NETint64_t(MessageReader &r, int64_t *ip);
 void NETbool(MessageReader &r, bool *bp);
 void NETwzstring(MessageReader &r, WzString &str);
 void NETstring(MessageReader &r, char *str, uint16_t maxlen);
+void NETstring(MessageReader &r, std::string& s, uint32_t maxLen = 65536);
 void NETbin(MessageReader &r, uint8_t *str, uint32_t len);
 void NETbytes(MessageReader &r, std::vector<uint8_t> *vec, unsigned maxLen = 10000);
 void NETPosition(MessageReader& r, Position* pos);
@@ -141,6 +142,7 @@ void NETint64_t(MessageWriter& w, int64_t val);
 void NETbool(MessageWriter& w, bool val);
 void NETwzstring(MessageWriter& w, const WzString& str);
 void NETstring(MessageWriter& w, const char* str, uint16_t maxlen);
+void NETstring(MessageWriter& w, const std::string& s, uint32_t maxLen = 65536);
 void NETbin(MessageWriter& w, const uint8_t* str, uint32_t len);
 void NETbytes(MessageWriter& w, const std::vector<uint8_t>& vec, unsigned maxLen = 10000);
 void NETPosition(MessageWriter& w, const Position& pos);
@@ -229,7 +231,8 @@ static inline void NETauto(Vector2i &vp)
 {
 	NETVector2i(&vp);
 }
-static inline void NETauto(std::string &s, uint32_t maxLen = 65536)
+
+static inline void NETauto(std::string& s, uint32_t maxLen = 65536)
 {
 	uint32_t len = static_cast<uint32_t>(std::min<size_t>(s.size(), maxLen));
 	NETauto(len);
@@ -241,7 +244,7 @@ static inline void NETauto(std::string &s, uint32_t maxLen = 65536)
 	}
 }
 template <typename T, int N>
-static inline void NETauto(T (&ar)[N])
+static inline void NETauto(T(&ar)[N])
 {
 	for (int i = 0; i < N; ++i)
 	{

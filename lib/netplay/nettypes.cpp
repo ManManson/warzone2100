@@ -1227,6 +1227,18 @@ void NETstring(MessageReader &r, char *str, uint16_t maxlen)
     str[len] = '\0';
 }
 
+void NETstring(MessageReader& r, std::string& s, uint32_t maxLen /* = 65536 */)
+{
+	uint32_t len = 0;
+	NETuint32_t(r, &len);
+	len = std::min(len, maxLen);
+	s.resize(len);
+	if (r.valid())
+	{
+		NETbin(r, reinterpret_cast<uint8_t*>(&s[0]), len);
+	}
+}
+
 void NETbin(MessageReader &r, uint8_t *str, uint32_t len)
 {
     r.bytes(str, len);
@@ -1392,6 +1404,13 @@ void NETstring(MessageWriter& w, const char* str, uint16_t maxlen)
 		len = maxReadLen;
 	}
 	w.bytes(reinterpret_cast<const uint8_t*>(str), len);
+}
+
+void NETstring(MessageWriter& w, const std::string& s, uint32_t maxLen /* = 65536 */)
+{
+	uint32_t len = static_cast<uint32_t>(std::min<size_t>(s.size(), maxLen));
+	NETuint32_t(w, len);
+	NETbin(w, reinterpret_cast<const uint8_t*>(s.c_str()), len);
 }
 
 void NETbin(MessageWriter& w, const uint8_t* str, uint32_t len)
