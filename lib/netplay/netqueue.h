@@ -201,7 +201,7 @@ private:
 	inline const NetMessage &internal_getMessageForNet() const
 	{
 		// Return the message.
-		List::iterator i = dataPos;
+		MsgContainer::iterator i = dataPos;
 		--i;
 		return *i;
 	};
@@ -209,7 +209,7 @@ private:
 	inline const NetMessage &internal_getConstMessage() const
 	{
 		// Return the message.
-		List::iterator i = messagePos;
+		MsgContainer::iterator i = messagePos;
 		--i;
 		return *i;
 	};
@@ -217,15 +217,15 @@ private:
 	inline NetMessage &internal_getMessage()
 	{
 		// Return the message.
-		List::iterator i = messagePos;
+		MsgContainer::iterator i = messagePos;
 		--i;
 		return *i;
 	};
 
-	using List = std::list<NetMessage>;
-	List::iterator                dataPos;                             ///< Last message which was sent over the network.
-	List::iterator                messagePos;                          ///< Last message which was popped.
-	List                          messages;                            ///< List of messages. Messages are added to the front and read from the back.
+	using MsgContainer = std::deque<NetMessage>;
+	MsgContainer::iterator                dataPos;                             ///< Last message which was sent over the network.
+	MsgContainer::iterator                messagePos;                          ///< Last message which was popped.
+	MsgContainer                          messages;                            ///< List of messages. Messages are added to the front and read from the back.
 	std::vector<uint8_t>          incompleteReceivedMessageData;       ///< Data from network which has not yet formed an entire message.
 	size_t                        pendingGameTimeUpdateMessages;       ///< Pending GAME_GAME_TIME messages added to this queue
 	bool						  bCurrentMessageWasDecrypted;

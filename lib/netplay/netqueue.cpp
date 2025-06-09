@@ -244,7 +244,7 @@ unsigned NetQueue::numMessagesForNet() const
 	unsigned count = 0;
 	if (canGetMessagesForNet)
 	{
-		for (List::iterator i = dataPos; i != messages.begin(); --i)
+		for (MsgContainer::iterator i = dataPos; i != messages.begin(); --i)
 		{
 			++count;
 		}
@@ -361,7 +361,7 @@ void NetQueue::popOldMessages()
 		messagePos = messages.begin();
 	}
 
-	List::iterator i = messages.end();
+	MsgContainer::iterator i = messages.end();
 	while (i != dataPos && i != messagePos)
 	{
 		--i;
