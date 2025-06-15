@@ -289,7 +289,7 @@ void NETreplaySaveNetMessage(NetMessage const *message, uint8_t player)
 		return;
 	}
 
-	if (message->type > GAME_MIN_TYPE && message->type < GAME_MAX_TYPE)
+	if (message->type() > GAME_MIN_TYPE && message->type() < GAME_MAX_TYPE)
 	{
 		latestWriteBuffer.push_back(player);
 		message->rawDataAppendToVector(latestWriteBuffer);
@@ -428,29 +428,23 @@ bool NETreplayLoadNetMessage(std::unique_ptr<NetMessage> &message, uint8_t &play
 	uint8_t type;
 	WZ_PHYSFS_readBytes(replayLoadHandle, &type, 1);
 
-	uint32_t len = 0;
-	uint8_t b;
-	unsigned n = 0;
-	bool rd;
-	do
-	{
-		rd = WZ_PHYSFS_readBytes(replayLoadHandle, &b, 1);
-	} while (decode_uint32_t(b, len, n++));
-
+	uint8_t b[2];
+	bool rd = WZ_PHYSFS_readBytes(replayLoadHandle, &b, 2);
 	if (!rd)
 	{
 		return false;
 	}
+	uint16_t len = (b[0] << 8) | b[1];
 
 	message = std::make_unique<NetMessage>(type);
-	message->data.resize(len);
-	size_t messageRead = WZ_PHYSFS_readBytes(replayLoadHandle, message->data.data(), message->data.size());
-	if (messageRead != message->data.size())
+	message->rawData().resize(len + NetMessage::HEADER_LENGTH);
+	size_t messageRead = WZ_PHYSFS_readBytes(replayLoadHandle, message->rawData().data() + NetMessage::HEADER_LENGTH, len);
+	if (messageRead != len)
 	{
 		return false;
 	}
 
-	return (message->type > GAME_MIN_TYPE && message->type < GAME_MAX_TYPE) || message->type == REPLAY_ENDED;
+	return (message->type() > GAME_MIN_TYPE && message->type() < GAME_MAX_TYPE) || message->type() == REPLAY_ENDED;
 }
 
 bool NETreplayLoadStop()

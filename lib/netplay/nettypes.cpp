@@ -296,7 +296,7 @@ MessageWriter NETbeginEncode(NETQUEUE queue, uint8_t type)
 MessageReader NETbeginDecode(NETQUEUE queue, uint8_t type)
 {
 	auto res = MessageReader(queue, receiveQueue(queue)->getMessage());
-	assert(type == res.message->type);
+	assert(type == res.msgType);
 	return res;
 }
 
@@ -378,39 +378,39 @@ bool NETdecryptSecuredNetMessage(NETQUEUE queue, uint8_t& type)
 	auto pReceiveQueue = receiveQueue(queue);
 
 	// Get & decrypt message raw data
-	auto encryptedMessage = pReceiveQueue->getMessage();
-	ASSERT_OR_RETURN(false, encryptedMessage.type == NET_SECURED_NET_MESSAGE, "Not a secured message?");
+	const auto& encryptedMessage = pReceiveQueue->getMessage();
+	ASSERT_OR_RETURN(false, encryptedMessage.type() == NET_SECURED_NET_MESSAGE, "Not a secured message?");
 	std::vector<uint8_t> decryptedMessageRawData;
-	if (!netSessionKeys[queue.index]->decryptMessageFromOther(&(encryptedMessage.data[0]), encryptedMessage.data.size(), decryptedMessageRawData))
+	if (!netSessionKeys[queue.index]->decryptMessageFromOther(encryptedMessage.rawData().data(), encryptedMessage.rawData().size(), decryptedMessageRawData))
 	{
 		debug(LOG_INFO, "Invalid encrypted message from player: %u", static_cast<unsigned>(queue.index));
 		return false;
 	}
 
-	NetMessage decryptedMessage;
-	if (!NetMessage::tryFromRawData(decryptedMessageRawData.data(), decryptedMessageRawData.size(), decryptedMessage))
+	auto decryptedMessage = NetMessage::tryFromRawData(decryptedMessageRawData.data(), decryptedMessageRawData.size());
+	if (!decryptedMessage)
 	{
 		debug(LOG_INFO, "Failed to parse decrypted data from player: %u", static_cast<unsigned>(queue.index));
 		return false;
 	}
 
-	if (!(decryptedMessage.type > NET_MIN_TYPE && decryptedMessage.type < NET_MAX_TYPE))
+	if (!(decryptedMessage->type() > NET_MIN_TYPE && decryptedMessage->type() < NET_MAX_TYPE))
 	{
-		debug(LOG_NET, "Not a secured NET_* message? (type: %s) - ignoring", messageTypeToString(decryptedMessage.type));
+		debug(LOG_NET, "Not a secured NET_* message? (type: %s) - ignoring", messageTypeToString(decryptedMessage->type()));
 		return false;
 	}
 
-	if (!NETisExpectedSecuredMessageType(decryptedMessage.type))
+	if (!NETisExpectedSecuredMessageType(decryptedMessage->type()))
 	{
 		// Ignore message types that aren't expected to be secured
-		debug(LOG_NET, "Not a message type that's expected to be secured: (type: %s) - ignoring", messageTypeToString(decryptedMessage.type));
+		debug(LOG_NET, "Not a message type that's expected to be secured: (type: %s) - ignoring", messageTypeToString(decryptedMessage->type()));
 		return false;
 	}
 
-	NETlogPacket(NET_SECURED_NET_MESSAGE, static_cast<uint32_t>(encryptedMessage.rawLen()), true);
+	NETlogPacket(NET_SECURED_NET_MESSAGE, static_cast<uint32_t>(encryptedMessage.rawData().size()), true);
 
-	type = decryptedMessage.type; // must update type!
-	pReceiveQueue->replaceCurrentWithDecrypted(std::move(decryptedMessage));
+	type = decryptedMessage->type(); // must update type!
+	pReceiveQueue->replaceCurrentWithDecrypted(std::move(*decryptedMessage));
 	return true;
 }
 
@@ -440,14 +440,14 @@ bool NETend(MessageWriter& w)
 	// Push the message onto the list.
 	NetQueue* queue = sendQueue(w.queueInfo);
 	if (queue == nullptr) {
-		debug(LOG_WARNING, "Sending %s to null queue, type %d.", messageTypeToString(w.message.type), w.queueInfo.queueType);
+		debug(LOG_WARNING, "Sending %s to null queue, type %d.", messageTypeToString(w.message.type()), w.queueInfo.queueType);
 		return true;
 	}
 
 	if (shouldWrapSecretMessage)
 	{
 		// Need to actually encrypt and wrap the current net message in a NET_SECURED_NET_MESSAGE message
-		ASSERT(w.message.type < NET_MAX_TYPE, "Message type %u is >= NET_MAX_TYPE", static_cast<unsigned>(w.message.type));
+		ASSERT(w.message.type() < NET_MAX_TYPE, "Message type %u is >= NET_MAX_TYPE", static_cast<unsigned>(w.message.type()));
 		ASSERT(w.queueInfo.index < MAX_PLAYERS || w.queueInfo.index == NetPlay.hostPlayer, "Invalid recipient (queue.index == %u)", static_cast<unsigned>(w.queueInfo.index));
 		ASSERT(netSessionKeys[w.queueInfo.index] != nullptr, "Lacking session key for recipient: %u", static_cast<unsigned>(w.queueInfo.index));
 
@@ -456,28 +456,30 @@ bool NETend(MessageWriter& w)
 		NetMessage encryptedNetMessage(NET_SECURED_NET_MESSAGE);
 		tmpMessageRawDataBuffer.clear();
 		w.message.rawDataAppendToVector(tmpMessageRawDataBuffer);
-		encryptedNetMessage.data = netSessionKeys[w.queueInfo.index]->encryptMessageForOther(&tmpMessageRawDataBuffer[0], tmpMessageRawDataBuffer.size());
+		encryptedNetMessage.rawData() = netSessionKeys[w.queueInfo.index]->encryptMessageForOther(&tmpMessageRawDataBuffer[0], tmpMessageRawDataBuffer.size());
+		encryptedNetMessage.finalize();
 
 		w.message = std::move(encryptedNetMessage);
 	}
+	w.message.finalize();
 
 	queue->pushMessage(w.message);
-	NETlogPacket(w.message.type, static_cast<uint32_t>(w.message.data.size()), false);
+	NETlogPacket(w.message.type(), static_cast<uint32_t>(w.message.rawData().size()), false);
 
 	if (w.queueInfo.queueType == QUEUE_GAME || w.queueInfo.queueType == QUEUE_GAME_FORCED)
 	{
-		ASSERT(w.message.type > GAME_MIN_TYPE && w.message.type < GAME_MAX_TYPE, "Inserting %s into game queue.", messageTypeToString(w.message.type));
+		ASSERT(w.message.type() > GAME_MIN_TYPE && w.message.type() < GAME_MAX_TYPE, "Inserting %s into game queue.", messageTypeToString(w.message.type()));
 	}
 	else
 	{
-		ASSERT(w.message.type > NET_MIN_TYPE && w.message.type < NET_MAX_TYPE, "Inserting %s into net queue.", messageTypeToString(w.message.type));
+		ASSERT(w.message.type() > NET_MIN_TYPE && w.message.type() < NET_MAX_TYPE, "Inserting %s into net queue.", messageTypeToString(w.message.type()));
 	}
 
 	if (w.queueInfo.queueType == QUEUE_NET || w.queueInfo.queueType == QUEUE_BROADCAST || w.queueInfo.queueType == QUEUE_TMP)
 	{
-		NETsend(w.queueInfo, &queue->getMessageForNet());
+		NETsend(w.queueInfo, queue->getMessageForNet());
 		queue->popMessageForNet();
-		ASSERT(queue->numMessagesForNet() == 0, "Queue not empty (%u messages remaining). (message = type: %" PRIu8 ", size: %zu), (queue = index: %" PRIu8 "; queueType: %" PRIu8 "; exclude: %" PRIu8 "; isPair: %d)", queue->numMessagesForNet(), w.message.type, w.message.data.size(), w.queueInfo.index, w.queueInfo.queueType, w.queueInfo.exclude, (int)w.queueInfo.isPair);
+		ASSERT(queue->numMessagesForNet() == 0, "Queue not empty (%u messages remaining). (message = type: %" PRIu8 ", size: %zu), (queue = index: %" PRIu8 "; queueType: %" PRIu8 "; exclude: %" PRIu8 "; isPair: %d)", queue->numMessagesForNet(), w.message.type(), w.message.rawData().size(), w.queueInfo.index, w.queueInfo.queueType, w.queueInfo.exclude, (int)w.queueInfo.isPair);
 	}
 
 	// Process any delayed actions from the NETsend call
@@ -587,10 +589,10 @@ bool NETloadReplay(std::string const &filename, ReplayOptionsHandler& optionsHan
 	{
 		if ((player >= MAX_PLAYERS && player != NetPlay.hostPlayer) || gameQueues[player] == nullptr)
 		{
-			debug((newMessage->type != GAME_GAME_TIME) ? LOG_ERROR : LOG_INFO, "Skipping message to player %d in replay.", player);
+			debug((newMessage->type() != GAME_GAME_TIME) ? LOG_ERROR : LOG_INFO, "Skipping message to player %d in replay.", player);
 			continue;
 		}
-		if (newMessage->type == REPLAY_ENDED)
+		if (newMessage->type() == REPLAY_ENDED)
 		{
 			gotReplayEnded = true;
 			break;
@@ -802,12 +804,12 @@ void NETVector2i(MessageReader& r, Vector2i& vec)
 	NETint32_t(r, vec.y);
 }
 
-void NETnetMessage(MessageReader& r, NetMessage const** msg)
+void NETnetMessage(MessageReader& r, NetMessage** msg)
 {
 	NetMessage* m = new NetMessage();
 
-	NETuint8_t(r, m->type);
-	NETbytes(r, m->data, std::numeric_limits<uint32_t>::max());
+	NETbytes(r, m->rawData(), std::numeric_limits<uint32_t>::max());
+	m->finalize();
 
 	*msg = m;
 }
@@ -975,6 +977,5 @@ void NETVector2i(MessageWriter& w, const Vector2i& vec)
 
 void NETnetMessage(MessageWriter& w, const NetMessage& msg)
 {
-	NETuint8_t(w, msg.type);
-	NETbytes(w, msg.data, std::numeric_limits<uint32_t>::max());
+	NETbytes(w, msg.rawData(), std::numeric_limits<uint32_t>::max());
 }

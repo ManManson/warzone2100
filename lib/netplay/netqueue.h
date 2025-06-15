@@ -30,6 +30,10 @@
 #include <deque>
 #include <unordered_map>
 
+#include <nonstd/optional.hpp>
+using nonstd::optional;
+using nonstd::nullopt;
+
 // At game level:
 // There should be a NetQueue representing each client.
 // Clients should serialise messages to their own queue.
@@ -45,15 +49,36 @@
 class NetMessage
 {
 public:
-	NetMessage(uint8_t type_ = 0xFF) : type(type_) {}
-	static bool tryFromRawData(const uint8_t* buffer, size_t bufferLen, NetMessage& output);
-	uint8_t *rawDataDup() const;  ///< Returns data compatible with NetQueue::writeRawData(). Must be delete[]d.
+	static constexpr size_t HEADER_LENGTH = 3; // uint8_t (type) + uint16_t (payload length)
+
+	explicit NetMessage(uint8_t type_ = 0xFF);
+	explicit NetMessage(const NetMessage& other) = default;
+	explicit NetMessage(NetMessage&& other) = default;
+
+	NetMessage& operator=(const NetMessage& other) = default;
+	NetMessage& operator=(NetMessage&& other) = default;
+
+	static optional<NetMessage> tryFromRawData(const uint8_t* buffer, size_t bufferLen);
+
+	uint8_t type() const;
+	const std::vector<uint8_t>& rawData() const;  ///< Returns the pointer to data шт the format compatible with NetQueue::writeRawData().
+	std::vector<uint8_t>& rawData();
+
+	const uint8_t* payload() const;
+
+	void append(uint8_t v);
+	void append(const uint8_t* src, size_t len);
+
 	void rawDataAppendToVector(std::vector<uint8_t> &output) const;  ///< Appends data compatible with NetQueue::writeRawData() to the input vector.
-	size_t rawLen() const;        ///< Returns the length of the return value of rawDataDup().
-	uint8_t type;
-	std::vector<uint8_t> data;
+
+	void finalize();
+
+private:
+
+	void updateMsgLength(uint16_t length) const;
+
+	mutable std::vector<uint8_t> data_;
 };
-constexpr uint32_t NetMessageHeaderMaxBytes = 1 + 5; // 1 byte for type, 5 bytes max for length (see: encode_uint32_t)
 
 struct NETQUEUE
 {
@@ -80,19 +105,19 @@ public:
 
 	void byte(uint8_t v)
 	{
-		message.data.push_back(v);
+		message.append(v);
 	}
-	void bytes(uint8_t *pIn, size_t numBytes)
+	void bytes(uint8_t* pIn, size_t numBytes)
 	{
-		message.data.insert(message.data.end(), pIn, pIn + numBytes);
+		message.append(pIn, numBytes);
 	}
 	void bytes(const uint8_t* pIn, size_t numBytes)
 	{
-		message.data.insert(message.data.end(), pIn, pIn + numBytes);
+		message.append(pIn, numBytes);
 	}
-	void bytesVector(std::vector<uint8_t> &vIn, size_t numBytes)
+	void bytesVector(const std::vector<uint8_t>& vIn, size_t numBytes)
 	{
-		message.data.insert(message.data.end(), vIn.begin(), vIn.begin() + std::min(numBytes, vIn.size()));
+		message.append(vIn.data(), std::min(numBytes, vIn.size()));
 	}
 	bool valid() const
 	{
@@ -110,7 +135,7 @@ class MessageReader
 public:
 
 	explicit MessageReader(NETQUEUE queue, const NetMessage& m)
-		: queueInfo(queue), message(&m), index(0)
+		: queueInfo(queue), msgData(&m.rawData()), index(3), msgType((*msgData)[0])
 	{}
 
 	MessageReader(MessageReader&&) = default;
@@ -119,15 +144,15 @@ public:
 
 	void byte(uint8_t &v) const
 	{
-		v = index >= message->data.size() ? 0x00 : message->data[index];
+		v = index >= msgData->size() ? 0x00 : (*msgData)[index];
 		++index;
 	}
 	void bytes(uint8_t *pOut, size_t numBytes) const
 	{
-		size_t numCopyBytes = (index >= message->data.size()) ? 0 : std::min<size_t>(message->data.size() - index, numBytes);
+		size_t numCopyBytes = (index >= msgData->size()) ? 0 : std::min<size_t>(msgData->size() - index, numBytes);
 		if (numCopyBytes > 0)
 		{
-			memcpy(pOut, &(message->data[index]), numCopyBytes);
+			memcpy(pOut, &((*msgData)[index]), numCopyBytes);
 		}
 		if (numCopyBytes < numBytes)
 		{
@@ -137,23 +162,24 @@ public:
 	}
 	void bytesVector(std::vector<uint8_t> &vOut, size_t desiredBytes) const
 	{
-		size_t numCopyBytes = (index >= message->data.size()) ? 0 : std::min<size_t>(message->data.size() - index, desiredBytes);
+		size_t numCopyBytes = (index >= msgData->size()) ? 0 : std::min<size_t>(msgData->size() - index, desiredBytes);
 		if (numCopyBytes > 0)
 		{
 			size_t startIdx = vOut.size();
 			vOut.resize(vOut.size() + numCopyBytes);
-			memcpy(&(vOut[startIdx]), &(message->data[index]), numCopyBytes);
+			memcpy(&(vOut[startIdx]), &((*msgData)[index]), numCopyBytes);
 		}
 		index += numCopyBytes;
 	}
 	bool valid() const
 	{
-		return index <= message->data.size();
+		return index <= msgData->size();
 	}
 
 	NETQUEUE queueInfo;
-	const NetMessage* message;
-	mutable size_t index;
+	const std::vector<uint8_t>* msgData;
+	mutable size_t index = NetMessage::HEADER_LENGTH;
+	uint8_t msgType;
 };
 
 /// A NetQueue is a queue of NetMessages. A NetQueue can convert the messages into a stream of bytes, which can be sent over the network, and converted back into a queue of NetMessages by the NetQueue at the other end.
