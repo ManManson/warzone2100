@@ -677,21 +677,23 @@ struct VkRoot final : gfx_api::context
 	const size_t SCENE_RENDER_PASS_ID = 2;
 	const size_t NUM_RENDERPASS_IDS = 3;
 
-	struct RenderPassDetails
+	struct VkRenderPass : public gfx_api::render_pass_impl_base
 	{
 		vk::RenderPass rp;
 		std::shared_ptr<VkhRenderPassCompat> rp_compat_info;
 		std::vector<vk::Framebuffer> fbo;
-		vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
 		size_t identifier;
 
-		RenderPassDetails(size_t _identifier)
+		explicit VkRenderPass(size_t _identifier)
 		: identifier(_identifier)
 		{ }
+
+		virtual size_t identifier() const override { return identifier; }
+		virtual bool valid() const override { return static_cast<bool>(rp); };
 	};
 
 	// render passes
-	std::vector<RenderPassDetails> renderPasses;
+	std::vector<std::unique_ptr<VkRenderPass>> renderPasses;
 
 	// depth render passes
 	vk::Format depthBufferFormat = vk::Format::eUndefined;

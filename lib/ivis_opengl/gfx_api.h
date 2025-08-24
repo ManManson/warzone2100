@@ -34,6 +34,7 @@
 #include "screen.h"
 #include "pietypes.h"
 #include "gfx_api_formats_def.h"
+#include "render_pass.h"
 
 #include <glm/glm.hpp>
 
@@ -399,15 +400,15 @@ namespace gfx_api
 		static bool isInitialized();
 		virtual size_t numDepthPasses() { return 0; }
 		virtual bool setDepthPassProperties(size_t numDepthPasses, size_t depthBufferResolution) { return false; }
-		virtual void beginDepthPass(size_t idx) { }
+		[[deprecated]] virtual void beginDepthPass(size_t idx) { }
 		virtual size_t getDepthPassDimensions(size_t idx) { return 0; }
-		virtual void endCurrentDepthPass() { }
+		[[deprecated]] virtual void endCurrentDepthPass() { }
 		virtual gfx_api::abstract_texture* getDepthTexture() { return nullptr; }
-		virtual void beginSceneRenderPass() { }
-		virtual void endSceneRenderPass() { }
+		[[deprecated]] virtual void beginSceneRenderPass() { }
+		[[deprecated]] virtual void endSceneRenderPass() { }
 		virtual gfx_api::abstract_texture* getSceneTexture() { return nullptr; }
-		virtual void beginRenderPass() = 0;
-		virtual void endRenderPass() = 0;
+		[[deprecated]] virtual void beginRenderPass() = 0;
+		[[deprecated]] virtual void endRenderPass() = 0;
 		virtual void debugStringMarker(const char *str) = 0;
 		virtual void debugSceneBegin(const char *descr) = 0;
 		virtual void debugSceneEnd(const char *descr) = 0;
@@ -442,6 +443,11 @@ namespace gfx_api
 		virtual void draw_elements_instanced(const std::size_t& offset, const std::size_t& count, const primitive_type& primitive, const index_type& index, std::size_t instance_count) = 0;
 		// debug apis for recompiling pipelines
 		virtual bool debugRecompileAllPipelines() = 0;
+
+		virtual std::unique_ptr<render_pass> createRenderPass(const render_pass_description& desc) = 0;
+		virtual void beginRenderPass2(const render_pass& rp) { }
+		virtual void endRenderPass2() { }
+
 	public:
 		// High-level API for getting a texture object from file / uncompressed bitmap
 		gfx_api::texture* loadTextureFromFile(const char *filename, gfx_api::texture_type textureType, int maxWidth = -1, int maxHeight = -1, bool quiet = false);

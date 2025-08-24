@@ -32,6 +32,7 @@ file(GLOB HEADERS
 	"piestate.h"
 	"pietypes.h"
 	"png_util.h"
+	"render_pass.h"
 	"screen.h"
 	"tex.h"
 	"textdraw.h"
