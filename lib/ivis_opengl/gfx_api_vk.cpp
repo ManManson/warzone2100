@@ -4508,7 +4508,7 @@ void VkRoot::createSwapchain(bool allowHandleSurfaceLost)
 		.setSurface(surface)
 		.setMinImageCount(swapchainDesiredImageCount)
 		.setPresentMode(presentMode)
-		.setImageUsage(vk::ImageUsageFlagBits::eColorAttachment)
+		.setImageUsage(vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc)
 		.setImageArrayLayers(1)
 		.setCompositeAlpha(compositeAlphaMode)
 		.setClipped(true)
@@ -6530,11 +6530,235 @@ std::string VkRoot::calculateFormattedRendererInfoString() const
 	return std::string("Vulkan ") + VkhInfo::vulkan_apiversion_to_string(physDeviceProps.apiVersion) + " (" + static_cast<const char*>(physDeviceProps.deviceName) + ")";
 }
 
-bool VkRoot::getScreenshot(std::function<void (std::unique_ptr<iV_Image>)> callback)
+namespace
 {
-	// TODO: Implement - save the callback, and trigger a screenshot save at the next opportunity
-	// saveScreenshotCallback = callback;
-	return false;
+
+void copyImageYFlipped(uint8_t* dst, const uint8_t* src, int width, int height, int bytesPerPixel)
+{
+	const int rowBytes = width * bytesPerPixel;
+	for (int y = 0; y < height; ++y)
+	{
+		const uint8_t* srcRow = src + (height - 1 - y) * rowBytes;
+		uint8_t* dstRow = dst + y * rowBytes;
+		memcpy(dstRow, srcRow, rowBytes);
+	}
+}
+
+} // anonymous namespace
+
+bool VkRoot::getScreenshot(std::function<void(std::unique_ptr<iV_Image>)> callback)
+{
+	// Get the last swapchain image
+	const uint32_t imageIndex = currentSwapchainIndex;
+	vk::Image srcImage = {}; // We'll need the actual swapchain image, not just the view
+
+	std::vector<vk::Image> swapchainImages = dev.getSwapchainImagesKHR(swapchain, vkDynLoader);
+	if (swapchainImages.empty())
+	{
+		debug(LOG_ERROR, "Failed to get swapchain images for screenshot");
+		return false;
+	}
+	if (imageIndex >= swapchainImages.size())
+	{
+		debug(LOG_ERROR, "Invalid swapchain image index for screenshot");
+		return false;
+	}
+	srcImage = swapchainImages[imageIndex];
+
+	// Create a CPU-visible buffer
+	const vk::Extent2D extent = swapchainSize;
+	const vk::DeviceSize imageSize = extent.width * extent.height * 4; // Assuming RGBA8
+	vk::BufferCreateInfo bufferInfo(
+		{}, imageSize, vk::BufferUsageFlagBits::eTransferDst, vk::SharingMode::eExclusive
+	);
+	vk::Buffer stagingBuffer = dev.createBuffer(bufferInfo, nullptr, vkDynLoader);
+
+	vk::MemoryRequirements memRequirements = dev.getBufferMemoryRequirements(stagingBuffer, vkDynLoader);
+	uint32_t memoryTypeIndex = findProperties(memprops, memRequirements.memoryTypeBits,
+		(vk::MemoryPropertyFlagBits)(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
+
+	vk::MemoryAllocateInfo allocInfo(memRequirements.size, memoryTypeIndex);
+	vk::DeviceMemory stagingBufferMemory = dev.allocateMemory(allocInfo, nullptr, vkDynLoader);
+	dev.bindBufferMemory(stagingBuffer, stagingBufferMemory, 0, vkDynLoader);
+
+	// 3. Create an intermediate GPU image with VK_FORMAT_R8G8B8A8_UNORM to receive the blit
+	const vk::Format dstFormat = vk::Format::eR8G8B8A8Unorm;
+	vk::Image dstImage;
+	vk::DeviceMemory dstImageMemory;
+
+	{
+		vk::ImageCreateInfo dstImageCreateInfo = vk::ImageCreateInfo()
+			.setImageType(vk::ImageType::e2D)
+			.setFormat(dstFormat)
+			.setExtent(vk::Extent3D(extent.width, extent.height, 1))
+			.setMipLevels(1)
+			.setArrayLayers(1)
+			.setSamples(vk::SampleCountFlagBits::e1)
+			.setTiling(vk::ImageTiling::eOptimal)
+			.setUsage(vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc)
+			.setInitialLayout(vk::ImageLayout::eUndefined)
+			.setSharingMode(vk::SharingMode::eExclusive);
+
+		dstImage = dev.createImage(dstImageCreateInfo, nullptr, vkDynLoader);
+
+		auto dstMemReq = dev.getImageMemoryRequirements(dstImage, vkDynLoader);
+		uint32_t dstMemTypeIndex = findProperties(memprops, dstMemReq.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+		vk::MemoryAllocateInfo dstAllocInfo(dstMemReq.size, dstMemTypeIndex);
+		dstImageMemory = dev.allocateMemory(dstAllocInfo, nullptr, vkDynLoader);
+		dev.bindImageMemory(dstImage, dstImageMemory, 0, vkDynLoader);
+	}
+
+	// 4. Allocate a transient command buffer and record: transition -> blit -> copy to buffer -> transition back
+	vk::CommandBufferAllocateInfo cmdBufAllocInfo(
+		buffering_mechanism::get_current_resources().pool,
+		vk::CommandBufferLevel::ePrimary, 1
+	);
+	auto cmdBuffers = dev.allocateCommandBuffers(cmdBufAllocInfo, vkDynLoader);
+	vk::CommandBuffer cmdBuffer = cmdBuffers[0];
+
+	cmdBuffer.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
+
+	// Transition src (swapchain) image: PRESENT -> TRANSFER_SRC_OPTIMAL
+	vk::ImageMemoryBarrier barrierSrcToTransfer(
+		{}, vk::AccessFlagBits::eTransferRead,
+		vk::ImageLayout::ePresentSrcKHR, vk::ImageLayout::eTransferSrcOptimal,
+		VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+		srcImage,
+		vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+	);
+	// Transition dst image: UNDEFINED -> TRANSFER_DST_OPTIMAL
+	vk::ImageMemoryBarrier barrierDstToTransfer(
+		{}, vk::AccessFlagBits::eTransferWrite,
+		vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+		VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+		dstImage,
+		vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+	);
+
+	cmdBuffer.pipelineBarrier(
+		vk::PipelineStageFlagBits::eBottomOfPipe, vk::PipelineStageFlagBits::eTransfer,
+		{}, nullptr, nullptr,
+		std::array<vk::ImageMemoryBarrier, 2>{ barrierSrcToTransfer, barrierDstToTransfer },
+		vkDynLoader
+	);
+
+	// Blit from srcImage (surfaceFormat.format) to dstImage (R8G8B8A8)
+	vk::ImageBlit blitRegion;
+	blitRegion.srcSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+	blitRegion.srcOffsets[0] = vk::Offset3D(0, 0, 0);
+	blitRegion.srcOffsets[1] = vk::Offset3D(static_cast<int32_t>(extent.width), static_cast<int32_t>(extent.height), 1);
+	blitRegion.dstSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+	blitRegion.dstOffsets[0] = vk::Offset3D(0, 0, 0);
+	blitRegion.dstOffsets[1] = vk::Offset3D(static_cast<int32_t>(extent.width), static_cast<int32_t>(extent.height), 1);
+
+	// Use vk::Filter::eNearest for exact mapping (no filtering)
+	cmdBuffer.blitImage(
+		srcImage, vk::ImageLayout::eTransferSrcOptimal,
+		dstImage, vk::ImageLayout::eTransferDstOptimal,
+		1, &blitRegion,
+		vk::Filter::eNearest,
+		vkDynLoader
+	);
+
+	// After blit, transition dstImage: TRANSFER_DST_OPTIMAL -> TRANSFER_SRC_OPTIMAL so we can copy it to buffer
+	vk::ImageMemoryBarrier barrierDstToSrc(
+		vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eTransferRead,
+		vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal,
+		VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+		dstImage,
+		vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+	);
+
+	cmdBuffer.pipelineBarrier(
+		vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer,
+		{}, nullptr, nullptr, barrierDstToSrc, vkDynLoader
+	);
+
+	// Copy dstImage (now R8G8B8A8 in TRANSFER_SRC_OPTIMAL) to staging buffer
+	vk::BufferImageCopy copyRegion(
+		0, 0, 0,
+		vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
+		vk::Offset3D(0, 0, 0),
+		vk::Extent3D(extent.width, extent.height, 1)
+	);
+	cmdBuffer.copyImageToBuffer(dstImage, vk::ImageLayout::eTransferSrcOptimal, stagingBuffer, 1, &copyRegion, vkDynLoader);
+
+	// Transition src image back to PRESENT
+	vk::ImageMemoryBarrier barrierSrcBack(
+		vk::AccessFlagBits::eTransferRead, {},
+		vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::ePresentSrcKHR,
+		VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+		srcImage,
+		vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+	);
+	cmdBuffer.pipelineBarrier(
+		vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe,
+		{}, nullptr, nullptr, barrierSrcBack, vkDynLoader
+	);
+
+	cmdBuffer.end(vkDynLoader);
+
+	auto submitFence = dev.createFence(vk::FenceCreateInfo(), nullptr, vkDynLoader);
+
+	// Submit and wait
+	vk::SubmitInfo submitInfo({}, {}, cmdBuffer, {});
+	graphicsQueue.submit(submitInfo, submitFence, vkDynLoader);
+
+	constexpr uint64_t timeoutNanos = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds(1)).count();
+	auto waitResult = dev.waitForFences({ submitFence }, true, timeoutNanos, vkDynLoader);
+	if (waitResult != vk::Result::eSuccess)
+	{
+		debug(LOG_ERROR, "Failed to wait for fence for screenshot operation");
+		// cleanup
+		dev.destroyFence(submitFence, nullptr, vkDynLoader);
+		dev.freeMemory(dstImageMemory, nullptr, vkDynLoader);
+		dev.destroyImage(dstImage, nullptr, vkDynLoader);
+		dev.freeMemory(stagingBufferMemory, nullptr, vkDynLoader);
+		dev.destroyBuffer(stagingBuffer, nullptr, vkDynLoader);
+		return false;
+	}
+
+	// Map buffer and create iV_Image (assuming R8G8B8A8 layout)
+	void* data = dev.mapMemory(stagingBufferMemory, 0, imageSize, {}, vkDynLoader);
+	if (!data)
+	{
+		debug(LOG_ERROR, "Failed to map screenshot buffer memory");
+		// cleanup
+		dev.destroyFence(submitFence, nullptr, vkDynLoader);
+		dev.freeMemory(dstImageMemory, nullptr, vkDynLoader);
+		dev.destroyImage(dstImage, nullptr, vkDynLoader);
+		dev.freeMemory(stagingBufferMemory, nullptr, vkDynLoader);
+		dev.destroyBuffer(stagingBuffer, nullptr, vkDynLoader);
+		return false;
+	}
+
+	// Construct iV_Image 
+	auto image = std::make_unique<iV_Image>();
+	image->allocate(extent.width, extent.height, 4);
+
+	// Copy mapped RGBA8 data into iV_Image
+	copyImageYFlipped(reinterpret_cast<uint8_t*>(image->bmp_w()),
+		reinterpret_cast<const uint8_t*>(data),
+		static_cast<int>(extent.width),
+		static_cast<int>(extent.height),
+		4 /* bytesPerPixel for RGBA8 */);
+
+	dev.unmapMemory(stagingBufferMemory, vkDynLoader);
+
+	// Cleanup
+	dev.destroyFence(submitFence, nullptr, vkDynLoader);
+
+	dev.freeMemory(dstImageMemory, nullptr, vkDynLoader);
+	dev.destroyImage(dstImage, nullptr, vkDynLoader);
+
+	dev.freeMemory(stagingBufferMemory, nullptr, vkDynLoader);
+	dev.destroyBuffer(stagingBuffer, nullptr, vkDynLoader);
+
+	// Finally, invoke the callback
+	callback(std::move(image));
+
+	return true;
 }
 
 const size_t& VkRoot::current_FrameNum() const
