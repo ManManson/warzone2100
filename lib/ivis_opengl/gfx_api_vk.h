@@ -54,6 +54,8 @@
 #include <vector>
 #include <unordered_map>
 #include <typeindex>
+#include <deque>
+#include <mutex>
 
 #include <nonstd/optional.hpp>
 using nonstd::optional;
@@ -908,6 +910,26 @@ private:
 		SetSwapIntervalCompletionHandler completionHandler;
 	};
 	optional<QueuedSwapModeChange> queuedSwapModeChange = nullopt;
+
+	struct PendingScreenshot
+	{
+		vk::Fence fence;
+		vk::Buffer stagingBuffer;
+		vk::DeviceMemory stagingBufferMemory;
+		vk::Image dstImage;
+		vk::DeviceMemory dstImageMemory;
+		vk::CommandBuffer cmdBuffer;
+		vk::Extent2D extent;
+		std::function<void(std::unique_ptr<iV_Image>)> callback;
+		size_t frameSubmitted; // frame number when submitted
+	};
+
+	std::deque<PendingScreenshot> pendingScreenshots;
+	std::mutex pendingScreenshotsMutex;
+	static constexpr size_t MAX_PENDING_SCREENSHOTS = 2;
+
+	void pollPendingScreenshots(); // Should be called regularly
+	void completePendingScreenshot(PendingScreenshot& screenshot);
 };
 
 #endif // defined(WZ_VULKAN_ENABLED)

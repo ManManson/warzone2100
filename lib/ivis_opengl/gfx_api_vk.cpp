@@ -6231,6 +6231,8 @@ void VkRoot::endRenderPass()
 		handleUnrecoverableError(resultErr);
 	}
 
+	pollPendingScreenshots();
+
 	if (!mustSkipDrawing)
 	{
 		try {
@@ -6563,49 +6565,49 @@ void copyImageYFlipped(uint8_t* dst, const uint8_t* src, int width, int height, 
 
 bool VkRoot::getScreenshot(std::function<void(std::unique_ptr<iV_Image>)> callback)
 {
-	// Get the last swapchain image
-	const uint32_t imageIndex = currentSwapchainIndex;
-	vk::Image srcImage = {}; // We'll need the actual swapchain image, not just the view
-
-	std::vector<vk::Image> swapchainImages = dev.getSwapchainImagesKHR(swapchain, vkDynLoader);
-	if (swapchainImages.empty())
 	{
-		debug(LOG_ERROR, "Failed to get swapchain images for screenshot");
-		return false;
+		std::lock_guard<std::mutex> lock(pendingScreenshotsMutex);
+
+		// Prevent too many pending screenshots
+		if (pendingScreenshots.size() >= MAX_PENDING_SCREENSHOTS)
+		{
+			debug(LOG_WARNING, "Too many pending screenshots - ignoring request");
+			return false;
+		}
 	}
-	if (imageIndex >= swapchainImages.size())
-	{
-		debug(LOG_ERROR, "Invalid swapchain image index for screenshot");
-		return false;
-	}
-	srcImage = swapchainImages[imageIndex];
 
-	// Create a CPU-visible buffer
-	const vk::Extent2D extent = swapchainSize;
-	const vk::DeviceSize imageSize = extent.width * extent.height * 4; // Assuming RGBA8
-	vk::BufferCreateInfo bufferInfo(
-		{}, imageSize, vk::BufferUsageFlagBits::eTransferDst, vk::SharingMode::eExclusive
-	);
-	vk::Buffer stagingBuffer = dev.createBuffer(bufferInfo, nullptr, vkDynLoader);
+	// Snapshot data we need (thread-safe because captured at this point)
+	const vk::Extent2D captureExtent = swapchainSize;
+	const uint32_t captureImageIndex = currentSwapchainIndex;
 
-	vk::MemoryRequirements memRequirements = dev.getBufferMemoryRequirements(stagingBuffer, vkDynLoader);
-	uint32_t memoryTypeIndex = findProperties(memprops, memRequirements.memoryTypeBits,
-		(vk::MemoryPropertyFlagBits)(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
+	try {
+		PendingScreenshot screenshot;
+		screenshot.extent = captureExtent;
+		screenshot.callback = callback;
+		screenshot.frameSubmitted = frameNum;
 
-	vk::MemoryAllocateInfo allocInfo(memRequirements.size, memoryTypeIndex);
-	vk::DeviceMemory stagingBufferMemory = dev.allocateMemory(allocInfo, nullptr, vkDynLoader);
-	dev.bindBufferMemory(stagingBuffer, stagingBufferMemory, 0, vkDynLoader);
+		const vk::DeviceSize imageSize = captureExtent.width * captureExtent.height * 4;
 
-	// 3. Create an intermediate GPU image with VK_FORMAT_R8G8B8A8_UNORM to receive the blit
-	const vk::Format dstFormat = vk::Format::eR8G8B8A8Unorm;
-	vk::Image dstImage;
-	vk::DeviceMemory dstImageMemory;
+		// Create staging buffer
+		vk::BufferCreateInfo bufferInfo(
+			{}, imageSize, vk::BufferUsageFlagBits::eTransferDst, vk::SharingMode::eExclusive
+		);
+		screenshot.stagingBuffer = dev.createBuffer(bufferInfo, nullptr, vkDynLoader);
 
-	{
+		vk::MemoryRequirements memRequirements = dev.getBufferMemoryRequirements(screenshot.stagingBuffer, vkDynLoader);
+		uint32_t memoryTypeIndex = findProperties(memprops, memRequirements.memoryTypeBits,
+			(vk::MemoryPropertyFlagBits)(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
+
+		vk::MemoryAllocateInfo allocInfo(memRequirements.size, memoryTypeIndex);
+		screenshot.stagingBufferMemory = dev.allocateMemory(allocInfo, nullptr, vkDynLoader);
+		dev.bindBufferMemory(screenshot.stagingBuffer, screenshot.stagingBufferMemory, 0, vkDynLoader);
+
+		// Create intermediate GPU image
+		const vk::Format dstFormat = vk::Format::eR8G8B8A8Unorm;
 		vk::ImageCreateInfo dstImageCreateInfo = vk::ImageCreateInfo()
 			.setImageType(vk::ImageType::e2D)
 			.setFormat(dstFormat)
-			.setExtent(vk::Extent3D(extent.width, extent.height, 1))
+			.setExtent(vk::Extent3D(captureExtent.width, captureExtent.height, 1))
 			.setMipLevels(1)
 			.setArrayLayers(1)
 			.setSamples(vk::SampleCountFlagBits::e1)
@@ -6614,166 +6616,210 @@ bool VkRoot::getScreenshot(std::function<void(std::unique_ptr<iV_Image>)> callba
 			.setInitialLayout(vk::ImageLayout::eUndefined)
 			.setSharingMode(vk::SharingMode::eExclusive);
 
-		dstImage = dev.createImage(dstImageCreateInfo, nullptr, vkDynLoader);
+		screenshot.dstImage = dev.createImage(dstImageCreateInfo, nullptr, vkDynLoader);
 
-		auto dstMemReq = dev.getImageMemoryRequirements(dstImage, vkDynLoader);
+		auto dstMemReq = dev.getImageMemoryRequirements(screenshot.dstImage, vkDynLoader);
 		uint32_t dstMemTypeIndex = findProperties(memprops, dstMemReq.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
 		vk::MemoryAllocateInfo dstAllocInfo(dstMemReq.size, dstMemTypeIndex);
-		dstImageMemory = dev.allocateMemory(dstAllocInfo, nullptr, vkDynLoader);
-		dev.bindImageMemory(dstImage, dstImageMemory, 0, vkDynLoader);
+		screenshot.dstImageMemory = dev.allocateMemory(dstAllocInfo, nullptr, vkDynLoader);
+		dev.bindImageMemory(screenshot.dstImage, screenshot.dstImageMemory, 0, vkDynLoader);
+
+		// Allocate command buffer from the CURRENT frame's pool
+		// (safe because we'll submit it to the graphics queue before the frame ends)
+		vk::CommandBufferAllocateInfo cmdBufAllocInfo(
+			buffering_mechanism::get_current_resources().pool,
+			vk::CommandBufferLevel::ePrimary, 1
+		);
+		auto cmdBuffers = dev.allocateCommandBuffers(cmdBufAllocInfo, vkDynLoader);
+		screenshot.cmdBuffer = cmdBuffers[0];
+
+		// Record the command buffer
+		screenshot.cmdBuffer.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
+
+		// Get swapchain image (safe: captured index is fixed)
+		std::vector<vk::Image> swapchainImages = dev.getSwapchainImagesKHR(swapchain, vkDynLoader);
+		if (swapchainImages.empty() || captureImageIndex >= swapchainImages.size())
+		{
+			debug(LOG_ERROR, "Failed to get valid swapchain image for screenshot");
+			return false;
+		}
+		vk::Image srcImage = swapchainImages[captureImageIndex];
+
+		// Transition src (swapchain) image: PRESENT -> TRANSFER_SRC_OPTIMAL
+		vk::ImageMemoryBarrier barrierSrcToTransfer(
+			{}, vk::AccessFlagBits::eTransferRead,
+			vk::ImageLayout::ePresentSrcKHR, vk::ImageLayout::eTransferSrcOptimal,
+			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+			srcImage,
+			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+		);
+		vk::ImageMemoryBarrier barrierDstToTransfer(
+			{}, vk::AccessFlagBits::eTransferWrite,
+			vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+			screenshot.dstImage,
+			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+		);
+
+		screenshot.cmdBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eBottomOfPipe, vk::PipelineStageFlagBits::eTransfer,
+			{}, nullptr, nullptr,
+			std::array<vk::ImageMemoryBarrier, 2>{ barrierSrcToTransfer, barrierDstToTransfer },
+			vkDynLoader
+		);
+
+		// Blit
+		vk::ImageBlit blitRegion;
+		blitRegion.srcSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+		blitRegion.srcOffsets[0] = vk::Offset3D(0, 0, 0);
+		blitRegion.srcOffsets[1] = vk::Offset3D(static_cast<int32_t>(captureExtent.width), static_cast<int32_t>(captureExtent.height), 1);
+		blitRegion.dstSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+		blitRegion.dstOffsets[0] = vk::Offset3D(0, 0, 0);
+		blitRegion.dstOffsets[1] = vk::Offset3D(static_cast<int32_t>(captureExtent.width), static_cast<int32_t>(captureExtent.height), 1);
+
+		screenshot.cmdBuffer.blitImage(
+			srcImage, vk::ImageLayout::eTransferSrcOptimal,
+			screenshot.dstImage, vk::ImageLayout::eTransferDstOptimal,
+			1, &blitRegion,
+			vk::Filter::eNearest,
+			vkDynLoader
+		);
+
+		// Transition dstImage: TRANSFER_DST_OPTIMAL -> TRANSFER_SRC_OPTIMAL
+		vk::ImageMemoryBarrier barrierDstToSrc(
+			vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eTransferRead,
+			vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal,
+			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+			screenshot.dstImage,
+			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+		);
+
+		screenshot.cmdBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer,
+			{}, nullptr, nullptr, barrierDstToSrc, vkDynLoader
+		);
+
+		// Copy to staging buffer
+		vk::BufferImageCopy copyRegion(
+			0, 0, 0,
+			vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
+			vk::Offset3D(0, 0, 0),
+			vk::Extent3D(captureExtent.width, captureExtent.height, 1)
+		);
+		screenshot.cmdBuffer.copyImageToBuffer(screenshot.dstImage, vk::ImageLayout::eTransferSrcOptimal, screenshot.stagingBuffer, 1, &copyRegion, vkDynLoader);
+
+		// Transition src back to PRESENT
+		vk::ImageMemoryBarrier barrierSrcBack(
+			vk::AccessFlagBits::eTransferRead, {},
+			vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::ePresentSrcKHR,
+			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+			srcImage,
+			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+		);
+		screenshot.cmdBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe,
+			{}, nullptr, nullptr, barrierSrcBack, vkDynLoader
+		);
+
+		screenshot.cmdBuffer.end(vkDynLoader);
+
+		// Create fence for this screenshot
+		screenshot.fence = dev.createFence(vk::FenceCreateInfo(), nullptr, vkDynLoader);
+
+		// Submit immediately
+		vk::SubmitInfo submitInfo({}, {}, screenshot.cmdBuffer, {});
+		graphicsQueue.submit(submitInfo, screenshot.fence, vkDynLoader);
+
+		// Queue it for later polling
+		{
+			std::lock_guard<std::mutex> lock(pendingScreenshotsMutex);
+			pendingScreenshots.push_back(std::move(screenshot));
+		}
+
+		return true;
 	}
-
-	// 4. Allocate a transient command buffer and record: transition -> blit -> copy to buffer -> transition back
-	vk::CommandBufferAllocateInfo cmdBufAllocInfo(
-		buffering_mechanism::get_current_resources().pool,
-		vk::CommandBufferLevel::ePrimary, 1
-	);
-	auto cmdBuffers = dev.allocateCommandBuffers(cmdBufAllocInfo, vkDynLoader);
-	vk::CommandBuffer cmdBuffer = cmdBuffers[0];
-
-	cmdBuffer.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
-
-	// Transition src (swapchain) image: PRESENT -> TRANSFER_SRC_OPTIMAL
-	vk::ImageMemoryBarrier barrierSrcToTransfer(
-		{}, vk::AccessFlagBits::eTransferRead,
-		vk::ImageLayout::ePresentSrcKHR, vk::ImageLayout::eTransferSrcOptimal,
-		VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-		srcImage,
-		vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
-	);
-	// Transition dst image: UNDEFINED -> TRANSFER_DST_OPTIMAL
-	vk::ImageMemoryBarrier barrierDstToTransfer(
-		{}, vk::AccessFlagBits::eTransferWrite,
-		vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
-		VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-		dstImage,
-		vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
-	);
-
-	cmdBuffer.pipelineBarrier(
-		vk::PipelineStageFlagBits::eBottomOfPipe, vk::PipelineStageFlagBits::eTransfer,
-		{}, nullptr, nullptr,
-		std::array<vk::ImageMemoryBarrier, 2>{ barrierSrcToTransfer, barrierDstToTransfer },
-		vkDynLoader
-	);
-
-	// Blit from srcImage (surfaceFormat.format) to dstImage (R8G8B8A8)
-	vk::ImageBlit blitRegion;
-	blitRegion.srcSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
-	blitRegion.srcOffsets[0] = vk::Offset3D(0, 0, 0);
-	blitRegion.srcOffsets[1] = vk::Offset3D(static_cast<int32_t>(extent.width), static_cast<int32_t>(extent.height), 1);
-	blitRegion.dstSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
-	blitRegion.dstOffsets[0] = vk::Offset3D(0, 0, 0);
-	blitRegion.dstOffsets[1] = vk::Offset3D(static_cast<int32_t>(extent.width), static_cast<int32_t>(extent.height), 1);
-
-	// Use vk::Filter::eNearest for exact mapping (no filtering)
-	cmdBuffer.blitImage(
-		srcImage, vk::ImageLayout::eTransferSrcOptimal,
-		dstImage, vk::ImageLayout::eTransferDstOptimal,
-		1, &blitRegion,
-		vk::Filter::eNearest,
-		vkDynLoader
-	);
-
-	// After blit, transition dstImage: TRANSFER_DST_OPTIMAL -> TRANSFER_SRC_OPTIMAL so we can copy it to buffer
-	vk::ImageMemoryBarrier barrierDstToSrc(
-		vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eTransferRead,
-		vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal,
-		VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-		dstImage,
-		vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
-	);
-
-	cmdBuffer.pipelineBarrier(
-		vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer,
-		{}, nullptr, nullptr, barrierDstToSrc, vkDynLoader
-	);
-
-	// Copy dstImage (now R8G8B8A8 in TRANSFER_SRC_OPTIMAL) to staging buffer
-	vk::BufferImageCopy copyRegion(
-		0, 0, 0,
-		vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
-		vk::Offset3D(0, 0, 0),
-		vk::Extent3D(extent.width, extent.height, 1)
-	);
-	cmdBuffer.copyImageToBuffer(dstImage, vk::ImageLayout::eTransferSrcOptimal, stagingBuffer, 1, &copyRegion, vkDynLoader);
-
-	// Transition src image back to PRESENT
-	vk::ImageMemoryBarrier barrierSrcBack(
-		vk::AccessFlagBits::eTransferRead, {},
-		vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::ePresentSrcKHR,
-		VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-		srcImage,
-		vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
-	);
-	cmdBuffer.pipelineBarrier(
-		vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe,
-		{}, nullptr, nullptr, barrierSrcBack, vkDynLoader
-	);
-
-	cmdBuffer.end(vkDynLoader);
-
-	auto submitFence = dev.createFence(vk::FenceCreateInfo(), nullptr, vkDynLoader);
-
-	// Submit and wait
-	vk::SubmitInfo submitInfo({}, {}, cmdBuffer, {});
-	graphicsQueue.submit(submitInfo, submitFence, vkDynLoader);
-
-	constexpr uint64_t timeoutNanos = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds(1)).count();
-	auto waitResult = dev.waitForFences({ submitFence }, true, timeoutNanos, vkDynLoader);
-	if (waitResult != vk::Result::eSuccess)
+	catch (const vk::SystemError& e)
 	{
-		debug(LOG_ERROR, "Failed to wait for fence for screenshot operation");
-		// cleanup
-		dev.destroyFence(submitFence, nullptr, vkDynLoader);
-		dev.freeMemory(dstImageMemory, nullptr, vkDynLoader);
-		dev.destroyImage(dstImage, nullptr, vkDynLoader);
-		dev.freeMemory(stagingBufferMemory, nullptr, vkDynLoader);
-		dev.destroyBuffer(stagingBuffer, nullptr, vkDynLoader);
+		debug(LOG_ERROR, "getScreenshot failed: %s", e.what());
 		return false;
 	}
+}
 
-	// Map buffer and create iV_Image (assuming R8G8B8A8 layout)
-	void* data = dev.mapMemory(stagingBufferMemory, 0, imageSize, {}, vkDynLoader);
-	if (!data)
+void VkRoot::pollPendingScreenshots()
+{
+	std::lock_guard<std::mutex> lock(pendingScreenshotsMutex);
+
+	auto it = pendingScreenshots.begin();
+	while (it != pendingScreenshots.end())
 	{
-		debug(LOG_ERROR, "Failed to map screenshot buffer memory");
-		// cleanup
-		dev.destroyFence(submitFence, nullptr, vkDynLoader);
-		dev.freeMemory(dstImageMemory, nullptr, vkDynLoader);
-		dev.destroyImage(dstImage, nullptr, vkDynLoader);
-		dev.freeMemory(stagingBufferMemory, nullptr, vkDynLoader);
-		dev.destroyBuffer(stagingBuffer, nullptr, vkDynLoader);
-		return false;
+		auto result = dev.getFenceStatus(it->fence, vkDynLoader);
+
+		if (result == vk::Result::eSuccess)
+		{
+			// Fence is signaled - GPU work is complete
+			completePendingScreenshot(*it);
+			it = pendingScreenshots.erase(it);
+		}
+		else if (result == vk::Result::eNotReady)
+		{
+			// Still waiting - move to next
+			++it;
+		}
+		else
+		{
+			// Error occurred
+			debug(LOG_ERROR, "getFenceStatus failed: %s", vk::to_string(result).c_str());
+			it = pendingScreenshots.erase(it);
+		}
 	}
+}
 
-	// Construct iV_Image 
-	auto image = std::make_unique<iV_Image>();
-	image->allocate(extent.width, extent.height, 4);
+void VkRoot::completePendingScreenshot(PendingScreenshot& screenshot)
+{
+	try {
+		const vk::DeviceSize imageSize = screenshot.extent.width * screenshot.extent.height * 4;
 
-	// Copy mapped RGBA8 data into iV_Image
-	copyImageYFlipped(reinterpret_cast<uint8_t*>(image->bmp_w()),
-		reinterpret_cast<const uint8_t*>(data),
-		static_cast<int>(extent.width),
-		static_cast<int>(extent.height),
-		4 /* bytesPerPixel for RGBA8 */);
+		// Map buffer
+		void* data = dev.mapMemory(screenshot.stagingBufferMemory, 0, imageSize, {}, vkDynLoader);
+		if (!data)
+		{
+			debug(LOG_ERROR, "Failed to map screenshot buffer memory");
+			return;
+		}
 
-	dev.unmapMemory(stagingBufferMemory, vkDynLoader);
+		// Create iV_Image
+		auto image = std::make_unique<iV_Image>();
+		image->allocate(screenshot.extent.width, screenshot.extent.height, 4);
 
-	// Cleanup
-	dev.destroyFence(submitFence, nullptr, vkDynLoader);
+		// Copy with Y-flip
+		copyImageYFlipped(
+			reinterpret_cast<uint8_t*>(image->bmp_w()),
+			reinterpret_cast<const uint8_t*>(data),
+			static_cast<int>(screenshot.extent.width),
+			static_cast<int>(screenshot.extent.height),
+			4
+		);
 
-	dev.freeMemory(dstImageMemory, nullptr, vkDynLoader);
-	dev.destroyImage(dstImage, nullptr, vkDynLoader);
+		dev.unmapMemory(screenshot.stagingBufferMemory, vkDynLoader);
 
-	dev.freeMemory(stagingBufferMemory, nullptr, vkDynLoader);
-	dev.destroyBuffer(stagingBuffer, nullptr, vkDynLoader);
+		// Invoke callback
+		if (screenshot.callback && image)
+		{
+			screenshot.callback(std::move(image));
+		}
 
-	// Finally, invoke the callback
-	callback(std::move(image));
-
-	return true;
+		// Cleanup
+		dev.destroyFence(screenshot.fence, nullptr, vkDynLoader);
+		dev.freeMemory(screenshot.stagingBufferMemory, nullptr, vkDynLoader);
+		dev.destroyBuffer(screenshot.stagingBuffer, nullptr, vkDynLoader);
+		dev.freeMemory(screenshot.dstImageMemory, nullptr, vkDynLoader);
+		dev.destroyImage(screenshot.dstImage, nullptr, vkDynLoader);
+	}
+	catch (const vk::SystemError& e)
+	{
+		debug(LOG_ERROR, "Failed to complete screenshot: %s", e.what());
+	}
 }
 
 const size_t& VkRoot::current_FrameNum() const
