@@ -191,6 +191,12 @@ void	kf_ToggleShowPath()
 	showPath = !showPath;
 }
 
+void	kf_ToggleShowHeatmap()
+{
+    addConsoleMessage(_("Path heatmap overlay toggled."), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+    showHeatmap = !showHeatmap;
+}
+
 void kf_PerformanceSample()
 {
 	wzPerfStart();

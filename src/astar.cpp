@@ -45,6 +45,7 @@
 
 #include "astar.h"
 #include "map.h"
+#include "path_heatmap.h"
 #endif
 
 #include <list>
@@ -159,7 +160,7 @@ struct PathNonblockingArea
 // Data structures used for pathfinding, can contain cached results.
 struct PathfindContext
 {
-	PathfindContext() : myGameTime(0), iteration(0), blockingMap(nullptr) {}
+	PathfindContext() : myGameTime(0), iteration(0), blockingMap(nullptr), ownerDroidId(UINT32_MAX) {}
 	bool isBlocked(int x, int y) const
 	{
 		if (dstIgnore.isNonblocking(x, y))
@@ -210,6 +211,7 @@ struct PathfindContext
 	std::vector<PathExploredTile> map;  ///< Map, with paths leading back to tileS.
 	std::shared_ptr<const PathBlockingMap> blockingMap; ///< Map of blocking tiles for the type of object which needs a path.
 	PathNonblockingArea dstIgnore;      ///< Area of structure at destination which should be considered nonblocking.
+	uint32_t ownerDroidId;       ///< Droid id to exclude from heat reads (so droid doesn't penalize its own heat)
 };
 
 /// Lists of blocking maps from current tick.
@@ -277,6 +279,18 @@ static inline void fpathNewNode(PathfindContext &context, PathCoord dest, PathCo
 	unsigned costFactor = context.isDangerous(pos.x, pos.y) ? 5 : 1;
 	node.p = pos;
 	node.dist = prevDist + fpathEstimate(prevPos, pos) * costFactor;
+
+	// Add heatmap penalty (if enabled).
+	if (PathHeatmap::instance().enabled())
+	{
+		uint32_t heat = PathHeatmap::instance().readRelativeHeatTile(pos.x, pos.y, context.ownerDroidId);
+		if (heat > 0)
+		{
+			// Scale heat into path cost units (140 per tile). Multiply by costFactor so dangerous tiles scale similarly.
+			node.dist += static_cast<unsigned>(heat) * 140u * costFactor;
+		}
+	}
+
 	node.est = node.dist + fpathGoodEstimate(pos, dest);
 
 	Vector2i delta = Vector2i(pos.x - prevPos.x, pos.y - prevPos.y) * 64;
@@ -430,9 +444,10 @@ static PathCoord fpathAStarExplore(PathfindContext &context, PathCoord tileF)
 	return nearestCoord;
 }
 
-static void fpathInitContext(PathfindContext &context, const std::shared_ptr<const PathBlockingMap> &blockingMap, PathCoord tileS, PathCoord tileRealS, PathCoord tileF, PathNonblockingArea dstIgnore)
+static void fpathInitContext(PathfindContext &context, const std::shared_ptr<const PathBlockingMap> &blockingMap, PathCoord tileS, PathCoord tileRealS, PathCoord tileF, PathNonblockingArea dstIgnore, uint32_t droidId)
 {
 	context.assign(blockingMap, tileS, dstIgnore);
+	context.ownerDroidId = droidId;
 
 	// Add the start point to the open list
 	fpathNewNode(context, tileF, tileRealS, 0, tileRealS);
@@ -633,7 +648,7 @@ ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE
 
 		// Init a new context, overwriting the oldest one if we are caching too many.
 		// We will be searching from orig to dest, since we don't know where the nearest reachable tile to dest is.
-		fpathInitContext(*contextIterator, psJob->blockingMap, tileOrig, tileOrig, tileDest, dstIgnore);
+		fpathInitContext(*contextIterator, psJob->blockingMap, tileOrig, tileOrig, tileDest, dstIgnore, psJob->droidID);
 		endCoord = fpathAStarExplore(*contextIterator, tileDest);
 		contextIterator->nearestCoord = endCoord;
 	}
@@ -712,7 +727,7 @@ ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE
 		if (!context.isBlocked(tileOrig.x, tileOrig.y))  // If blocked, searching from tileDest to tileOrig wouldn't find the tileOrig tile.
 		{
 			// Next time, search starting from nearest reachable tile to the destination.
-			fpathInitContext(context, psJob->blockingMap, tileDest, context.nearestCoord, tileOrig, dstIgnore);
+			fpathInitContext(context, psJob->blockingMap, tileDest, context.nearestCoord, tileOrig, dstIgnore, psJob->droidID);
 		}
 	}
 	else

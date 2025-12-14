@@ -46,6 +46,7 @@
 #include "formation.h"
 #include "order.h"
 #include "astar.h"
+#include "path_heatmap.h"
 #include "mapgrid.h"
 #include "display.h"	// needed for widgetsOn flag.
 #include "effects.h"
@@ -654,6 +655,34 @@ static bool moveBestTarget(DROID *psDroid)
 	psDroid->sMove.pathIndex = positionIndex + 1;
 	psDroid->sMove.src = psDroid->pos.xy();
 	psDroid->sMove.target = psDroid->sMove.asPath[positionIndex];
+
+	// Record heat for entering a new path segment: current target and remaining path
+	if (PathHeatmap::instance().enabled())
+	{
+		constexpr uint32_t DEFAULT_MAX_RELATIVE_HEAT = 32; // match fpathExecute default
+
+		int srcTileX = map_coord(psDroid->sMove.src.x);
+		int srcTileY = map_coord(psDroid->sMove.src.y);
+		PathHeatmap::instance().addPointHeat(psDroid->id, srcTileX, srcTileY, DEFAULT_MAX_RELATIVE_HEAT);
+
+		// Add heat for the current target tile
+		int curTileX = map_coord(psDroid->sMove.target.x);
+		int curTileY = map_coord(psDroid->sMove.target.y);
+		PathHeatmap::instance().addPointHeat(psDroid->id, curTileX, curTileY, DEFAULT_MAX_RELATIVE_HEAT);
+
+		// Add heat for the remaining route (from current pathIndex to end)
+		if (positionIndex < (int)psDroid->sMove.asPath.size())
+		{
+			std::vector<Vector2i> remaining;
+			remaining.reserve(psDroid->sMove.asPath.size() - positionIndex);
+			for (int i = positionIndex; i < (int)psDroid->sMove.asPath.size(); ++i)
+			{
+				remaining.push_back(psDroid->sMove.asPath[i]);
+			}
+			PathHeatmap::instance().addPath(psDroid->id, remaining, DEFAULT_MAX_RELATIVE_HEAT);
+		}
+	}
+
 	return true;
 }
 

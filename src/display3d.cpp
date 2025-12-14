@@ -91,6 +91,8 @@
 #include "shadowcascades.h"
 #include "profiling.h"
 
+#include "path_heatmap.h"
+
 
 /********************  Prototypes  ********************/
 
@@ -166,6 +168,7 @@ static bool	bDrawProximitys = true;
 bool	godMode;
 bool	showGateways = false;
 bool	showPath = false;
+bool	showHeatmap = false;
 
 // Skybox data
 static float wind = 0.0f;
@@ -821,6 +824,71 @@ static void showDroidPaths()
 				effectGiveAuxVar(80);
 				addEffect(&pos, EFFECT_EXPLOSION, EXPLOSION_TYPE_LASER, false, nullptr, 0);
 			}
+		}
+	}
+}
+
+/// Draw the CPU-based heatmap overlay (screen-space rectangles)
+static void drawHeatmapOverlay()
+{
+	if (!showHeatmap || !PathHeatmap::instance().enabled())
+	{
+		return;
+	}
+
+	const auto &heatmap = PathHeatmap::instance();
+	constexpr uint32_t MAX_HEAT_DISPLAY = 32; // tunable; matches addPath default
+
+	for (int i = -visibleTiles.y / 2, idx = 0; i <= visibleTiles.y / 2; i++, ++idx)
+	{
+		for (int j = -visibleTiles.x / 2, jdx = 0; j <= visibleTiles.x / 2; j++, ++jdx)
+		{
+			if (!tileScreenVisible[idx][jdx])
+			{
+				continue;
+			}
+
+			int tileX = playerXTile + j;
+			int tileY = playerZTile + i;
+
+			uint32_t rel = heatmap.readRelativeHeatTile(tileX, tileY, UINT32_MAX);
+			if (rel == 0)
+			{
+				continue;
+			}
+
+			float t = std::min<float>(1.0f, static_cast<float>(rel) / static_cast<float>(MAX_HEAT_DISPLAY));
+			uint8_t r = static_cast<uint8_t>(255.0f * t);
+			uint8_t g = 0;
+			uint8_t b = static_cast<uint8_t>(255.0f * (1.0f - t));
+			uint8_t a = 128; // semi-transparent
+
+			int x0 = tileScreenInfo[idx + 0][jdx + 0].x;
+			int y0 = tileScreenInfo[idx + 0][jdx + 0].y;
+			int x1 = tileScreenInfo[idx + 0][jdx + 1].x;
+			int y1 = tileScreenInfo[idx + 0][jdx + 1].y;
+			int x2 = tileScreenInfo[idx + 1][jdx + 1].x;
+			int y2 = tileScreenInfo[idx + 1][jdx + 1].y;
+			int x3 = tileScreenInfo[idx + 1][jdx + 0].x;
+			int y3 = tileScreenInfo[idx + 1][jdx + 0].y;
+
+			int minX = std::min(std::min(x0, x1), std::min(x2, x3));
+			int maxX = std::max(std::max(x0, x1), std::max(x2, x3));
+			int minY = std::min(std::min(y0, y1), std::min(y2, y3));
+			int maxY = std::max(std::max(y0, y1), std::max(y2, y3));
+
+			minX = std::max(minX, 0);
+			minY = std::max(minY, 0);
+			maxX = std::min(maxX, pie_GetVideoBufferWidth());
+			maxY = std::min(maxY, pie_GetVideoBufferHeight());
+			if (minX >= maxX || minY >= maxY)
+			{
+				continue;
+			}
+
+			PIELIGHT col;
+			col.fromRGBA(r, g, b, a);
+			pie_UniTransBoxFill(minX, minY, maxX, maxY, col);
 		}
 	}
 }
@@ -1518,6 +1586,9 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	pie_SetFogStatus(true);
 	drawTerrain(perspectiveViewMatrix, viewMatrix, cameraPos, -getTheSun(), shadowCascadesInfo);
 	wzPerfEnd(PERF_TERRAIN);
+
+	// Draw heatmap overlay if requested
+	drawHeatmapOverlay();
 
 	// draw skybox
 	// NOTE: Must come *after* drawTerrain *if* using the fallback (old) terrain shaders

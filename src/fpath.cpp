@@ -40,6 +40,7 @@
 
 #include "fpath.h"
 #include "profiling.h"
+#include "path_heatmap.h"
 
 // If the path finding system is shutdown or not
 static volatile bool fpathQuit = false;
@@ -177,6 +178,11 @@ bool fpathInitialise()
 		}
 	}
 
+    // Initialize the global path heatmap using current map dimensions.
+    // Default disabled; enable via config later when ready.
+    PathHeatmap::instance().init(mapWidth, mapHeight);
+    PathHeatmap::instance().setEnabled(true);
+
 	return true;
 }
 
@@ -204,6 +210,9 @@ void fpathShutdown()
 #endif
 	}
 	fpathHardTableReset();
+
+	// Shutdown heatmap manager
+	PathHeatmap::instance().shutdown();
 }
 
 
@@ -213,7 +222,8 @@ void fpathShutdown()
  */
 void fpathUpdate()
 {
-	// Nothing now
+	// Advance the heatmap offset once per simulation tick.
+	PathHeatmap::instance().advanceOffset();
 }
 
 static constexpr size_t fpathPropulsionDomain(PROPULSION_TYPE propulsion)
@@ -394,8 +404,6 @@ static Position findNonblockingPosition(Position pos, PROPULSION_TYPE propulsion
 
 	return Position(std::min(std::max(pos.x, minCoord.x), maxCoord.x), std::min(std::max(pos.y, minCoord.y), maxCoord.y), pos.z);
 }
-
-
 
 static void fpathSetMove(MOVE_CONTROL *psMoveCntl, SDWORD targetX, SDWORD targetY)
 {
@@ -628,6 +636,14 @@ PATHRESULT fpathExecute(const std::shared_ptr<FPathExecuteContext>& ctx, PATHJOB
 		result.retval = FPR_OK;
 		break;
 	}
+
+	// Record heat for successful path results (if enabled)
+	if (PathHeatmap::instance().enabled() && !result.sMove.asPath.empty())
+	{
+		constexpr uint32_t DEFAULT_MAX_RELATIVE_HEAT = 32; // TODO: read from config
+		PathHeatmap::instance().addPath(result.droidID, result.sMove.asPath, DEFAULT_MAX_RELATIVE_HEAT);
+	}
+
 	return result;
 }
 
