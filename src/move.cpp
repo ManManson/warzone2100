@@ -619,6 +619,7 @@ static int32_t moveDirectPathToWaypoint(DROID *psDroid, unsigned positionIndex)
 static bool moveBestTarget(DROID *psDroid)
 {
 	int positionIndex = std::max(psDroid->sMove.pathIndex - 1, 0);
+	// int origPositionIndex = positionIndex;
 	int32_t dist = moveDirectPathToWaypoint(psDroid, positionIndex);
 	if (dist >= 0)
 	{

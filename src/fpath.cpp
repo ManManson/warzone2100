@@ -40,6 +40,7 @@
 
 #include "fpath.h"
 #include "profiling.h"
+#include "path_heatmap.h"
 
 // If the path finding system is shutdown or not
 static volatile bool fpathQuit = false;
@@ -177,6 +178,13 @@ bool fpathInitialise()
 		}
 	}
 
+	// Initialize the global path heatmap using current map dimensions.
+	// Default disabled; enable via config later when ready.
+	PathHeatmap::instance().init(mapWidth, mapHeight);
+
+	// Create initial heatmap snapshot
+	fpathUpdatePathHeatmapSnapshot();
+
 	return true;
 }
 
@@ -204,6 +212,10 @@ void fpathShutdown()
 #endif
 	}
 	fpathHardTableReset();
+
+	// Shutdown heatmap manager
+	fpathResetPathHeatmapSnapshot();
+	PathHeatmap::instance().shutdown();
 }
 
 
@@ -213,7 +225,10 @@ void fpathShutdown()
  */
 void fpathUpdate()
 {
-	// Nothing now
+	// Advance the heatmap offset once per simulation tick to support natural heat decay.
+	PathHeatmap::instance().advanceOffset();
+	// Create a snapshot of the heatmap for this tick's pathfinding jobs.
+	fpathUpdatePathHeatmapSnapshot();
 }
 
 static constexpr size_t fpathPropulsionDomain(PROPULSION_TYPE propulsion)
@@ -395,8 +410,6 @@ static Position findNonblockingPosition(Position pos, PROPULSION_TYPE propulsion
 	return Position(std::min(std::max(pos.x, minCoord.x), maxCoord.x), std::min(std::max(pos.y, minCoord.y), maxCoord.y), pos.z);
 }
 
-
-
 static void fpathSetMove(MOVE_CONTROL *psMoveCntl, SDWORD targetX, SDWORD targetY)
 {
 	psMoveCntl->asPath.resize(1);
@@ -508,6 +521,7 @@ queuePathfinding:
 	job.acceptNearest = acceptNearest;
 	job.deleted = false;
 	fpathSetBlockingMap(&job);
+	job.heatmap = fpathGetPathHeatmapSnapshot();
 
 	debug(LOG_NEVER, "starting new job for droid %d 0x%x", id, id);
 	// Clear any results or jobs waiting already. It is a vital assumption that there is only one

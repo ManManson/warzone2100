@@ -75,6 +75,7 @@
 #include "template.h"
 #include "qtscript.h"
 #include "campaigninfo.h"
+#include "path_heatmap.h"
 
 #define DEFAULT_RECOIL_TIME	(GAME_TICKS_PER_SEC/4)
 #define	DROID_DAMAGE_SPREAD	(16 - rand()%32)
@@ -858,6 +859,19 @@ void _syncDebugDroid(const char *function, DROID const *psDroid, char ch)
 	_syncDebugIntList(function, "%c droid%d = p%d;pos(%d,%d,%d),rot(%d,%d,%d),order%d(%d,%d)^%d,action%d,secondaryOrder%X,body%d,sMove(status%d,speed%d,moveDir%d,path%d/%d,src(%d,%d),target(%d,%d),destination(%d,%d),bump(%d,%d,%d,%d,(%d,%d),%d)),exp%u", list, ARRAY_SIZE(list));
 }
 
+// Update the path heatmap state for the droid
+static void droidUpdatePathHeatmap(DROID *psDroid)
+{
+	// Deposit heat at the point where it currently is.
+	// VTOLs are excluded as they mostly ignore terrain when pathfinding.
+	if (!psDroid->isVtol())
+	{
+		const int srcTileX = map_coord(psDroid->pos.x);
+		const int srcTileY = map_coord(psDroid->pos.y);
+		PathHeatmap::instance().addPointHeat(psDroid->id, srcTileX, srcTileY, PathHeatmap::DEFAULT_HEAT_AMOUNT);
+	}
+}
+
 /* The main update routine for all droids */
 void droidUpdate(DROID *psDroid)
 {
@@ -1041,6 +1055,8 @@ void droidUpdate(DROID *psDroid)
 			psDroid->resistance++;
 		}
 	}
+
+	droidUpdatePathHeatmap(psDroid);
 
 	syncDebugDroid(psDroid, '>');
 
