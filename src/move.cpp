@@ -657,7 +657,7 @@ static bool moveBestTarget(DROID *psDroid)
 	psDroid->sMove.target = psDroid->sMove.asPath[positionIndex];
 
 	// Record heat for entering a new path segment: current target and remaining path
-	if (PathHeatmap::instance().enabled())
+	if (!psDroid->isVtol())
 	{
 		constexpr uint32_t DEFAULT_MAX_RELATIVE_HEAT = 32; // match fpathExecute default
 

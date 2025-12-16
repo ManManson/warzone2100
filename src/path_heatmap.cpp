@@ -49,7 +49,6 @@ void PathHeatmap::shutdown()
 	heatCells_.clear();
 	mapWidth_ = mapHeight_ = widthShift_ = stride_ = 0;
 	offset_ = 0;
-	enabled_ = false;
 }
 
 void PathHeatmap::advanceOffset()
@@ -61,10 +60,6 @@ void PathHeatmap::advanceOffset()
 void PathHeatmap::addPath(uint32_t droidId, const std::vector<Vector2i> &path, uint32_t maxRelativeHeat)
 {
 	if (path.empty())
-	{
-		return;
-	}
-	if (!enabled_)
 	{
 		return;
 	}
@@ -107,10 +102,6 @@ void PathHeatmap::addPath(uint32_t droidId, const std::vector<Vector2i> &path, u
 
 void PathHeatmap::addPointHeat(uint32_t droidId, int tileX, int tileY, uint32_t amount)
 {
-	if (!enabled_)
-	{
-		return;
-	}
 	if (!isInBounds(tileX, tileY))
 	{
 		return;
@@ -129,10 +120,6 @@ void PathHeatmap::addPointHeat(uint32_t droidId, int tileX, int tileY, uint32_t 
 
 uint32_t PathHeatmap::readRelativeHeatTile(int tileX, int tileY, uint32_t excludeOwner) const
 {
-	if (!enabled_)
-	{
-		return 0;
-	}
 	if (!isInBounds(tileX, tileY))
 	{
 		return 0;

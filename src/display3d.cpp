@@ -831,7 +831,7 @@ static void showDroidPaths()
 /// Draw the CPU-based heatmap overlay (screen-space rectangles)
 static void drawHeatmapOverlay()
 {
-	if (!showHeatmap || !PathHeatmap::instance().enabled())
+	if (!showHeatmap)
 	{
 		return;
 	}

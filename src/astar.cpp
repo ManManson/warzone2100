@@ -280,15 +280,12 @@ static inline void fpathNewNode(PathfindContext &context, PathCoord dest, PathCo
 	node.p = pos;
 	node.dist = prevDist + fpathEstimate(prevPos, pos) * costFactor;
 
-	// Add heatmap penalty (if enabled).
-	if (PathHeatmap::instance().enabled())
+	// Add heatmap penalty
+	uint32_t heat = PathHeatmap::instance().readRelativeHeatTile(pos.x, pos.y, context.ownerDroidId);
+	if (heat > 0)
 	{
-		uint32_t heat = PathHeatmap::instance().readRelativeHeatTile(pos.x, pos.y, context.ownerDroidId);
-		if (heat > 0)
-		{
-			// Scale heat into path cost units (140 per tile). Multiply by costFactor so dangerous tiles scale similarly.
-			node.dist += static_cast<unsigned>(heat) * 140u * costFactor;
-		}
+		// Scale heat into path cost units (140 per tile). Multiply by costFactor so dangerous tiles scale similarly.
+		node.dist += static_cast<unsigned>(heat) * 140u * costFactor;
 	}
 
 	node.est = node.dist + fpathGoodEstimate(pos, dest);

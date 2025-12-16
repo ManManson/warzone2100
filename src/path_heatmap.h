@@ -25,9 +25,6 @@ public:
 	void addPointHeat(uint32_t droidId, int tileX, int tileY, uint32_t amount = 1);
 	uint32_t readRelativeHeatTile(int tileX, int tileY, uint32_t excludeOwner = UINT32_MAX) const;
 
-	void setEnabled(bool enabled) { enabled_ = enabled; }
-	bool enabled() const { return enabled_; }
-
 private:
 
 	struct HeatCell
@@ -47,7 +44,6 @@ private:
 
 	mutable std::shared_mutex mtx_;
 	uint32_t offset_ = 0;
-	bool enabled_ = false;
 	int mapWidth_ = 0;
 	int mapHeight_ = 0;
 	int widthShift_ = 0;

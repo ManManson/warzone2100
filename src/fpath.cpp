@@ -181,7 +181,6 @@ bool fpathInitialise()
     // Initialize the global path heatmap using current map dimensions.
     // Default disabled; enable via config later when ready.
     PathHeatmap::instance().init(mapWidth, mapHeight);
-    PathHeatmap::instance().setEnabled(true);
 
 	return true;
 }
@@ -637,8 +636,9 @@ PATHRESULT fpathExecute(const std::shared_ptr<FPathExecuteContext>& ctx, PATHJOB
 		break;
 	}
 
-	// Record heat for successful path results (if enabled)
-	if (PathHeatmap::instance().enabled() && !result.sMove.asPath.empty())
+	// Record heat for successful path results (if enabled).
+	// VTOLs are excluded as they mostly ignore terrain when pathfinding.
+	if (result.retval == FPR_OK && !result.sMove.asPath.empty() && job.propulsion != PROPULSION_TYPE_LIFT)
 	{
 		constexpr uint32_t DEFAULT_MAX_RELATIVE_HEAT = 32; // TODO: read from config
 		PathHeatmap::instance().addPath(result.droidID, result.sMove.asPath, DEFAULT_MAX_RELATIVE_HEAT);
