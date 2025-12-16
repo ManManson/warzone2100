@@ -270,7 +270,7 @@ static inline unsigned WZ_DECL_PURE fpathGoodEstimate(PathCoord s, PathCoord f)
 
 /** Generate a new node
  */
-static inline void fpathNewNode(PathfindContext &context, PathCoord dest, PathCoord pos, unsigned prevDist, PathCoord prevPos)
+static inline void fpathNewNode(PathfindContext &context, PathCoord dest, PathCoord pos, unsigned prevDist, PathCoord prevPos, PROPULSION_TYPE propulsion)
 {
 	ASSERT_OR_RETURN(, (unsigned)pos.x < (unsigned)mapWidth && (unsigned)pos.y < (unsigned)mapHeight, "X (%d) or Y (%d) coordinate for path finding node is out of range!", pos.x, pos.y);
 
@@ -281,11 +281,14 @@ static inline void fpathNewNode(PathfindContext &context, PathCoord dest, PathCo
 	node.dist = prevDist + fpathEstimate(prevPos, pos) * costFactor;
 
 	// Add heatmap penalty
-	uint32_t heat = PathHeatmap::instance().readRelativeHeatTile(pos.x, pos.y, context.ownerDroidId);
-	if (heat > 0)
+	if (propulsion != PROPULSION_TYPE_LIFT)  // VTOLs ignore terrain heat
 	{
-		// Scale heat into path cost units (140 per tile). Multiply by costFactor so dangerous tiles scale similarly.
-		node.dist += static_cast<unsigned>(heat) * 140u * costFactor;
+		uint32_t heat = PathHeatmap::instance().readRelativeHeatTile(pos.x, pos.y, context.ownerDroidId);
+		if (heat > 0)
+		{
+			// Scale heat into path cost units (140 per tile). Multiply by costFactor so dangerous tiles scale similarly.
+			node.dist += static_cast<unsigned>(heat) * 140u * costFactor;
+		}
 	}
 
 	node.est = node.dist + fpathGoodEstimate(pos, dest);
@@ -362,7 +365,7 @@ static void fpathAStarReestimate(PathfindContext &context, PathCoord tileF)
 }
 
 /// Returns nearest explored tile to tileF.
-static PathCoord fpathAStarExplore(PathfindContext &context, PathCoord tileF)
+static PathCoord fpathAStarExplore(PathfindContext &context, PathCoord tileF, PROPULSION_TYPE propulsion)
 {
 	PathCoord       nearestCoord(0, 0);
 	unsigned        nearestDist = 0xFFFFFFFF;
@@ -434,20 +437,20 @@ static PathCoord fpathAStarExplore(PathfindContext &context, PathCoord tileF)
 			}
 
 			// Now insert the point into the appropriate list, if not already visited.
-			fpathNewNode(context, tileF, PathCoord(x, y), node.dist, node.p);
+			fpathNewNode(context, tileF, PathCoord(x, y), node.dist, node.p, propulsion);
 		}
 	}
 
 	return nearestCoord;
 }
 
-static void fpathInitContext(PathfindContext &context, const std::shared_ptr<const PathBlockingMap> &blockingMap, PathCoord tileS, PathCoord tileRealS, PathCoord tileF, PathNonblockingArea dstIgnore, uint32_t droidId)
+static void fpathInitContext(PathfindContext &context, const std::shared_ptr<const PathBlockingMap> &blockingMap, PathCoord tileS, PathCoord tileRealS, PathCoord tileF, PathNonblockingArea dstIgnore, uint32_t droidId, PROPULSION_TYPE propulsion)
 {
 	context.assign(blockingMap, tileS, dstIgnore);
 	context.ownerDroidId = droidId;
 
 	// Add the start point to the open list
-	fpathNewNode(context, tileF, tileRealS, 0, tileRealS);
+	fpathNewNode(context, tileF, tileRealS, 0, tileRealS, propulsion);
 	ASSERT(!context.nodes.empty(), "fpathNewNode failed to add node.");
 }
 
@@ -625,7 +628,7 @@ ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE
 		{
 			// Need to find the path from orig to dest, continue previous exploration.
 			fpathAStarReestimate(*contextIterator, tileOrig);
-			endCoord = fpathAStarExplore(*contextIterator, tileOrig);
+			endCoord = fpathAStarExplore(*contextIterator, tileOrig, psJob->propulsion);
 		}
 
 		if (endCoord != tileOrig)
@@ -645,8 +648,8 @@ ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE
 
 		// Init a new context, overwriting the oldest one if we are caching too many.
 		// We will be searching from orig to dest, since we don't know where the nearest reachable tile to dest is.
-		fpathInitContext(*contextIterator, psJob->blockingMap, tileOrig, tileOrig, tileDest, dstIgnore, psJob->droidID);
-		endCoord = fpathAStarExplore(*contextIterator, tileDest);
+		fpathInitContext(*contextIterator, psJob->blockingMap, tileOrig, tileOrig, tileDest, dstIgnore, psJob->droidID, psJob->propulsion);
+		endCoord = fpathAStarExplore(*contextIterator, tileDest, psJob->propulsion);
 		contextIterator->nearestCoord = endCoord;
 	}
 
@@ -724,7 +727,7 @@ ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE
 		if (!context.isBlocked(tileOrig.x, tileOrig.y))  // If blocked, searching from tileDest to tileOrig wouldn't find the tileOrig tile.
 		{
 			// Next time, search starting from nearest reachable tile to the destination.
-			fpathInitContext(context, psJob->blockingMap, tileDest, context.nearestCoord, tileOrig, dstIgnore, psJob->droidID);
+			fpathInitContext(context, psJob->blockingMap, tileDest, context.nearestCoord, tileOrig, dstIgnore, psJob->droidID, psJob->propulsion);
 		}
 	}
 	else
