@@ -160,7 +160,7 @@ struct PathNonblockingArea
 // Data structures used for pathfinding, can contain cached results.
 struct PathfindContext
 {
-	PathfindContext() : myGameTime(0), iteration(0), blockingMap(nullptr), ownerDroidId(UINT32_MAX) {}
+	PathfindContext() : myGameTime(0), iteration(0), blockingMap(nullptr), heatmap(nullptr), ownerDroidId(UINT32_MAX) {}
 	bool isBlocked(int x, int y) const
 	{
 		if (dstIgnore.isNonblocking(x, y))
@@ -174,14 +174,15 @@ struct PathfindContext
 	{
 		return !blockingMap->dangerMap.empty() && blockingMap->dangerMap[x + y * mapWidth];
 	}
-	bool matches(const std::shared_ptr<const PathBlockingMap> &blockingMap_, PathCoord tileS_, PathNonblockingArea dstIgnore_) const
+	bool matches(const std::shared_ptr<const PathBlockingMap> &blockingMap_, const std::shared_ptr<const PathHeatmap> &heatmap_, PathCoord tileS_, PathNonblockingArea dstIgnore_) const
 	{
 		// Must check myGameTime == blockingMap_->type.gameTime, otherwise blockingMap could be a deleted pointer which coincidentally compares equal to the valid pointer blockingMap_.
-		return myGameTime == blockingMap_->type.gameTime && blockingMap == blockingMap_ && tileS == tileS_ && dstIgnore == dstIgnore_;
+		return myGameTime == blockingMap_->type.gameTime && blockingMap == blockingMap_ && heatmap == heatmap_ && tileS == tileS_ && dstIgnore == dstIgnore_;
 	}
-	void assign(const std::shared_ptr<const PathBlockingMap> &blockingMap_, PathCoord tileS_, PathNonblockingArea dstIgnore_)
+	void assign(const std::shared_ptr<const PathBlockingMap> &blockingMap_, const std::shared_ptr<const PathHeatmap> &heatmap_, PathCoord tileS_, PathNonblockingArea dstIgnore_)
 	{
 		blockingMap = blockingMap_;
+		heatmap = heatmap_;
 		tileS = tileS_;
 		dstIgnore = dstIgnore_;
 		myGameTime = blockingMap->type.gameTime;
@@ -210,6 +211,7 @@ struct PathfindContext
 	std::vector<PathNode> nodes;        ///< Edge of explored region of the map.
 	std::vector<PathExploredTile> map;  ///< Map, with paths leading back to tileS.
 	std::shared_ptr<const PathBlockingMap> blockingMap; ///< Map of blocking tiles for the type of object which needs a path.
+	std::shared_ptr<const PathHeatmap> heatmap; ///< Snapshot of heatmap for this pathfinding operation.
 	PathNonblockingArea dstIgnore;      ///< Area of structure at destination which should be considered nonblocking.
 	uint32_t ownerDroidId;       ///< Droid id to exclude from heat reads (so droid doesn't penalize its own heat)
 };
@@ -218,6 +220,8 @@ struct PathfindContext
 static std::vector<std::shared_ptr<PathBlockingMap>> fpathBlockingMaps;
 /// Game time for all blocking maps in fpathBlockingMaps.
 static uint32_t fpathCurrentGameTime;
+/// Per-tick heatmap snapshot for pathfinding.
+static std::shared_ptr<const PathHeatmap> pathHeatmapSnapshot;
 
 // Convert a direction into an offset
 // dir 0 => x = 0, y = -1
@@ -236,6 +240,7 @@ static const Vector2i aDirOffset[] =
 void fpathHardTableReset()
 {
 	fpathBlockingMaps.clear();
+	pathHeatmapSnapshot.reset();
 }
 
 /** Get the nearest entry in the open list
@@ -283,7 +288,7 @@ static inline void fpathNewNode(PathfindContext &context, PathCoord dest, PathCo
 	// Add heatmap penalty
 	if (propulsion != PROPULSION_TYPE_LIFT)  // VTOLs ignore terrain heat
 	{
-		uint32_t heat = PathHeatmap::instance().readRelativeHeatTile(pos.x, pos.y, context.ownerDroidId);
+		uint32_t heat = context.heatmap->readRelativeHeatTile(pos.x, pos.y, context.ownerDroidId);
 		if (heat > 0)
 		{
 			// Scale heat into path cost units (140 per tile). Multiply by costFactor so dangerous tiles scale similarly.
@@ -444,9 +449,9 @@ static PathCoord fpathAStarExplore(PathfindContext &context, PathCoord tileF, PR
 	return nearestCoord;
 }
 
-static void fpathInitContext(PathfindContext &context, const std::shared_ptr<const PathBlockingMap> &blockingMap, PathCoord tileS, PathCoord tileRealS, PathCoord tileF, PathNonblockingArea dstIgnore, uint32_t droidId, PROPULSION_TYPE propulsion)
+static void fpathInitContext(PathfindContext &context, const std::shared_ptr<const PathBlockingMap> &blockingMap, const std::shared_ptr<const PathHeatmap> &heatmap, PathCoord tileS, PathCoord tileRealS, PathCoord tileF, PathNonblockingArea dstIgnore, uint32_t droidId, PROPULSION_TYPE propulsion)
 {
-	context.assign(blockingMap, tileS, dstIgnore);
+	context.assign(blockingMap, heatmap, tileS, dstIgnore);
 	context.ownerDroidId = droidId;
 
 	// Add the start point to the open list
@@ -610,7 +615,7 @@ ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE
 	auto contextIterator = fpathContexts.begin();
 	for (; contextIterator != fpathContexts.end(); ++contextIterator)
 	{
-		if (!contextIterator->matches(psJob->blockingMap, tileDest, dstIgnore))
+		if (!contextIterator->matches(psJob->blockingMap, psJob->heatmap, tileDest, dstIgnore))
 		{
 			// This context is not for the same droid type and same destination.
 			continue;
@@ -648,7 +653,7 @@ ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE
 
 		// Init a new context, overwriting the oldest one if we are caching too many.
 		// We will be searching from orig to dest, since we don't know where the nearest reachable tile to dest is.
-		fpathInitContext(*contextIterator, psJob->blockingMap, tileOrig, tileOrig, tileDest, dstIgnore, psJob->droidID, psJob->propulsion);
+		fpathInitContext(*contextIterator, psJob->blockingMap, psJob->heatmap, tileOrig, tileOrig, tileDest, dstIgnore, psJob->droidID, psJob->propulsion);
 		endCoord = fpathAStarExplore(*contextIterator, tileDest, psJob->propulsion);
 		contextIterator->nearestCoord = endCoord;
 	}
@@ -727,7 +732,7 @@ ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE
 		if (!context.isBlocked(tileOrig.x, tileOrig.y))  // If blocked, searching from tileDest to tileOrig wouldn't find the tileOrig tile.
 		{
 			// Next time, search starting from nearest reachable tile to the destination.
-			fpathInitContext(context, psJob->blockingMap, tileDest, context.nearestCoord, tileOrig, dstIgnore, psJob->droidID, psJob->propulsion);
+			fpathInitContext(context, psJob->blockingMap, psJob->heatmap, tileDest, context.nearestCoord, tileOrig, dstIgnore, psJob->droidID, psJob->propulsion);
 		}
 	}
 	else
@@ -805,4 +810,19 @@ void fpathSetBlockingMap(PATHJOB *psJob)
 
 		psJob->blockingMap = *i;
 	}
+}
+
+std::shared_ptr<const PathHeatmap> fpathGetPathHeatmapSnapshot()
+{
+	return pathHeatmapSnapshot;
+}
+
+void fpathUpdatePathHeatmapSnapshot()
+{
+	pathHeatmapSnapshot = PathHeatmap::instance().takeSnapshot();
+}
+
+void fpathResetPathHeatmapSnapshot()
+{
+	pathHeatmapSnapshot.reset();
 }

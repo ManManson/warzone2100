@@ -178,9 +178,12 @@ bool fpathInitialise()
 		}
 	}
 
-    // Initialize the global path heatmap using current map dimensions.
-    // Default disabled; enable via config later when ready.
-    PathHeatmap::instance().init(mapWidth, mapHeight);
+	// Initialize the global path heatmap using current map dimensions.
+	// Default disabled; enable via config later when ready.
+	PathHeatmap::instance().init(mapWidth, mapHeight);
+
+	// Create initial heatmap snapshot
+	fpathUpdatePathHeatmapSnapshot();
 
 	return true;
 }
@@ -211,6 +214,7 @@ void fpathShutdown()
 	fpathHardTableReset();
 
 	// Shutdown heatmap manager
+	fpathResetPathHeatmapSnapshot();
 	PathHeatmap::instance().shutdown();
 }
 
@@ -223,6 +227,9 @@ void fpathUpdate()
 {
 	// Advance the heatmap offset once per simulation tick.
 	PathHeatmap::instance().advanceOffset();
+
+	// Create a snapshot of the heatmap for this tick's pathfinding jobs.
+	fpathUpdatePathHeatmapSnapshot();
 }
 
 static constexpr size_t fpathPropulsionDomain(PROPULSION_TYPE propulsion)
@@ -515,6 +522,7 @@ queuePathfinding:
 	job.acceptNearest = acceptNearest;
 	job.deleted = false;
 	fpathSetBlockingMap(&job);
+	job.heatmap = fpathGetPathHeatmapSnapshot();
 
 	debug(LOG_NEVER, "starting new job for droid %d 0x%x", id, id);
 	// Clear any results or jobs waiting already. It is a vital assumption that there is only one

@@ -43,6 +43,7 @@ enum FPATH_MOVETYPE
 };
 
 struct PathBlockingMap;
+class PathHeatmap;
 
 struct PATHJOB
 {
@@ -55,6 +56,7 @@ struct PATHJOB
 	FPATH_MOVETYPE	moveType;
 	int		owner;		///< Player owner
 	std::shared_ptr<const PathBlockingMap> blockingMap;   ///< Map of blocking tiles.
+	std::shared_ptr<const PathHeatmap> heatmap;           ///< Snapshot of heatmap for this pathfinding operation.
 	bool		acceptNearest;
 	bool            deleted;        ///< Droid was deleted, so throw away result when complete. Must still process this PATHJOB, since processing order can affect resulting paths (but can't affect the path length).
 };

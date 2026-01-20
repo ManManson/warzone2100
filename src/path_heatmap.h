@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <vector>
-#include <shared_mutex>
 
 #include "geometry.h" // Vector2i
 #include "map.h"      // map_coord
@@ -11,7 +11,12 @@
 class PathHeatmap
 {
 public:
+
+	explicit PathHeatmap(const PathHeatmap &) = default;
+	PathHeatmap &operator=(const PathHeatmap &) = default;
+
 	static PathHeatmap &instance();
+	std::shared_ptr<const PathHeatmap> takeSnapshot() const;
 
 	void init(int width, int height);
 	void shutdown();
@@ -34,15 +39,11 @@ private:
 	};
 
 	explicit PathHeatmap() = default;
-	// Non-copyable
-	PathHeatmap(const PathHeatmap &) = delete;
-	PathHeatmap &operator=(const PathHeatmap &) = delete;
 
 	// Internal helpers
 	inline unsigned getIndex(int x, int y) const { return (static_cast<unsigned>(y) << widthShift_) | static_cast<unsigned>(x); }
 	inline bool isInBounds(int x, int y) const { return x >= 0 && x < mapWidth_ && y >= 0 && y < mapHeight_; }
 
-	mutable std::shared_mutex mtx_;
 	uint32_t offset_ = 0;
 	int mapWidth_ = 0;
 	int mapHeight_ = 0;

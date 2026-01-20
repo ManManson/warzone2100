@@ -62,4 +62,12 @@ void fpathSetBlockingMap(PATHJOB *psJob);
  */
 void fpathHardTableReset();
 
+class PathHeatmap;
+
+/** Global per-tick heatmap snapshot for pathfinding.
+ */
+std::shared_ptr<const PathHeatmap> fpathGetPathHeatmapSnapshot();
+void fpathUpdatePathHeatmapSnapshot();
+void fpathResetPathHeatmapSnapshot();
+
 #endif // __INCLUDED_SRC_ASTART_H__

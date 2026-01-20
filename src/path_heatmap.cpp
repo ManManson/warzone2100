@@ -1,7 +1,6 @@
 #include "path_heatmap.h"
 #include <algorithm>
 #include <limits>
-#include <mutex>
 
 // Singleton accessor
 PathHeatmap& PathHeatmap::instance()
@@ -10,9 +9,13 @@ PathHeatmap& PathHeatmap::instance()
 	return instance;
 }
 
+std::shared_ptr<const PathHeatmap> PathHeatmap::takeSnapshot() const
+{
+	return std::make_shared<PathHeatmap>(*this);
+}
+
 void PathHeatmap::init(int width, int height)
 {
-	std::unique_lock lock(mtx_);
 	if (width <= 0 || height <= 0)
 	{
 		mapWidth_ = mapHeight_ = 0;
@@ -45,7 +48,6 @@ void PathHeatmap::init(int width, int height)
 
 void PathHeatmap::shutdown()
 {
-	std::unique_lock lock(mtx_);
 	heatCells_.clear();
 	mapWidth_ = mapHeight_ = widthShift_ = stride_ = 0;
 	offset_ = 0;
@@ -53,7 +55,6 @@ void PathHeatmap::shutdown()
 
 void PathHeatmap::advanceOffset()
 {
-	std::unique_lock lock(mtx_);
 	++offset_;
 }
 
@@ -68,7 +69,6 @@ void PathHeatmap::addPath(uint32_t droidId, const std::vector<Vector2i> &path, u
 		return;
 	}
 
-	std::unique_lock lock(mtx_);
 	uint32_t offset = offset_;
 	size_t N = path.size();
 	unsigned lastIdx = static_cast<unsigned>(-1);
@@ -107,7 +107,6 @@ void PathHeatmap::addPointHeat(uint32_t droidId, int tileX, int tileY, uint32_t 
 		return;
 	}
 
-	std::unique_lock lock(mtx_);
 	unsigned idx = getIndex(tileX, tileY);
 	uint32_t storeVal = offset_ + amount;
 	auto& cell = heatCells_[idx];
@@ -125,11 +124,9 @@ uint32_t PathHeatmap::readRelativeHeatTile(int tileX, int tileY, uint32_t exclud
 		return 0;
 	}
 
-	std::shared_lock lock(mtx_);
 	unsigned idx = getIndex(tileX, tileY);
 	const auto cell = heatCells_[idx]; // copy
 	uint32_t offset = offset_;
-	lock.unlock();
 
 	if (cell.ownerDroidId == excludeOwner)
 	{
