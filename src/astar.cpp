@@ -291,8 +291,8 @@ static inline void fpathNewNode(PathfindContext &context, PathCoord dest, PathCo
 		uint32_t heat = context.heatmap->readRelativeHeatTile(pos.x, pos.y, context.ownerDroidId);
 		if (heat > 0)
 		{
-			// Scale heat into path cost units (140 per tile). Multiply by costFactor so dangerous tiles scale similarly.
-			node.dist += static_cast<unsigned>(heat) * 140u * costFactor;
+			// Scale heat into path cost units. Multiply by costFactor so dangerous tiles scale similarly.
+			node.dist += static_cast<unsigned>(heat) * 10u * costFactor;
 		}
 	}
 
