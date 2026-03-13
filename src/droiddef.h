@@ -28,6 +28,7 @@
 
 #include "stringdef.h"
 #include "actiondef.h"
+
 #include "basedef.h"
 #include "movedef.h"
 #include "orderdef.h"
@@ -35,6 +36,9 @@
 #include "weapondef.h"
 #include "orderdef.h"
 #include "actiondef.h"
+#ifdef DEBUG
+#include "steering/steering_debug_info.h"
+#endif
 
 /*!
  * The number of components in the asParts / asBits arrays.
@@ -203,6 +207,10 @@ struct DROID : public BASE_OBJECT
 	int32_t			heightAboveMap;					///< Current calculated height above the terrain (set for VTOL-propulsion units)
 	/* repair data */
 	uint16_t		underRepair;					///< Number of other droids / structures currently repairing this unit (does not include self-repair tech)
+#ifdef DEBUG
+	// Snapshot filled by SteeringManager when debug overlay enabled
+	steering::SteeringDebugInfo steeringDebug;
+#endif
 };
 
 #endif // __INCLUDED_DROIDDEF_H__

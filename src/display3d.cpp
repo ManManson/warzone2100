@@ -90,6 +90,9 @@
 #include "wzcrashhandlingproviders.h"
 #include "shadowcascades.h"
 #include "profiling.h"
+#ifdef DEBUG
+#include "steering/debug_overlay.h"
+#endif
 
 
 /********************  Prototypes  ********************/
@@ -1547,6 +1550,12 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	{
 		doConstructionLines(viewMatrix);
 	}
+#ifdef DEBUG
+	if (steering::isDebugOverlayEnabled())
+	{
+		steering::renderSteeringOverlay(viewMatrix);
+	}
+#endif
 	locateMouse();
 
 	{

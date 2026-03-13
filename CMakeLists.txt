@@ -239,7 +239,7 @@ elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU|Clang" AND NOT APPLE AND NOT CMAK
 	# Ensure all builds always have debug info built (Xcode is handled separately below, Emscripten handled above)
 	set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -g")
 	# Ensure symbols can be demangled on Linux Debug builds
-	set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -rdynamic")
+	#set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -rdynamic")
 endif()
 if(MINGW AND ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang"))
 	# Ensure LLVM/Clang-based MINGW produces debug info in codeview format (for PDB)
@@ -266,6 +266,10 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
 	else()
 		add_definitions(-D_WIN32_WINNT=0x0601) # Windows 7+
 	endif()
+endif()
+
+if (CMAKE_BUILD_TYPE STREQUAL Debug)
+	add_compile_definitions(DEBUG)
 endif()
 
 include(CheckCCompilerFlag)

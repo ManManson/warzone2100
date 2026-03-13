@@ -59,6 +59,9 @@
 #include "qtscript.h"
 #include "steering/steering.h"
 #include "steering/collision_avoidance_behavior.h"
+#ifdef DEBUG
+#include "steering/steering_debug_info.h"
+#endif
 
 /* max and min vtol heights above terrain */
 #define	VTOL_HEIGHT_MIN				250
@@ -1332,7 +1335,13 @@ static uint16_t moveGetDirection(DROID *psDroid)
 	ctx.radius = moveObjRadius(psDroid);
 
 	// Calculate steering direction
-	return moveSteeringManager().calculateSteeringDirection(ctx);
+#ifdef DEBUG
+	if (steering::isDebugOverlayEnabled())
+	{
+		return moveSteeringManager().calculateSteeringDirection(ctx, &psDroid->steeringDebug);
+	}
+#endif
+	return moveSteeringManager().calculateSteeringDirection(ctx, nullptr);
 }
 
 // Check if a droid has got to a way point

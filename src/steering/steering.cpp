@@ -27,6 +27,10 @@
 #include "utils.h" // for PRECISION
 
 #include "lib/framework/trig.h"
+#ifdef DEBUG
+#include "steering_debug_info.h"
+#include "lib/framework/frame.h"
+#endif
 
 namespace steering
 {
@@ -39,9 +43,19 @@ void SteeringManager::addBehavior(std::unique_ptr<ISteeringBehavior> behavior)
 	_forces.reserve(_behaviors.size());
 }
 
-Vector2i SteeringManager::calculateSteering(const SteeringContext& ctx)
+Vector2i SteeringManager::calculateSteering(const SteeringContext& ctx, SteeringDebugInfo* dbgInfo /*= nullptr*/)
 {
 	_forces.clear();
+
+#ifdef DEBUG
+	if (dbgInfo)
+	{
+		dbgInfo->toTarget = ctx.targetPos - ctx.currentPos;
+		dbgInfo->radius = ctx.radius;
+		dbgInfo->frameNum = frameGetFrameNumber();
+		dbgInfo->forces.clear();
+	}
+#endif // DEBUG
 
 	for (const auto& behavior : _behaviors)
 	{
@@ -51,16 +65,34 @@ Vector2i SteeringManager::calculateSteering(const SteeringContext& ctx)
 			if (!force.isZero())
 			{
 				_forces.push_back(force);
+#ifdef DEBUG
+				if (dbgInfo)
+				{
+					dbgInfo->forces.emplace_back(SteeringDebugInfo::ForceEntry{
+						force.force,
+						force.weight,
+						behavior->name(),
+						mapBehaviourColor(behavior->name())
+					});
+				}
+#endif // DEBUG
 			}
 		}
 	}
 
-	return combineForcesImpl(_forces);
+	Vector2i combined = combineForcesImpl(_forces);
+#ifdef DEBUG
+	if (dbgInfo)
+	{
+		dbgInfo->resultant = combined;
+	}
+#endif // DEBUG
+	return combined;
 }
 
-uint16_t SteeringManager::calculateSteeringDirection(const SteeringContext& ctx)
+uint16_t SteeringManager::calculateSteeringDirection(const SteeringContext& ctx, SteeringDebugInfo* dbgInfo /*= nullptr*/)
 {
-	Vector2i steering = calculateSteering(ctx);
+	Vector2i steering = calculateSteering(ctx, dbgInfo);
 
 	// If no steering force, use direction to target
 	if (steering.x == 0 && steering.y == 0)
@@ -109,5 +141,19 @@ Vector2i SteeringManager::combineForcesImpl(const std::vector<SteeringForce>& fo
 
 	return Vector2i(resultX, resultY);
 }
+
+#ifdef DEBUG
+static bool STEERING_DEBUG_OVERLAY_ENABLED = true;
+
+bool isDebugOverlayEnabled()
+{
+	return STEERING_DEBUG_OVERLAY_ENABLED;
+}
+
+void setDebugOverlayEnabled(bool v)
+{
+	STEERING_DEBUG_OVERLAY_ENABLED = v;
+}
+#endif // DEBUG
 
 } // namespace steering

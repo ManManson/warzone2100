@@ -38,6 +38,9 @@ struct DROID;
 namespace steering
 {
 
+// Forward declare steering debug info to keep API stable in non-DEBUG builds.
+struct SteeringDebugInfo;
+
 /// <summary>
 /// Steering force vector with weight for blending.
 /// The force vector uses fixed-point precision where 65536 represents
@@ -155,8 +158,9 @@ public:
 	/// using weighted summation.
 	/// </summary>
 	/// <param name="ctx">The steering context</param>
+	/// <param name="dbgInfo">Optional debug info output (populated if non-null)</param>
 	/// <returns>Combined steering vector in fixed-point precision</returns>
-	Vector2i calculateSteering(const SteeringContext& ctx);
+	Vector2i calculateSteering(const SteeringContext& ctx, SteeringDebugInfo* dbgInfo = nullptr);
 
 	/// <summary>
 	/// Calculate combined steering as a direction angle.
@@ -164,8 +168,9 @@ public:
 	/// angle suitable for use with the current movement system.
 	/// </summary>
 	/// <param name="ctx">The steering context</param>
+	/// <param name="dbgInfo">Optional debug info output (populated if non-null)</param>
 	/// <returns>Direction angle (0-65535 = 0-360 degrees)</returns>
-	uint16_t calculateSteeringDirection(const SteeringContext& ctx);
+	uint16_t calculateSteeringDirection(const SteeringContext& ctx, SteeringDebugInfo* dbgInfo = nullptr);
 
 private:
 

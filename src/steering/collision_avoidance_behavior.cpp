@@ -148,7 +148,22 @@ SteeringForce CollisionAvoidanceBehavior::calculate(const SteeringContext& ctx)
 	int32_t ratio = std::min(distTotal * ctx.radius / 2, PRECISION);
 
 	// Blend destination and avoid vectors
-	Vector2i result = destNorm * (PRECISION - ratio) + avoidNorm * ratio;
+	//Vector2i result = destNorm * (PRECISION - ratio) + avoidNorm * ratio;
+	Vector2i result;
+	{
+		int64_t destMultiplier = static_cast<int64_t>(PRECISION - ratio);
+		int64_t avoidMultipler = static_cast<int64_t>(ratio);
+
+		int64_t rx = static_cast<int64_t>(destNorm.x) * destMultiplier
+				+ static_cast<int64_t>(avoidNorm.x) * avoidMultipler;
+		int64_t ry = static_cast<int64_t>(destNorm.y) * destMultiplier
+				+ static_cast<int64_t>(avoidNorm.y) * avoidMultipler;
+
+		// Scale down to ensure the blended result has the similar scale
+		// to "dest" and "avoid" vectors
+		result.x = static_cast<int32_t>(rx / PRECISION);
+		result.y = static_cast<int32_t>(ry / PRECISION);
+	}
 
 	int32_t weight = PRECISION; // currently 1.0 magnitude to keep existing behavior
 	// Maybe calculate weight based on threat level?
