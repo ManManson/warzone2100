@@ -180,7 +180,7 @@ void renderSteeringOverlay(const glm::mat4& viewMatrix)
 
 			// Snapshot from steering
 			const SteeringDebugInfo &dbg = psDroid->steeringDebug;
-			if (dbg.frameNum == 0)
+			if (dbg.frameNum == 0 || dbg.frameNum < frameGetFrameNumber() - 5)
 			{
 				continue; // never initialised
 			}
