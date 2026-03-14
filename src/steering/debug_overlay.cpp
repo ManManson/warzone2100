@@ -70,11 +70,8 @@ Vector3f makeBasePos(const DROID *psDroid)
 {
 	// Match renderer mapping
 	// x = worldX, y = worldZ, z = -worldY
-	return Vector3f(
-		psDroid->pos.x,
-		psDroid->pos.z + DEBUG_ELEVATION,
-		-psDroid->pos.y
-	);
+	Spacetime st = interpolateObjectSpacetime(psDroid, graphicsTime);
+	return Vector3f(st.pos.x, st.pos.z + DEBUG_ELEVATION, -st.pos.y);
 }
 
 void drawArrowHead(const Vector3f &headBase,
