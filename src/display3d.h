@@ -28,6 +28,10 @@
 #include "objectdef.h"
 #include "message.h"
 
+#include "steering/steering_debug_info.h"
+
+#include <glm/vec4.hpp>
+
 #define HEIGHT_TRACK_INCREMENTS (50)
 
 /*!
@@ -142,5 +146,14 @@ extern bool tuiTargetOrigin;
 bool drawShape(const iIMDShape *strImd, UDWORD timeAnimationStarted, int colour, PIELIGHT buildingBrightness, int pieFlag, int pieFlagData, const glm::mat4& modelMatrix, const glm::mat4& viewMatrix, float stretchDepth = 0.f);
 
 int calculateCameraHeightAt(int tileX, int tileY);
+
+struct SteeringRingsUBO
+{
+	std::array<glm::ivec4, 128> data; // xy = center, z = radius, w = thickness
+	std::array<glm::vec4, 128> color;
+	int32_t ringCount;
+};
+
+extern SteeringRingsUBO g_steeringRingsUBO;
 
 #endif // __INCLUDED_SRC_DISPLAY3D_H__

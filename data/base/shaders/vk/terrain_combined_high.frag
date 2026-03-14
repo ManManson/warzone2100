@@ -1,6 +1,9 @@
 #version 450
 
+#define DEBUG_STEERING 1
+
 #include "terrain_combined.glsl"
+#include "steering_debug_sdf.glsl"
 
 layout (constant_id = 0) const float WZ_MIP_LOAD_BIAS = 0.f;
 layout (constant_id = 1) const uint WZ_SHADOW_MODE = 1;
@@ -132,6 +135,16 @@ vec4 main_bumpMapping() {
 void main()
 {
 	vec4 fragColor = main_bumpMapping();
+
+#ifdef DEBUG_STEERING
+	float ringCoverage = 0.0;
+	vec4 ringColor = evalSteeringRings(frag.posModelSpace, ringCoverage);
+	// ringColor is premultiplied (RGB already scaled by alpha). Blend over terrain using alpha.
+	if (ringColor.a > 0.0)
+	{
+		fragColor.rgb = fragColor.rgb * (1.0 - ringColor.a) + ringColor.rgb;
+	}
+#endif
 
 	if (fogEnabled > 0)
 	{

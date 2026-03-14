@@ -982,6 +982,11 @@ namespace gfx_api
 		std::array<glm::ivec4, bucket_dimension * bucket_dimension> bucketOffsetAndSize;
 		std::array<glm::ivec4, max_indexed_lights> indexed_lights;
 		int bucketDimensionUsed;
+		int32_t steeringDebugRingCount;
+		int32_t unused3;
+		int32_t unused4;
+		std::array<glm::ivec4, 128> steeringDebugRingsData; // xy = center, z = radius, w = thickness
+		std::array<glm::vec4, 128> steeringDebugRingsColor;
 	};
 
 	template<REND_MODE render_mode, SHADER_MODE shader>

@@ -32,6 +32,9 @@ layout(std140, set = 0, binding = 0) uniform cbuffer {
 	ivec4 bucketOffsetAndSize[WZ_BUCKET_DIMENSION * WZ_BUCKET_DIMENSION];
 	ivec4 PointLightsIndex[WZ_MAX_INDEXED_POINT_LIGHTS];
 	int bucketDimensionUsed;
+	int steeringDebugRingCount;
+	ivec4 steeringDebugRingsData[128];
+	vec4 steeringDebugRingsColor[128];
 };
 
 // interpolated data. location count = 10

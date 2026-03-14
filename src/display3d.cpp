@@ -92,6 +92,7 @@
 #include "profiling.h"
 #ifdef DEBUG
 #include "steering/debug_overlay.h"
+#include "steering/debug_rings.h"
 #endif
 
 
@@ -1311,6 +1312,17 @@ glm::mat4 getBiasedShadowMapMVPMatrix(glm::mat4 lightOrthoMatrix, const glm::mat
 	return biasMatrix * shadowMatrix;
 }
 
+namespace
+{
+
+#ifdef DEBUG
+std::vector<steering::SteeringRingDebug> g_steeringDebugRings;
+#endif
+
+} // anonymous namespace
+
+SteeringRingsUBO g_steeringRingsUBO;
+
 /// Draw the terrain and all droids, missiles and other objects on it
 static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap, ILightingManager& lightManager)
 {
@@ -1515,6 +1527,32 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 			gfx_api::context::get().endCurrentDepthPass();
 		}
 	}
+
+#ifdef DEBUG
+	{
+		if (steering::isDebugOverlayEnabled())
+		{
+			steering::buildSteeringRings(g_steeringDebugRings);
+			std::fill(std::begin(g_steeringRingsUBO.data), std::end(g_steeringRingsUBO.data), glm::ivec4(0, 0, 0, 0));
+			std::fill(std::begin(g_steeringRingsUBO.color), std::end(g_steeringRingsUBO.color), glm::vec4(0, 0, 0, 0));
+			const size_t count = std::min<size_t>(g_steeringDebugRings.size(), 128);
+			for (size_t i = 0; i < count; ++i)
+			{
+				const auto& ring = g_steeringDebugRings[i];
+				g_steeringRingsUBO.data[i] = glm::ivec4(ring.center.x, ring.center.y, ring.radius, ring.thickness);
+				// Normalize color from 0-255 to 0-1 for shader
+				const glm::vec4& c = g_steeringDebugRings[i].color;
+				g_steeringRingsUBO.color[i] = glm::vec4(c.r / 255.f, c.g / 255.f, c.b / 255.f, c.a / 255.f);
+			}
+			g_steeringRingsUBO.ringCount = static_cast<int32_t>(count);
+		}
+	}
+#else
+	{
+		g_steeringRingsUBO.ringCount = 0;
+	}
+#endif
+
 	// start main render pass
 
 
