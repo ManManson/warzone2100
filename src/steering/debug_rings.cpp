@@ -39,11 +39,6 @@ void buildSteeringRings(std::vector<SteeringRingDebug>& outRings)
 			{
 				continue;
 			}
-			const SteeringDebugInfo& dbg = psDroid->steeringDebug;
-			if (dbg.frameNum == 0)
-			{
-				continue;
-			}
 			if (outRings.size() >= 128)
 			{
 				return;
@@ -54,9 +49,8 @@ void buildSteeringRings(std::vector<SteeringRingDebug>& outRings)
 			Spacetime st = interpolateObjectSpacetime(psDroid, graphicsTime);
 			ring.center.x = st.pos.x;
 			ring.center.y = -st.pos.y;
-			// Outer radius matches droid collision radius.
 			ring.radius = moveObjRadius(psDroid);
-			ring.thickness = TILE_UNITS / 8;// TILE_UNITS / 96;
+			ring.thickness = TILE_UNITS / 8;
 			ring.color = glm::vec4(0, 255, 0, 192);           // semi‑transparent green
 			outRings.emplace_back(std::move(ring));
 		}
