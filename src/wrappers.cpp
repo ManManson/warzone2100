@@ -30,6 +30,7 @@
 #include "lib/ivis_opengl/piemode.h"
 #include "lib/ivis_opengl/piestate.h"
 #include "lib/ivis_opengl/screen.h"
+#include "lib/ivis_opengl/gfx_api_render_graph.h"
 #include "lib/netplay/connection_provider_registry.h"
 #include "lib/netplay/netplay.h"	// multiplayer
 #include "lib/sound/audio.h"
@@ -270,9 +271,7 @@ TITLECODE titleLoop()
 //loadbar update
 void loadingScreenCallback()
 {
-	const PIELIGHT loadingbar_background = WZCOL_LOADING_BAR_BACKGROUND;
 	const uint32_t currTick = wzGetTicks();
-	unsigned int i;
 
 	if (currTick - lastTick < 50)
 	{
@@ -281,26 +280,32 @@ void loadingScreenCallback()
 
 	lastTick = currTick;
 
-	/* Draw the black rectangle at the bottom, with a two pixel border */
-	pie_UniTransBoxFill(barLeftX - 2, barLeftY - 2, barRightX + 2, barRightY + 2, loadingbar_background);
-
-	for (i = 1; i < starsNum; ++i)
-	{
-		stars[i].xPos = stars[i].xPos + stars[i].speed;
-		if (barLeftX + stars[i].xPos >= barRightX)
+	pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "LoadingScreen",
+		[]
 		{
-			stars[i] = newStar();
-			stars[i].xPos = 1;
-		}
-		{
-			const int topX = barLeftX + stars[i].xPos;
-			const int topY = barLeftY + i * (boxHeight - starHeight) / starsNum;
-			const int botX = MIN(topX + stars[i].speed, barRightX);
-			const int botY = topY + starHeight;
+			const PIELIGHT loadingbar_background = WZCOL_LOADING_BAR_BACKGROUND;
 
-			pie_UniTransBoxFill(topX, topY, botX, botY, stars[i].colour);
-		}
-	}
+			/* Draw the black rectangle at the bottom, with a two pixel border */
+			pie_UniTransBoxFill(barLeftX - 2, barLeftY - 2, barRightX + 2, barRightY + 2, loadingbar_background);
+
+			for (unsigned int i = 1; i < starsNum; ++i)
+			{
+				stars[i].xPos = stars[i].xPos + stars[i].speed;
+				if (barLeftX + stars[i].xPos >= barRightX)
+				{
+					stars[i] = newStar();
+					stars[i].xPos = 1;
+				}
+				{
+					const int topX = barLeftX + stars[i].xPos;
+					const int topY = barLeftY + i * (boxHeight - starHeight) / starsNum;
+					const int botX = MIN(topX + stars[i].speed, barRightX);
+					const int botY = topY + starHeight;
+
+					pie_UniTransBoxFill(topX, topY, botX, botY, stars[i].colour);
+				}
+			}
+		});
 
 	pie_ScreenFrameRenderEnd();
 	pie_ScreenFrameRenderBegin();

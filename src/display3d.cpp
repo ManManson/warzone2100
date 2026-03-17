@@ -1038,117 +1038,121 @@ void draw3DScene()
 
 	wzPerfBegin(PERF_MISC, "3D scene - misc and text");
 
-	pie_BeginInterface();
-
-	/* Show the drag Box if necessary */
-	drawDragBox();
-
-	/* Have we released the drag box? */
-	if (dragBox3D.status == DRAG_RELEASED)
-	{
-		dragBox3D.status = DRAG_INACTIVE;
-	}
-
-	drawDroidAndStructureSelections();
-
-	pie_SetFogStatus(false);
-	iV_SetTextColour(WZCOL_TEXT_BRIGHT);
-
-	/* Dont remove this folks!!!! */
-	if (errorWaiting)
-	{
-		// print the error message if none have been printed for one minute
-		if (lastErrorTime == 0 || lastErrorTime + (60 * GAME_TICKS_PER_SEC) < realTime)
+	pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "3DSceneOverlays",
+		[]
 		{
-			char trimMsg[255];
-			audio_PlayBuildFailedOnce();
-			ssprintf(trimMsg, "Error! (Check your logs!): %.78s", errorWaiting);
-			addConsoleMessage(trimMsg, DEFAULT_JUSTIFY, NOTIFY_MESSAGE);
-			errorWaiting = nullptr;
-			lastErrorTime = realTime;
-		}
-	}
-	else
-	{
-		errorWaiting = debugLastError();
-	}
-	if (showSAMPLES)		//Displays the number of sound samples we currently have
-	{
-		unsigned int width, height;
-		std::string Qbuf, Lbuf, Abuf;
+			pie_BeginInterface();
 
-		Qbuf = astringf("Que: %04u", audio_GetSampleQueueCount());
-		Lbuf = astringf("Lst: %04u", audio_GetSampleListCount());
-		Abuf = astringf("Act: %04u", sound_GetActiveSamplesCount());
-		txtShowSamples_Que.setText(WzString::fromUtf8(Qbuf), font_regular);
-		txtShowSamples_Lst.setText(WzString::fromUtf8(Lbuf), font_regular);
-		txtShowSamples_Act.setText(WzString::fromUtf8(Abuf), font_regular);
+			/* Show the drag Box if necessary */
+			drawDragBox();
 
-		width = txtShowSamples_Que.width() + 11;
-		height = txtShowSamples_Que.height();
-
-		txtShowSamples_Que.render(pie_GetVideoBufferWidth() - width, height + 2, WZCOL_TEXT_BRIGHT);
-		txtShowSamples_Lst.render(pie_GetVideoBufferWidth() - width, height + 48, WZCOL_TEXT_BRIGHT);
-		txtShowSamples_Act.render(pie_GetVideoBufferWidth() - width, height + 59, WZCOL_TEXT_BRIGHT);
-	}
-	if (showFPS)
-	{
-		std::string fps = astringf("FPS: %d", frameRate());
-		txtShowFPS.setText(WzString::fromUtf8(fps), font_regular);
-		const unsigned width = txtShowFPS.width() + 10;
-		const unsigned height = 9; //txtShowFPS.height();
-		txtShowFPS.render(pie_GetVideoBufferWidth() - width, pie_GetVideoBufferHeight() - height, WZCOL_TEXT_BRIGHT);
-	}
-	if (showUNITCOUNT && selectedPlayer < MAX_PLAYERS)
-	{
-		std::string killdiff = astringf("Units: %u lost / %u built / %u killed", missionData.unitsLost, missionData.unitsBuilt, getSelectedPlayerUnitsKilled());
-		txtUnits.setText(WzString::fromUtf8(killdiff), font_regular);
-		const unsigned width = txtUnits.width() + 10;
-		const unsigned height = 9; //txtUnits.height();
-		txtUnits.render(pie_GetVideoBufferWidth() - width - ((showFPS) ? txtShowFPS.width() + 10 : 0), pie_GetVideoBufferHeight() - height, WZCOL_TEXT_BRIGHT);
-	}
-	if (showORDERS)
-	{
-		unsigned int height;
-		txtShowOrders.setText(DROIDDOING, font_regular);
-		height = txtShowOrders.height();
-		txtShowOrders.render(0, pie_GetVideoBufferHeight() - height, WZCOL_TEXT_BRIGHT);
-	}
-	if (showDROIDcounts && selectedPlayer < MAX_PLAYERS)
-	{
-		int visibleDroids = 0;
-		int undrawnDroids = 0;
-		for (const DROID *psDroid : apsDroidLists[selectedPlayer])
-		{
-			if (psDroid->sDisplay.frameNumber != currentGameFrame)
+			/* Have we released the drag box? */
+			if (dragBox3D.status == DRAG_RELEASED)
 			{
-				++undrawnDroids;
-				continue;
+				dragBox3D.status = DRAG_INACTIVE;
 			}
-			++visibleDroids;
-		}
-		char droidCounts[255];
-		ssprintf(droidCounts, "Droids: %d drawn, %d undrawn", visibleDroids, undrawnDroids);
-		droidText.setText(droidCounts, font_regular);
-		droidText.render(pie_GetVideoBufferWidth() - droidText.width() - 10, droidText.height() + 2, WZCOL_TEXT_BRIGHT);
-	}
 
-	setupConnectionStatusForm();
+			drawDroidAndStructureSelections();
 
-	if (getWidgetsStatus() && !gamePaused())
-	{
-		char buildInfo[255];
-		bool showMs = (gameTimeGetMod() < Rational(1, 4));
-		getAsciiTime(buildInfo, showMs ? graphicsTime : gameTime, showMs);
-		txtLevelName.render(RET_X + 134, 410 + E_H, WZCOL_TEXT_MEDIUM);
-		const DebugInputManager& dbgInputManager = gInputManager.debugManager();
-		if (dbgInputManager.debugMappingsAllowed())
-		{
-			txtDebugStatus.render(RET_X + 134, 436 + E_H, WZCOL_TEXT_MEDIUM);
-		}
-		txtCurrentTime.setText(buildInfo, font_small);
-		txtCurrentTime.render(RET_X + 134, 422 + E_H, WZCOL_TEXT_MEDIUM);
-	}
+			pie_SetFogStatus(false);
+			iV_SetTextColour(WZCOL_TEXT_BRIGHT);
+
+			/* Dont remove this folks!!!! */
+			if (errorWaiting)
+			{
+				// print the error message if none have been printed for one minute
+				if (lastErrorTime == 0 || lastErrorTime + (60 * GAME_TICKS_PER_SEC) < realTime)
+				{
+					char trimMsg[255];
+					audio_PlayBuildFailedOnce();
+					ssprintf(trimMsg, "Error! (Check your logs!): %.78s", errorWaiting);
+					addConsoleMessage(trimMsg, DEFAULT_JUSTIFY, NOTIFY_MESSAGE);
+					errorWaiting = nullptr;
+					lastErrorTime = realTime;
+				}
+			}
+			else
+			{
+				errorWaiting = debugLastError();
+			}
+			if (showSAMPLES)		//Displays the number of sound samples we currently have
+			{
+				unsigned int width, height;
+				std::string Qbuf, Lbuf, Abuf;
+
+				Qbuf = astringf("Que: %04u", audio_GetSampleQueueCount());
+				Lbuf = astringf("Lst: %04u", audio_GetSampleListCount());
+				Abuf = astringf("Act: %04u", sound_GetActiveSamplesCount());
+				txtShowSamples_Que.setText(WzString::fromUtf8(Qbuf), font_regular);
+				txtShowSamples_Lst.setText(WzString::fromUtf8(Lbuf), font_regular);
+				txtShowSamples_Act.setText(WzString::fromUtf8(Abuf), font_regular);
+
+				width = txtShowSamples_Que.width() + 11;
+				height = txtShowSamples_Que.height();
+
+				txtShowSamples_Que.render(pie_GetVideoBufferWidth() - width, height + 2, WZCOL_TEXT_BRIGHT);
+				txtShowSamples_Lst.render(pie_GetVideoBufferWidth() - width, height + 48, WZCOL_TEXT_BRIGHT);
+				txtShowSamples_Act.render(pie_GetVideoBufferWidth() - width, height + 59, WZCOL_TEXT_BRIGHT);
+			}
+			if (showFPS)
+			{
+				std::string fps = astringf("FPS: %d", frameRate());
+				txtShowFPS.setText(WzString::fromUtf8(fps), font_regular);
+				const unsigned width = txtShowFPS.width() + 10;
+				const unsigned height = 9; //txtShowFPS.height();
+				txtShowFPS.render(pie_GetVideoBufferWidth() - width, pie_GetVideoBufferHeight() - height, WZCOL_TEXT_BRIGHT);
+			}
+			if (showUNITCOUNT && selectedPlayer < MAX_PLAYERS)
+			{
+				std::string killdiff = astringf("Units: %u lost / %u built / %u killed", missionData.unitsLost, missionData.unitsBuilt, getSelectedPlayerUnitsKilled());
+				txtUnits.setText(WzString::fromUtf8(killdiff), font_regular);
+				const unsigned width = txtUnits.width() + 10;
+				const unsigned height = 9; //txtUnits.height();
+				txtUnits.render(pie_GetVideoBufferWidth() - width - ((showFPS) ? txtShowFPS.width() + 10 : 0), pie_GetVideoBufferHeight() - height, WZCOL_TEXT_BRIGHT);
+			}
+			if (showORDERS)
+			{
+				unsigned int height;
+				txtShowOrders.setText(DROIDDOING, font_regular);
+				height = txtShowOrders.height();
+				txtShowOrders.render(0, pie_GetVideoBufferHeight() - height, WZCOL_TEXT_BRIGHT);
+			}
+			if (showDROIDcounts && selectedPlayer < MAX_PLAYERS)
+			{
+				int visibleDroids = 0;
+				int undrawnDroids = 0;
+				for (const DROID *psDroid : apsDroidLists[selectedPlayer])
+				{
+					if (psDroid->sDisplay.frameNumber != currentGameFrame)
+					{
+						++undrawnDroids;
+						continue;
+					}
+					++visibleDroids;
+				}
+				char droidCounts[255];
+				ssprintf(droidCounts, "Droids: %d drawn, %d undrawn", visibleDroids, undrawnDroids);
+				droidText.setText(droidCounts, font_regular);
+				droidText.render(pie_GetVideoBufferWidth() - droidText.width() - 10, droidText.height() + 2, WZCOL_TEXT_BRIGHT);
+			}
+
+			setupConnectionStatusForm();
+
+			if (getWidgetsStatus() && !gamePaused())
+			{
+				char buildInfo[255];
+				bool showMs = (gameTimeGetMod() < Rational(1, 4));
+				getAsciiTime(buildInfo, showMs ? graphicsTime : gameTime, showMs);
+				txtLevelName.render(RET_X + 134, 410 + E_H, WZCOL_TEXT_MEDIUM);
+				const DebugInputManager& dbgInputManager = gInputManager.debugManager();
+				if (dbgInputManager.debugMappingsAllowed())
+				{
+					txtDebugStatus.render(RET_X + 134, 436 + E_H, WZCOL_TEXT_MEDIUM);
+				}
+				txtCurrentTime.setText(buildInfo, font_small);
+				txtCurrentTime.render(RET_X + 134, 422 + E_H, WZCOL_TEXT_MEDIUM);
+			}
+		});
 
 	while (playerPos.r.y > DEG(360))
 	{
@@ -1172,43 +1176,47 @@ void draw3DScene()
 
 	structureEffects(); // add fancy effects to structures
 
-	showDroidSensorRanges(); //shows sensor data for units/droids/whatever...-Q 5-10-05
-	if (CauseCrash)
-	{
-		char *crash = nullptr;
-#ifdef DEBUG
-		ASSERT(false, "Yes, this is a assert.  This should not happen on release builds! Use --noassert to bypass in debug builds.");
-		debug(LOG_WARNING, " *** Warning!  You have compiled in debug mode! ***");
-#endif
-		writeGameInfo("WZdebuginfo.txt");		//also test writing out this file.
-		debug(LOG_FATAL, "Forcing a segfault! (crash handler test)");
-		// and here comes the crash
-		if (!crashHandlingProviderTestCrash())
+	pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "3DSceneDebugOverlays",
+		[]
 		{
-#if defined(WZ_CC_GNU) && !defined(WZ_CC_INTEL) && !defined(WZ_CC_CLANG) && (7 <= __GNUC__)
-# pragma GCC diagnostic push
-# pragma GCC diagnostic ignored "-Wnull-dereference"
-#endif
-			*crash = 0x3; // deliberate null-dereference
-#if defined(WZ_CC_GNU) && !defined(WZ_CC_INTEL) && !defined(WZ_CC_CLANG) && (7 <= __GNUC__)
-# pragma GCC diagnostic pop
-#endif
-		}
-#if defined(__EMSCRIPTEN__)
-		abort();
-#endif
-		exit(-1);	// should never reach this, but just in case...
-	}
-	//visualize radius if needed
-	if (bRangeDisplay)
-	{
-		drawRangeAtPos(rangeCenterX, rangeCenterY, rangeRadius);
-	}
+			showDroidSensorRanges(); //shows sensor data for units/droids/whatever...-Q 5-10-05
+			if (CauseCrash)
+			{
+				char *crash = nullptr;
+		#ifdef DEBUG
+				ASSERT(false, "Yes, this is a assert.  This should not happen on release builds! Use --noassert to bypass in debug builds.");
+				debug(LOG_WARNING, " *** Warning!  You have compiled in debug mode! ***");
+		#endif
+				writeGameInfo("WZdebuginfo.txt");		//also test writing out this file.
+				debug(LOG_FATAL, "Forcing a segfault! (crash handler test)");
+				// and here comes the crash
+				if (!crashHandlingProviderTestCrash())
+				{
+		#if defined(WZ_CC_GNU) && !defined(WZ_CC_INTEL) && !defined(WZ_CC_CLANG) && (7 <= __GNUC__)
+		# pragma GCC diagnostic push
+		# pragma GCC diagnostic ignored "-Wnull-dereference"
+		#endif
+					*crash = 0x3; // deliberate null-dereference
+		#if defined(WZ_CC_GNU) && !defined(WZ_CC_INTEL) && !defined(WZ_CC_CLANG) && (7 <= __GNUC__)
+		# pragma GCC diagnostic pop
+		#endif
+				}
+		#if defined(__EMSCRIPTEN__)
+				abort();
+		#endif
+				exit(-1);	// should never reach this, but just in case...
+			}
+			//visualize radius if needed
+			if (bRangeDisplay)
+			{
+				drawRangeAtPos(rangeCenterX, rangeCenterY, rangeRadius);
+			}
 
-	if (showPath)
-	{
-		showDroidPaths();
-	}
+			if (showPath)
+			{
+				showDroidPaths();
+			}
+		});
 
 	wzPerfEnd(PERF_MISC);
 }
@@ -1488,7 +1496,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	pie_UpdateLightmap(getTerrainLightmapTexture(), getModelUVLightmapMatrix());
 	pie_FinalizeMeshes(currentGameFrame);
 
-	gfx_api::RenderGraph renderGraph;
+	auto& renderGraph = pie_GetFrameRenderGraph();
 
 	// shadow/depth-mapping passes
 	ShadowCascadesInfo shadowCascadesInfo;
@@ -1504,19 +1512,24 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 		for (size_t i = 0; i < numShadowCascades; ++i)
 		{
 			WZ_PROFILE_SCOPE(ShadowMapping);
-			renderGraph.addDepthPass(i, "ShadowCascade" + std::to_string(i), [&, i]
+			renderGraph.addDepthPass(i, "ShadowCascade" + std::to_string(i),
+				[cascadeProjMatrix = shadowCascades[i].projectionMatrix,
+					cascadeViewMatrix = shadowCascades[i].viewMatrix,
+					cameraPos, shadowCascadesInfo]
 			{
 				if (bDrawTerrainShadows)
 				{
-					drawTerrainDepthOnly(shadowCascades[i].projectionMatrix * shadowCascades[i].viewMatrix);
+					drawTerrainDepthOnly(cascadeProjMatrix * cascadeViewMatrix);
 				}
-				pie_DrawAllMeshes(currentGameFrame, shadowCascades[i].projectionMatrix, shadowCascades[i].viewMatrix, cameraPos, shadowCascadesInfo, true);
+				pie_DrawAllMeshes(currentGameFrame, cascadeProjMatrix, cascadeViewMatrix, cameraPos, shadowCascadesInfo, true);
 			});
 		}
 	}
 
 	// start main render pass
-	renderGraph.addRenderPass(gfx_api::RenderPassType::Scene, "ScenePass", [&]
+	renderGraph.addRenderPass(gfx_api::RenderPassType::Scene, "ScenePass",
+		[perspectiveViewMatrix, viewMatrix, cameraPos,
+			shadowCascadesInfo, baseViewMatrix, perspectiveMatrix]
 	{
 		// now we are about to draw the terrain
 		wzPerfBegin(PERF_TERRAIN, "3D scene - terrain");
@@ -1553,7 +1566,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 
 	// Draw the scene to the default framebuffer
 	renderGraph.addRenderPass(gfx_api::RenderPassType::Default, "SceneBlit",
-	[&]
+	[]
 	{
 		WZ_PROFILE_SCOPE(copyToFBO);
 		gfx_api::WorldToScreenPSO::get().bind();
@@ -1563,9 +1576,6 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 		gfx_api::WorldToScreenPSO::get().draw(3, 0);
 		gfx_api::WorldToScreenPSO::get().unbind_vertex_buffers(pScreenTriangleVBO);
 	});
-
-	// Execute all passes
-	renderGraph.execute();
 }
 
 /// Initialise the fog, skybox and some other stuff

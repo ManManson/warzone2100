@@ -69,6 +69,7 @@
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/ivis_opengl/piemode.h"
 #include "lib/ivis_opengl/screen.h"
+#include "lib/ivis_opengl/gfx_api_render_graph.h"
 #include "lib/netplay/netplay.h"
 #include "lib/netplay/netreplay.h"
 #include "lib/sound/audio.h"
@@ -1190,7 +1191,11 @@ void mainLoop()
 	{
 		if (loop_GetVideoStatus())
 		{
-			videoLoop(); // Display the video if necessary
+			pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "VideoPlayback",
+				[]
+				{
+					videoLoop(); // Display the video if necessary
+				});
 			pie_ScreenFrameRenderEnd();
 		}
 		else switch (GetGameMode())
@@ -1200,7 +1205,11 @@ void mainLoop()
 				// gameLoop handles pie_ScreenFrameRenderEnd()
 				break;
 			case GS_TITLE_SCREEN: // Run the titleloop code
-				runTitleLoop();
+				pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "TitleScreen",
+					[]
+					{
+						runTitleLoop();
+					});
 				pie_ScreenFrameRenderEnd();
 				break;
 			default:

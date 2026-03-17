@@ -9,6 +9,7 @@ namespace gfx_api
 
 void RenderGraph::addRenderPass(RenderPassDesc desc)
 {
+	ASSERT(!_executing, "Cannot add passes during execute()");
 	_render_passes.push_back(std::move(desc));
 }
 
@@ -35,10 +36,16 @@ void RenderGraph::addDepthPass(size_t cascadeIndex, const std::string& debugName
 
 void RenderGraph::execute()
 {
+	ASSERT(!_executing, "Re-entrant execute() call detected");
+	_executing = true;
+
 	auto& ctx = gfx_api::context::get();
+	bool defaultPassActive = false;
 
 	for (auto& pass : _render_passes)
 	{
+		ctx.debugStringMarker(pass.debugName.c_str());
+
 		switch (pass.type)
 		{
 		case RenderPassType::Depth:
@@ -60,9 +67,11 @@ void RenderGraph::execute()
 			break;
 
 		case RenderPassType::Default:
-			// Default pass is already started by beginRenderPass()
-			// (called from pie_ScreenFrameRenderBegin).
-			// The record function just draws into the current default pass.
+			if (!defaultPassActive)
+			{
+				ctx.beginRenderPass();
+				defaultPassActive = true;
+			}
 			if (pass.recordFunc)
 			{
 				pass.recordFunc();
@@ -71,10 +80,16 @@ void RenderGraph::execute()
 		}
 	}
 
+	if (defaultPassActive)
+	{
+		ctx.endRenderPass();
+	}
+
 	_render_passes.clear();
+	_executing = false;
 }
 
-void RenderGraph::clear()
+void RenderGraph::reset()
 {
 	_render_passes.clear();
 }

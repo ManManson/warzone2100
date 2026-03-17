@@ -64,10 +64,13 @@ public:
 
 	// Execute all accumulated passes in order, then clear the pass list.
 	// This drives the backend through its begin/end pass transitions.
+	// Manages the default render pass lifecycle:
+	//   - Calls beginRenderPass() before the first Default pass.
+	//   - Calls endRenderPass() after all passes are done (if the default pass was started).
 	void execute();
 
-	// Clear all accumulated passes without executing.
-	void clear();
+	// Reset the graph for a new frame. Clears all accumulated passes.
+	void reset();
 
 	// Query how many passes are currently queued.
 	size_t passCount() const { return _render_passes.size(); }
@@ -75,6 +78,7 @@ public:
 private:
 
 	std::vector<RenderPassDesc> _render_passes;
+	bool _executing = false;
 };
 
 } // namespace gfx_api
