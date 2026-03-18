@@ -20,6 +20,7 @@
 #include "gfx_api_vk.h"
 #include "gfx_api_gl.h"
 #include "gfx_api_null.h"
+#include <cstdio>
 #include "gfx_api_image_compress_priv.h"
 #include "gfx_api_image_basis_priv.h"
 #include "lib/framework/physfs_ext.h"
@@ -1105,4 +1106,52 @@ gfx_api::texture_array* gfx_api::context::loadTextureArrayFromFiles(const std::v
 	}
 
 	return texture_array.release();
+}
+
+void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
+{
+	bool defaultPassActive = false;
+
+	for (auto& pass : passes)
+	{
+		debugStringMarker(pass.debugName.c_str());
+
+		switch (pass.type)
+		{
+		case RenderPassType::Depth:
+			beginDepthPass(pass.depthPassIndex);
+			if (pass.recordFunc)
+			{
+				pass.recordFunc();
+			}
+			endCurrentDepthPass();
+			break;
+
+		case RenderPassType::Scene:
+			beginSceneRenderPass();
+			if (pass.recordFunc)
+			{
+				pass.recordFunc();
+			}
+			endSceneRenderPass();
+			break;
+
+		case RenderPassType::Default:
+			if (!defaultPassActive)
+			{
+				beginRenderPass();
+				defaultPassActive = true;
+			}
+			if (pass.recordFunc)
+			{
+				pass.recordFunc();
+			}
+			break;
+		}
+	}
+
+	if (defaultPassActive)
+	{
+		endRenderPass();
+	}
 }

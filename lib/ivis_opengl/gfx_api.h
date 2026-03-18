@@ -34,6 +34,7 @@
 #include "screen.h"
 #include "pietypes.h"
 #include "gfx_api_formats_def.h"
+#include "gfx_api_render_graph.h"
 
 #include <glm/glm.hpp>
 
@@ -408,6 +409,9 @@ namespace gfx_api
 		virtual gfx_api::abstract_texture* getSceneTexture() { return nullptr; }
 		virtual void beginRenderPass() = 0;
 		virtual void endRenderPass() = 0;
+
+		virtual void executeRenderGraph(std::vector<RenderPassDesc>& passes);
+
 		virtual void debugStringMarker(const char *str) = 0;
 		virtual void debugSceneBegin(const char *descr) = 0;
 		virtual void debugSceneEnd(const char *descr) = 0;
