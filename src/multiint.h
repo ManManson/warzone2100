@@ -162,6 +162,8 @@ extern char sPlayer[128];
 extern bool multiintDisableLobbyRefresh; // gamefind
 extern std::string defaultSkirmishAI;
 
+struct Sha256;
+
 void frontendCycleAIs();
 void setDefaultSkirmishAI(const std::string& name);
 std::string getDefaultSkirmishAI(const bool& displayNameOnly=false);
@@ -169,6 +171,7 @@ std::string getDefaultSkirmishAI(const bool& displayNameOnly=false);
 void kickPlayer(uint32_t player_id, const char *reason, LOBBY_ERROR_TYPES type, bool banPlayer = false);
 void displayKickReasonPopup(const std::string &reason);
 void loadMapPreview(bool hideInterface);
+void loadMapPreview(bool hideInterface, const char *mapName, Sha256 const &mapHash);
 
 bool changeReadyStatus(UBYTE player, bool bReady);
 WzString formatGameName(WzString name);

@@ -197,6 +197,11 @@ static bool bInActualHostedLobby = false;
 static bool bRequestedSelfMoveToPlayers = false;
 static std::vector<bool> bHostRequestedMoveToPlayers = std::vector<bool>(MAX_CONNECTED_PLAYERS, false);
 
+static bool isFullscreenMapPreviewActive()
+{
+	return hideTime != 0 && gameTime - hideTime < MAP_PREVIEW_DISPLAY_TIME;
+}
+
 enum class PlayerDisplayView
 {
 	Players,
@@ -735,10 +740,12 @@ private:
 };
 
 /// Loads the entire map just to show a picture of it
-void loadMapPreview(bool hideInterface)
+void loadMapPreview(bool hideInterface, const char *mapName, Sha256 const &mapHash)
 {
 	std::string		aFileName;
 	Vector2i playerpos[MAX_PLAYERS];	// Will hold player positions
+	char const *targetMapName = mapName;
+	Sha256 const &targetMapHash = mapHash;
 
 	// absurd hack, since there is a problem with updating this crap piece of info, we're setting it to
 	// true by default for now, like it used to be
@@ -752,16 +759,16 @@ void loadMapPreview(bool hideInterface)
 	}
 
 	// load the terrain types
-	LEVEL_DATASET *psLevel = levFindDataSet(game.map, &game.hash);
+	LEVEL_DATASET *psLevel = levFindDataSet(targetMapName, &targetMapHash);
 	if (psLevel == nullptr)
 	{
-		debug(LOG_INFO, "Could not find level dataset \"%s\" %s. We %s waiting for a download.", game.map, game.hash.toString().c_str(), !NET_getDownloadingWzFiles().empty() ? "are" : "aren't");
+		debug(LOG_INFO, "Could not find level dataset \"%s\" %s. We %s waiting for a download.", targetMapName, targetMapHash.toString().c_str(), !NET_getDownloadingWzFiles().empty() ? "are" : "aren't");
 		loadEmptyMapPreview();
 		return;
 	}
 	if (psLevel->game < 0 || psLevel->game >= LEVEL_MAXFILES)
 	{
-		debug(LOG_ERROR, "apDataFiles index (%" PRIi16 ") is out of bounds for: \"%s\" %s.", psLevel->game, game.map, game.hash.toString().c_str());
+		debug(LOG_ERROR, "apDataFiles index (%" PRIi16 ") is out of bounds for: \"%s\" %s.", psLevel->game, targetMapName, targetMapHash.toString().c_str());
 		loadEmptyMapPreview();
 		return;
 	}
@@ -881,6 +888,11 @@ void loadMapPreview(bool hideInterface)
 	{
 		hideTime = gameTime;
 	}
+}
+
+void loadMapPreview(bool hideInterface)
+{
+	loadMapPreview(hideInterface, game.map, game.hash);
 }
 
 // ////////////////////////////////////////////////////////////////////////////
@@ -7370,7 +7382,7 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 						game.maxPlayers = mapData->players;
 						game.isMapMod = CheckForMod(mapData->realFileName);
 						game.isRandom = CheckForRandom(mapData->realFileName, mapData->apDataFiles[0].c_str());
-						requestMapPreviewLoad(false);
+						requestMapPreviewLoad(false, mapData->pName.c_str(), game.hash);
 
 						/* Change game info to match the previous selection if hover preview was displayed */
 						sstrcpy(game.map, oldGameMap);
@@ -7451,7 +7463,7 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 		if (hideTime != 0)
 		{
 			// we abort the 'hidetime' on press of a mouse button.
-			if (gameTime - hideTime < MAP_PREVIEW_DISPLAY_TIME && !mousePressed(MOUSE_LMB) && !mousePressed(MOUSE_RMB))
+			if (isFullscreenMapPreviewActive() && !mousePressed(MOUSE_LMB) && !mousePressed(MOUSE_RMB))
 			{
 				return TITLECODE_CONTINUE;
 			}
@@ -7490,6 +7502,11 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 
 void WzMultiplayerOptionsTitleUI::render()
 {
+	if (isFullscreenMapPreviewActive())
+	{
+		return;
+	}
+
 	widgDisplayScreen(psWScreen);									// show the widgets currently running
 
 	if (multiRequestUp)

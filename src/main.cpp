@@ -1030,6 +1030,8 @@ struct LoadingRequest
 	std::string resourceFile;
 	bool onInitialStartup = false;
 	bool hideInterface = false;
+	std::string previewMapName;
+	Sha256 previewMapHash;
 
 	static LoadingRequest frontendInit(bool onInitialStartup = false)
 	{
@@ -1065,6 +1067,14 @@ struct LoadingRequest
 		request.hideInterface = hideInterface;
 		return request;
 	}
+
+	static LoadingRequest mapPreview(bool hideInterface, std::string mapName, Sha256 mapHash)
+	{
+		LoadingRequest request = mapPreview(hideInterface);
+		request.previewMapName = std::move(mapName);
+		request.previewMapHash = mapHash;
+		return request;
+	}
 };
 
 class ILoadingJob
@@ -1077,13 +1087,19 @@ public:
 		Failed,
 	};
 
+	enum class FrameProcessingMode
+	{
+		ConsumeFrame,
+		ContinueMainLoop,
+	};
+
 	virtual ~ILoadingJob() = default;
 	virtual StepResult step() = 0;
 	virtual void finalizeSuccess() = 0;
 	virtual void finalizeFailure() = 0;
-	virtual bool usesTopLevelPresentation() const
+	virtual FrameProcessingMode frameProcessingMode() const
 	{
-		return false;
+		return FrameProcessingMode::ConsumeFrame;
 	}
 };
 
@@ -1147,9 +1163,9 @@ public:
 		exit(EXIT_FAILURE);
 	}
 
-	bool usesTopLevelPresentation() const override
+	FrameProcessingMode frameProcessingMode() const override
 	{
-		return true;
+		return FrameProcessingMode::ConsumeFrame;
 	}
 
 private:
@@ -1193,9 +1209,9 @@ public:
 		closeLoadingScreen();
 	}
 
-	bool usesTopLevelPresentation() const override
+	FrameProcessingMode frameProcessingMode() const override
 	{
-		return true;
+		return FrameProcessingMode::ConsumeFrame;
 	}
 
 private:
@@ -1235,9 +1251,9 @@ public:
 		closeLoadingScreen();
 	}
 
-	bool usesTopLevelPresentation() const override
+	FrameProcessingMode frameProcessingMode() const override
 	{
-		return true;
+		return FrameProcessingMode::ConsumeFrame;
 	}
 
 private:
@@ -1260,7 +1276,14 @@ public:
 
 	StepResult step() override
 	{
-		loadMapPreview(request.hideInterface);
+		if (request.previewMapName.empty())
+		{
+			loadMapPreview(request.hideInterface);
+		}
+		else
+		{
+			loadMapPreview(request.hideInterface, request.previewMapName.c_str(), request.previewMapHash);
+		}
 		return StepResult::Completed;
 	}
 
@@ -1270,6 +1293,11 @@ public:
 
 	void finalizeFailure() override
 	{
+	}
+
+	FrameProcessingMode frameProcessingMode() const override
+	{
+		return FrameProcessingMode::ContinueMainLoop;
 	}
 
 private:
@@ -1342,15 +1370,16 @@ public:
 
 	void queueRender(gfx_api::RenderGraph &renderGraph)
 	{
-		if (activeJob && activeJob->usesTopLevelPresentation())
+		if (activeRequest && activeRequest->showLoadingScreen)
 		{
 			queueLoadingScreenRender(renderGraph);
 		}
 	}
 
-	bool needsTopLevelRender() const
+	ILoadingJob::FrameProcessingMode currentFrameProcessingMode() const
 	{
-		return activeJob && activeJob->usesTopLevelPresentation();
+		ASSERT(activeJob, "LoadingController.currentFrameProcessingMode called without an active job");
+		return activeJob->frameProcessingMode();
 	}
 
 private:
@@ -1381,6 +1410,11 @@ static LoadingController gLoadingController;
 void requestMapPreviewLoad(bool hideInterface)
 {
 	gLoadingController.request(LoadingRequest::mapPreview(hideInterface));
+}
+
+void requestMapPreviewLoad(bool hideInterface, const char *mapName, Sha256 const &mapHash)
+{
+	gLoadingController.request(LoadingRequest::mapPreview(hideInterface, mapName, mapHash));
 }
 
 
@@ -1533,13 +1567,19 @@ void mainLoop()
 
 	if (NetPlay.bComms || focusState == FOCUS_IN || !war_GetPauseOnFocusLoss())
 	{
+		bool frameEnded = false;
 		if (gLoadingController.active())
 		{
+			ILoadingJob::FrameProcessingMode loadingFrameMode = gLoadingController.currentFrameProcessingMode();
 			gLoadingController.step();
 			gLoadingController.queueRender(pie_GetFrameRenderGraph());
-			pie_ScreenFrameRenderEnd();
+			if (loadingFrameMode == ILoadingJob::FrameProcessingMode::ConsumeFrame)
+			{
+				pie_ScreenFrameRenderEnd();
+				frameEnded = true;
+			}
 		}
-		else if (loop_GetVideoStatus())
+		if (!frameEnded && loop_GetVideoStatus())
 		{
 			pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "VideoPlayback",
 				[]
@@ -1548,7 +1588,7 @@ void mainLoop()
 				});
 			pie_ScreenFrameRenderEnd();
 		}
-		else switch (GetGameMode())
+		else if (!frameEnded) switch (GetGameMode())
 			{
 			case GS_NORMAL: // Run the gameloop code
 				runGameLoop();

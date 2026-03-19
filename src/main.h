@@ -32,6 +32,8 @@ enum GS_GAMEMODE
 	GS_SAVEGAMELOAD
 };
 
+struct Sha256;
+
 //flag to indicate when initialisation is complete
 extern bool gameInitialised;
 extern bool customDebugfile;
@@ -69,6 +71,7 @@ GS_GAMEMODE GetGameMode() WZ_DECL_PURE;
 void SetGameMode(GS_GAMEMODE status);
 void mainLoop();
 void requestMapPreviewLoad(bool hideInterface);
+void requestMapPreviewLoad(bool hideInterface, const char *mapName, Sha256 const &mapHash);
 
 extern char SaveGamePath[PATH_MAX];
 extern char ReplayPath[PATH_MAX];
