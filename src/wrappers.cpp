@@ -68,7 +68,6 @@ static bool bHeadlessAutoGameModeCLIOption = false;
 static bool bActualHeadlessAutoGameMode = false;
 static bool bHostLaunchStartNotReady = false;
 static bool loadingScreenSessionActive = false;
-static bool loadingScreenSessionNeedsPresent = false;
 
 static uint32_t lastTick = 0;
 static int barLeftX, barLeftY, barRightX, barRightY, boxWidth, boxHeight, starsNum, starHeight;
@@ -102,47 +101,32 @@ static void renderLoadingScreenPass()
 	}
 }
 
-static void presentLoadingScreenFrame()
+bool isLoadingScreenActive()
 {
-	gfx_api::RenderGraph loadingGraph;
-
-	if (screen_GetBackDrop())
-	{
-		loadingGraph.addRenderPass(gfx_api::RenderPassType::Default, "LoadingBackdrop",
-			[]
-			{
-				screen_Display();
-			});
-	}
-
-	loadingGraph.addRenderPass(gfx_api::RenderPassType::Default, "LoadingScreen",
-		[]
-		{
-			renderLoadingScreenPass();
-		});
-
-	loadingGraph.execute();
+	return loadingScreenSessionActive;
 }
 
-static void requestLoadingScreenPresent()
+void queueLoadingScreenRender(gfx_api::RenderGraph &renderGraph)
 {
 	if (!loadingScreenSessionActive)
 	{
 		return;
 	}
 
-	loadingScreenSessionNeedsPresent = true;
-}
-
-static void presentLoadingScreenIfNeeded()
-{
-	if (!loadingScreenSessionActive || !loadingScreenSessionNeedsPresent)
+	if (screen_GetBackDrop())
 	{
-		return;
+		renderGraph.addRenderPass(gfx_api::RenderPassType::Default, "LoadingBackdrop",
+			[]
+			{
+				screen_Display();
+			});
 	}
 
-	loadingScreenSessionNeedsPresent = false;
-	presentLoadingScreenFrame();
+	renderGraph.addRenderPass(gfx_api::RenderPassType::Default, "LoadingScreen",
+		[]
+		{
+			renderLoadingScreenPass();
+		});
 }
 
 static STAR newStar()
@@ -366,9 +350,6 @@ void loadingScreenCallback()
 	}
 
 	lastTick = currTick;
-	requestLoadingScreenPresent();
-	presentLoadingScreenIfNeeded();
-
 	audio_Update();
 
 	wzPumpEventsWhileLoading();
@@ -395,7 +376,6 @@ void initLoadingScreen(bool drawbdrop)
 	wzShowMouse(false);
 	pie_SetFogStatus(false);
 	loadingScreenSessionActive = true;
-	loadingScreenSessionNeedsPresent = false;
 	lastTick = 0;
 
 #if !defined(__EMSCRIPTEN__)
@@ -417,16 +397,12 @@ void initLoadingScreen(bool drawbdrop)
 	{
 		screen_StopBackDrop();
 	}
-
-	requestLoadingScreenPresent();
-	presentLoadingScreenIfNeeded();
 }
 
 // shut down the loading screen
 void closeLoadingScreen()
 {
 	loadingScreenSessionActive = false;
-	loadingScreenSessionNeedsPresent = false;
 
 	if (stars)
 	{

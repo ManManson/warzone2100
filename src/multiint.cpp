@@ -7274,7 +7274,7 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 			}
 
 			addPlayerBox(true);				// update the player box.
-			loadMapPreview(false);
+			requestMapPreviewLoad(false);
 			updateGameOptions();
 		}
 	}
@@ -7370,7 +7370,7 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 						game.maxPlayers = mapData->players;
 						game.isMapMod = CheckForMod(mapData->realFileName);
 						game.isRandom = CheckForRandom(mapData->realFileName, mapData->apDataFiles[0].c_str());
-						loadMapPreview(false);
+						requestMapPreviewLoad(false);
 
 						/* Change game info to match the previous selection if hover preview was displayed */
 						sstrcpy(game.map, oldGameMap);
@@ -7403,7 +7403,7 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 					uint8_t oldMaxPlayers = game.maxPlayers;
 					updateMapSettings(mapData);
 
-					loadMapPreview(false);
+					requestMapPreviewLoad(false);
 					loadMapChallengeAndPlayerSettings();
 					debug(LOG_INFO, "Switching map: %s (builtin: %d)", (!mapData->pName.empty()) ? mapData->pName.c_str() : "n/a", (int)builtInMap);
 
@@ -7436,7 +7436,7 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 				}
 				break;
 			default:
-				loadMapPreview(false);  // Restore the preview of the old map.
+				requestMapPreviewLoad(false);  // Restore the preview of the old map.
 				break;
 			}
 			if (!isHoverPreview)
@@ -7706,7 +7706,7 @@ void WzMultiplayerOptionsTitleUI::start()
 		}
 	}
 
-	loadMapPreview(false);
+	requestMapPreviewLoad(false);
 
 	const bool hostOrSingle = ingame.side == InGameSide::HOST_OR_SINGLEPLAYER;
 	/* Re-entering or entering without a challenge */

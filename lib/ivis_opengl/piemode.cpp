@@ -128,6 +128,11 @@ void pie_ScreenFrameRenderEnd()
 	wzPerfFrame();
 }
 
+bool pie_IsRenderingFrameActive()
+{
+	return renderingFrame;
+}
+
 /***************************************************************************/
 UDWORD	pie_GetResScalingFactor()
 {

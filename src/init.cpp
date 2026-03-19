@@ -1187,6 +1187,23 @@ bool frontendInitialise(const char *ResourceFile)
 
 	debug(LOG_WZ, "== Initializing frontend == : %s", ResourceFile);
 
+	if (!frontendInitialiseSetup())
+	{
+		return false;
+	}
+
+	debug(LOG_MAIN, "frontEndInitialise: loading resource file .....");
+	if (!resLoad(ResourceFile, 0))
+	{
+		//need the object heaps to have been set up before loading in the save game
+		return false;
+	}
+
+	return frontendInitialiseFinalize();
+}
+
+bool frontendInitialiseSetup()
+{
 	if (!InitialiseGlobals())				// Initialise all globals and statics everywhere.
 	{
 		return false;
@@ -1207,13 +1224,11 @@ bool frontendInitialise(const char *ResourceFile)
 		return false;
 	}
 
-	debug(LOG_MAIN, "frontEndInitialise: loading resource file .....");
-	if (!resLoad(ResourceFile, 0))
-	{
-		//need the object heaps to have been set up before loading in the save game
-		return false;
-	}
+	return true;
+}
 
+bool frontendInitialiseFinalize()
+{
 	if (!dispInitialise())					// Initialise the display system
 	{
 		return false;

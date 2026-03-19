@@ -24,6 +24,9 @@
 #ifndef __INCLUDED_SRC_INIT_H__
 #define __INCLUDED_SRC_INIT_H__
 
+#include <cstdint>
+#include <memory>
+#include <string>
 #include <vector>
 #include "terrain_defs.h"
 
@@ -38,6 +41,8 @@ extern char fileLoadBuffer[];
 bool systemInitialise(unsigned int horizScalePercentage, unsigned int vertScalePercentage);
 void systemShutdown();
 bool frontendInitialise(const char *ResourceFile);
+bool frontendInitialiseSetup();
+bool frontendInitialiseFinalize();
 bool frontendShutdown();
 bool stageOneInitialise();
 bool stageOneShutDown();

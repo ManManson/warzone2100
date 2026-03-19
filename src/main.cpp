@@ -56,6 +56,7 @@
 #endif // WZ_OS_WIN
 
 #include "lib/framework/input.h"
+#include "lib/framework/frameresource.h"
 #include "lib/framework/physfs_ext.h"
 #include "lib/framework/wzpaths.h"
 #include "lib/framework/wztime.h"
@@ -89,6 +90,7 @@
 #include "loop.h"
 #include "mission.h"
 #include "modding.h"
+#include "multiint.h"
 #include "multiplay.h"
 #include "notifications.h"
 #include "qtscript.h"
@@ -111,6 +113,7 @@
 #include "stdinreader.h"
 #include "gamehistorylogger.h"
 #include "campaigninfo.h"
+#include <memory>
 #if defined(ENABLE_DISCORD)
 #include "integrations/wzdiscordrpc.h"
 #endif
@@ -799,7 +802,6 @@ static bool startGameLoop()
 	}
 
 	SetGameMode(GS_NORMAL);
-	initLoadingScreen(true);
 
 	ActivityManager::instance().startingGame();
 
@@ -815,7 +817,6 @@ static bool startGameLoop()
 			multiGameShutdown();
 		}
 		levReleaseAll();
-		closeLoadingScreen();
 		cdAudio_SetGameMode(MusicGameMode::MENUS);
 		stopGameLoop();
 		pie_LoadBackDrop(SCREEN_RANDOMBDROP);
@@ -825,7 +826,6 @@ static bool startGameLoop()
 	}
 
 	screen_StopBackDrop();
-	closeLoadingScreen();
 
 	// Trap the cursor if cursor snapping is enabled
 	if (shouldTrapCursor())
@@ -974,7 +974,6 @@ static bool initSaveGameLoad()
 {
 	// NOTE: always setGameMode correctly before *any* loading routines!
 	SetGameMode(GS_NORMAL);
-	initLoadingScreen(true);
 
 	// load up a save game
 	if (!loadGameInit(GameLoadDetails::makeUserSaveGameLoad(saveGameName)))
@@ -998,7 +997,6 @@ static bool initSaveGameLoad()
 	setCDAudioForCurrentGameMode();
 
 	screen_StopBackDrop();
-	closeLoadingScreen();
 
 	// Trap the cursor if cursor snapping is enabled
 	if (shouldTrapCursor())
@@ -1014,6 +1012,375 @@ static bool initSaveGameLoad()
 	gameInitialised = true;
 
 	return true;
+}
+
+struct LoadingRequest
+{
+	enum class Kind
+	{
+		FrontendInit,
+		StartGame,
+		LoadSaveGame,
+		MapPreview,
+	};
+
+	Kind kind;
+	bool drawBackdrop = true;
+	bool showLoadingScreen = true;
+	std::string resourceFile;
+	bool onInitialStartup = false;
+	bool hideInterface = false;
+
+	static LoadingRequest frontendInit(bool onInitialStartup = false)
+	{
+		LoadingRequest request;
+		request.kind = Kind::FrontendInit;
+		request.drawBackdrop = !onInitialStartup;
+		request.showLoadingScreen = !onInitialStartup;
+		request.resourceFile = "wrf/frontend.wrf";
+		request.onInitialStartup = onInitialStartup;
+		return request;
+	}
+
+	static LoadingRequest startGame()
+	{
+		LoadingRequest request;
+		request.kind = Kind::StartGame;
+		return request;
+	}
+
+	static LoadingRequest loadSaveGame()
+	{
+		LoadingRequest request;
+		request.kind = Kind::LoadSaveGame;
+		return request;
+	}
+
+	static LoadingRequest mapPreview(bool hideInterface)
+	{
+		LoadingRequest request;
+		request.kind = Kind::MapPreview;
+		request.drawBackdrop = false;
+		request.showLoadingScreen = false;
+		request.hideInterface = hideInterface;
+		return request;
+	}
+};
+
+class ILoadingJob
+{
+public:
+	enum class StepResult
+	{
+		InProgress,
+		Completed,
+		Failed,
+	};
+
+	virtual ~ILoadingJob() = default;
+	virtual StepResult step() = 0;
+	virtual void finalizeSuccess() = 0;
+	virtual void finalizeFailure() = 0;
+	virtual bool usesTopLevelPresentation() const
+	{
+		return false;
+	}
+};
+
+class FrontendInitJob final : public ILoadingJob
+{
+public:
+	explicit FrontendInitJob(LoadingRequest request)
+		: request(std::move(request))
+	{
+	}
+
+	StepResult step() override
+	{
+		switch (phase)
+		{
+		case Phase::Setup:
+			SetGameMode(GS_TITLE_SCREEN);
+			frontendIsShuttingDown();
+			debug(LOG_WZ, "== Initializing frontend == : %s", request.resourceFile.c_str());
+			if (!frontendInitialiseSetup())
+			{
+				return StepResult::Failed;
+			}
+			phase = Phase::PrepareResLoadPlan;
+			return StepResult::InProgress;
+		case Phase::PrepareResLoadPlan:
+			debug(LOG_MAIN, "frontEndInitialise: loading resource file .....");
+			if (!resPrepareLoadPlan(request.resourceFile.c_str(), 0, plan))
+			{
+				return StepResult::Failed;
+			}
+			phase = Phase::LoadResources;
+			return StepResult::InProgress;
+		case Phase::LoadResources:
+			if (!resLoadPlanStep(plan, 1))
+			{
+				return StepResult::Failed;
+			}
+			if (!resLoadPlanComplete(plan))
+			{
+				return StepResult::InProgress;
+			}
+			phase = Phase::Finalize;
+			return StepResult::InProgress;
+		case Phase::Finalize:
+			return frontendInitialiseFinalize() ? StepResult::Completed : StepResult::Failed;
+		}
+
+		return StepResult::Failed;
+	}
+
+	void finalizeSuccess() override
+	{
+		closeLoadingScreen();
+	}
+
+	void finalizeFailure() override
+	{
+		closeLoadingScreen();
+		debug(LOG_FATAL, "Shutting down after failure");
+		exit(EXIT_FAILURE);
+	}
+
+	bool usesTopLevelPresentation() const override
+	{
+		return true;
+	}
+
+private:
+	enum class Phase
+	{
+		Setup,
+		PrepareResLoadPlan,
+		LoadResources,
+		Finalize,
+	};
+
+	LoadingRequest request;
+	Phase phase = Phase::Setup;
+	ResLoadPlan plan;
+};
+
+class StartGameJob final : public ILoadingJob
+{
+public:
+	StepResult step() override
+	{
+		switch (phase)
+		{
+		case Phase::PresentInitialFrame:
+			phase = Phase::RunLoad;
+			return StepResult::InProgress;
+		case Phase::RunLoad:
+			return startGameLoop() ? StepResult::Completed : StepResult::Failed;
+		}
+
+		return StepResult::Failed;
+	}
+
+	void finalizeSuccess() override
+	{
+		closeLoadingScreen();
+	}
+
+	void finalizeFailure() override
+	{
+		closeLoadingScreen();
+	}
+
+	bool usesTopLevelPresentation() const override
+	{
+		return true;
+	}
+
+private:
+	enum class Phase
+	{
+		PresentInitialFrame,
+		RunLoad,
+	};
+
+	Phase phase = Phase::PresentInitialFrame;
+};
+
+class LoadSaveGameJob final : public ILoadingJob
+{
+public:
+	StepResult step() override
+	{
+		switch (phase)
+		{
+		case Phase::PresentInitialFrame:
+			phase = Phase::RunLoad;
+			return StepResult::InProgress;
+		case Phase::RunLoad:
+			return initSaveGameLoad() ? StepResult::Completed : StepResult::Failed;
+		}
+
+		return StepResult::Failed;
+	}
+
+	void finalizeSuccess() override
+	{
+		closeLoadingScreen();
+	}
+
+	void finalizeFailure() override
+	{
+		closeLoadingScreen();
+	}
+
+	bool usesTopLevelPresentation() const override
+	{
+		return true;
+	}
+
+private:
+	enum class Phase
+	{
+		PresentInitialFrame,
+		RunLoad,
+	};
+
+	Phase phase = Phase::PresentInitialFrame;
+};
+
+class MapPreviewJob final : public ILoadingJob
+{
+public:
+	explicit MapPreviewJob(LoadingRequest request)
+		: request(std::move(request))
+	{
+	}
+
+	StepResult step() override
+	{
+		loadMapPreview(request.hideInterface);
+		return StepResult::Completed;
+	}
+
+	void finalizeSuccess() override
+	{
+	}
+
+	void finalizeFailure() override
+	{
+	}
+
+private:
+	LoadingRequest request;
+};
+
+class LoadingController
+{
+public:
+	void request(LoadingRequest request)
+	{
+		if (activeJob)
+		{
+			queuedRequest = std::move(request);
+			return;
+		}
+
+		begin(std::move(request));
+	}
+
+	void begin(LoadingRequest request)
+	{
+		ASSERT(!activeJob, "LoadingController.begin called while another loading job is active");
+		activeRequest = std::move(request);
+		activeJob = makeJob(activeRequest.value());
+		ASSERT(activeJob, "Failed to create loading job");
+
+		const bool hadLoadingScreen = isLoadingScreenActive();
+		if (activeRequest->showLoadingScreen && !hadLoadingScreen)
+		{
+			initLoadingScreen(activeRequest->drawBackdrop);
+		}
+		if (activeRequest->showLoadingScreen && hadLoadingScreen && pie_IsRenderingFrameActive() && !headlessGameMode())
+		{
+			queueLoadingScreenRender(pie_GetFrameRenderGraph());
+		}
+	}
+
+	bool active() const
+	{
+		return activeJob != nullptr;
+	}
+
+	void step()
+	{
+		ASSERT(activeJob, "LoadingController.step called without an active job");
+		ILoadingJob::StepResult result = activeJob->step();
+		switch (result)
+		{
+		case ILoadingJob::StepResult::InProgress:
+			return;
+		case ILoadingJob::StepResult::Completed:
+			activeJob->finalizeSuccess();
+			break;
+		case ILoadingJob::StepResult::Failed:
+			activeJob->finalizeFailure();
+			break;
+		}
+
+		activeJob.reset();
+		activeRequest.reset();
+
+		if (queuedRequest.has_value())
+		{
+			LoadingRequest nextRequest = std::move(queuedRequest.value());
+			queuedRequest.reset();
+			begin(std::move(nextRequest));
+		}
+	}
+
+	void queueRender(gfx_api::RenderGraph &renderGraph)
+	{
+		if (activeJob && activeJob->usesTopLevelPresentation())
+		{
+			queueLoadingScreenRender(renderGraph);
+		}
+	}
+
+	bool needsTopLevelRender() const
+	{
+		return activeJob && activeJob->usesTopLevelPresentation();
+	}
+
+private:
+	static std::unique_ptr<ILoadingJob> makeJob(const LoadingRequest &request)
+	{
+		switch (request.kind)
+		{
+		case LoadingRequest::Kind::FrontendInit:
+			return std::unique_ptr<ILoadingJob>(new FrontendInitJob(request));
+		case LoadingRequest::Kind::StartGame:
+			return std::unique_ptr<ILoadingJob>(new StartGameJob());
+		case LoadingRequest::Kind::LoadSaveGame:
+			return std::unique_ptr<ILoadingJob>(new LoadSaveGameJob());
+		case LoadingRequest::Kind::MapPreview:
+			return std::unique_ptr<ILoadingJob>(new MapPreviewJob(request));
+		}
+
+		return nullptr;
+	}
+
+	optional<LoadingRequest> activeRequest = nullopt;
+	optional<LoadingRequest> queuedRequest = nullopt;
+	std::unique_ptr<ILoadingJob> activeJob;
+};
+
+static LoadingController gLoadingController;
+
+void requestMapPreviewLoad(bool hideInterface)
+{
+	gLoadingController.request(LoadingRequest::mapPreview(hideInterface));
 }
 
 
@@ -1037,20 +1404,14 @@ static void runGameLoop()
 	case GAMECODE_LOADGAME:
 		debug(LOG_MAIN, "GAMECODE_LOADGAME");
 		stopGameLoop();
-		initSaveGameLoad(); // Restart and load a savegame
+		gLoadingController.request(LoadingRequest::loadSaveGame());
 		gameLoopStatus = GAMECODE_CONTINUE;
 		return;
 	case GAMECODE_NEWLEVEL:
 		debug(LOG_MAIN, "GAMECODE_NEWLEVEL");
 		stopGameLoop();
-		if (startGameLoop()) // Restart gameloop
-		{
-			gameLoopStatus = GAMECODE_CONTINUE;
-		}
-		else
-		{
-			debug(LOG_POPUP, _("Failed to load level data or map. Exiting to main menu."));
-		}
+		gLoadingController.request(LoadingRequest::startGame());
+		gameLoopStatus = GAMECODE_CONTINUE;
 		return;
 	default:
 		// ignore other values, and proceed with gameLoop
@@ -1102,31 +1463,14 @@ static void runTitleLoop()
 		switch (toProcess)
 		{
 		case TITLECODE_SAVEGAMELOAD:
-			{
-				debug(LOG_MAIN, "TITLECODE_SAVEGAMELOAD");
-				// Restart into gameloop and load a savegame, ONLY on a good savegame load!
-				stopTitleLoop();
-				if (!initSaveGameLoad())
-				{
-					// we had a error loading savegame (corrupt?), so go back to title screen?
-					stopGameLoop();
-					startTitleLoop();
-					changeTitleMode(TITLE);
-				}
-				closeLoadingScreen();
-				return;
-			}
+			debug(LOG_MAIN, "TITLECODE_SAVEGAMELOAD");
+			stopTitleLoop();
+			gLoadingController.request(LoadingRequest::loadSaveGame());
+			return;
 		case TITLECODE_STARTGAME:
 			debug(LOG_MAIN, "TITLECODE_STARTGAME");
 			stopTitleLoop();
-			if (startGameLoop()) // Restart into gameloop
-			{
-				closeLoadingScreen();
-			}
-			else
-			{
-				debug(LOG_POPUP, _("Failed to load level data or map. Exiting to main menu."));
-			}
+			gLoadingController.request(LoadingRequest::startGame());
 			return;
 		default:
 			// ignore unexpected value
@@ -1189,7 +1533,13 @@ void mainLoop()
 
 	if (NetPlay.bComms || focusState == FOCUS_IN || !war_GetPauseOnFocusLoss())
 	{
-		if (loop_GetVideoStatus())
+		if (gLoadingController.active())
+		{
+			gLoadingController.step();
+			gLoadingController.queueRender(pie_GetFrameRenderGraph());
+			pie_ScreenFrameRenderEnd();
+		}
+		else if (loop_GetVideoStatus())
 		{
 			pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "VideoPlayback",
 				[]
@@ -2094,22 +2444,17 @@ int realmain(int argc, char *argv[])
 	{
 	case GS_TITLE_SCREEN:
 		// The usual case (unless command-line flags specify otherwise): Load into the title menu
-		startTitleLoop(true);
+		gLoadingController.request(LoadingRequest::frontendInit(true));
 		break;
 	case GS_SAVEGAMELOAD:
 		if (headlessGameMode())
 		{
 			fprintf(stdout, "Loading savegame ...\n");
 		}
-		initSaveGameLoad();
+		gLoadingController.request(LoadingRequest::loadSaveGame());
 		break;
 	case GS_NORMAL:
-		if (!startGameLoop())
-		{
-			// Attempted to load straight into a game from the command-line, but starting the game loop (loading the map, etc) failed
-			// Treat this as a failure and queue an exit
-			wzQuit(EXIT_FAILURE);
-		}
+		gLoadingController.request(LoadingRequest::startGame());
 		break;
 	default:
 		debug(LOG_ERROR, "Weirdy game status, I'm afraid!!");

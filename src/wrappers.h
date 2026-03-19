@@ -22,6 +22,7 @@
 #define __INCLUDED_SRC_WRAPPERS_H__
 
 #include "lib/framework/types.h"
+#include "lib/ivis_opengl/gfx_api_render_graph.h"
 
 enum TITLECODE
 {
@@ -62,6 +63,8 @@ TITLECODE titleLoop();
 void initLoadingScreen(bool drawbdrop);
 void closeLoadingScreen();
 void loadingScreenCallback();
+bool isLoadingScreenActive();
+void queueLoadingScreenRender(gfx_api::RenderGraph &renderGraph);
 
 bool displayGameOver(bool success, bool showBackDrop);
 void setPlayerHasLost(bool val);

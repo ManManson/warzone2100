@@ -21,6 +21,10 @@
 #ifndef __INCLUDED_SRC_MAIN_H__
 #define __INCLUDED_SRC_MAIN_H__
 
+#include "lib/framework/frame.h"
+
+#include <string>
+
 enum GS_GAMEMODE
 {
 	GS_TITLE_SCREEN,
@@ -64,6 +68,7 @@ struct SaveGamePath_t
 GS_GAMEMODE GetGameMode() WZ_DECL_PURE;
 void SetGameMode(GS_GAMEMODE status);
 void mainLoop();
+void requestMapPreviewLoad(bool hideInterface);
 
 extern char SaveGamePath[PATH_MAX];
 extern char ReplayPath[PATH_MAX];
