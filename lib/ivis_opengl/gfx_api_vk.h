@@ -745,6 +745,8 @@ struct VkRoot final : gfx_api::context
 	bool debugUtilsExtEnabled = false;
 
 	bool startedRenderPass = false;
+	gfx_api::RenderPassType activePassType = gfx_api::RenderPassType::Default;
+	bool hasActivePass = false;
 	const size_t maxErrorHandlingDepth = 10;
 	std::vector<vk::Result> errorHandlingDepth;
 
@@ -822,17 +824,17 @@ public:
 
 	virtual size_t numDepthPasses() override;
 	virtual bool setDepthPassProperties(size_t numDepthPasses, size_t depthBufferResolution) override;
-	virtual void beginDepthPass(size_t idx) override;
+	virtual void beginPass(gfx_api::RenderPassType type, size_t index = 0) override;
+	virtual void endPass() override;
+	virtual void submitFrame() override;
+	void beginDepthPass(size_t idx);
 	virtual size_t getDepthPassDimensions(size_t idx) override;
-	virtual void endCurrentDepthPass() override;
+	void endCurrentDepthPass();
 	virtual gfx_api::abstract_texture* getDepthTexture() override;
 
-	virtual void beginSceneRenderPass() override;
-	virtual void endSceneRenderPass() override;
+	void beginSceneRenderPass();
+	void endSceneRenderPass();
 	virtual gfx_api::abstract_texture* getSceneTexture() override;
-
-	virtual void beginRenderPass() override;
-	virtual void endRenderPass() override;
 	virtual void set_polygon_offset(const float& offset, const float& slope) override;
 	virtual void set_depth_range(const float& min, const float& max) override;
 private:

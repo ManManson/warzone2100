@@ -427,12 +427,17 @@ bool null_context::_initialize(const gfx_api::backend_Impl_Factory& impl, int32_
 	return true;
 }
 
-void null_context::beginRenderPass()
+void null_context::beginPass(gfx_api::RenderPassType type, size_t index)
 {
-	// no-op
+	(void)type;
+	(void)index;
 }
 
-void null_context::endRenderPass()
+void null_context::endPass()
+{
+}
+
+void null_context::submitFrame()
 {
 	frameNum = std::max<size_t>(frameNum + 1, 1);
 

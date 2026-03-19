@@ -322,15 +322,16 @@ struct gl_context final : public gfx_api::context
 
 	virtual size_t numDepthPasses() override;
 	virtual bool setDepthPassProperties(size_t numDepthPasses, size_t depthBufferResolution) override;
-	virtual void beginDepthPass(size_t idx) override;
+	virtual void beginPass(gfx_api::RenderPassType type, size_t index = 0) override;
+	virtual void endPass() override;
+	virtual void submitFrame() override;
+	void beginDepthPass(size_t idx);
 	virtual size_t getDepthPassDimensions(size_t idx) override;
-	virtual void endCurrentDepthPass() override;
+	void endCurrentDepthPass();
 	virtual gfx_api::abstract_texture* getDepthTexture() override;
-	virtual void beginSceneRenderPass() override;
-	virtual void endSceneRenderPass() override;
+	void beginSceneRenderPass();
+	void endSceneRenderPass();
 	virtual gfx_api::abstract_texture* getSceneTexture() override;
-	virtual void beginRenderPass() override;
-	virtual void endRenderPass() override;
 	virtual void debugStringMarker(const char *str) override;
 	virtual void debugSceneBegin(const char *descr) override;
 	virtual void debugSceneEnd(const char *descr) override;
@@ -399,6 +400,9 @@ private:
 	uint32_t viewportWidth = 0;
 	uint32_t viewportHeight = 0;
 	std::vector<bool> enabledVertexAttribIndexes;
+	gfx_api::RenderPassType activePassType = gfx_api::RenderPassType::Default;
+	bool hasActivePass = false;
+	bool defaultPassStarted = false;
 	size_t frameNum = 0;
 	std::string formattedRendererInfoString;
 	std::array<std::vector<gfx_api::pixel_format_usage::flags>, gfx_api::PIXEL_FORMAT_TARGET_COUNT> textureFormatsSupport;

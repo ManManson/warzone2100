@@ -65,8 +65,8 @@ public:
 	// Execute all accumulated passes in order, then clear the pass list.
 	// This drives the backend through its begin/end pass transitions.
 	// Manages the default render pass lifecycle:
-	//   - Calls beginRenderPass() before the first Default pass.
-	//   - Calls endRenderPass() after all passes are done (if the default pass was started).
+	//   - Calls beginPass(Default) before the first Default pass.
+	//   - Calls endPass()+submitFrame() after all passes are done (if the default pass was started).
 	void execute();
 
 	// Reset the graph for a new frame. Clears all accumulated passes.

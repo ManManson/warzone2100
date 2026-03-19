@@ -400,15 +400,12 @@ namespace gfx_api
 		static bool isInitialized();
 		virtual size_t numDepthPasses() { return 0; }
 		virtual bool setDepthPassProperties(size_t numDepthPasses, size_t depthBufferResolution) { return false; }
-		virtual void beginDepthPass(size_t idx) { }
+		virtual void beginPass(RenderPassType type, size_t index = 0) = 0;
+		virtual void endPass() = 0;
+		virtual void submitFrame() = 0;
 		virtual size_t getDepthPassDimensions(size_t idx) { return 0; }
-		virtual void endCurrentDepthPass() { }
 		virtual gfx_api::abstract_texture* getDepthTexture() { return nullptr; }
-		virtual void beginSceneRenderPass() { }
-		virtual void endSceneRenderPass() { }
 		virtual gfx_api::abstract_texture* getSceneTexture() { return nullptr; }
-		virtual void beginRenderPass() = 0;
-		virtual void endRenderPass() = 0;
 
 		virtual void executeRenderGraph(std::vector<RenderPassDesc>& passes);
 

@@ -1119,27 +1119,27 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 		switch (pass.type)
 		{
 		case RenderPassType::Depth:
-			beginDepthPass(pass.depthPassIndex);
+			beginPass(RenderPassType::Depth, pass.depthPassIndex);
 			if (pass.recordFunc)
 			{
 				pass.recordFunc();
 			}
-			endCurrentDepthPass();
+			endPass();
 			break;
 
 		case RenderPassType::Scene:
-			beginSceneRenderPass();
+			beginPass(RenderPassType::Scene);
 			if (pass.recordFunc)
 			{
 				pass.recordFunc();
 			}
-			endSceneRenderPass();
+			endPass();
 			break;
 
 		case RenderPassType::Default:
 			if (!defaultPassActive)
 			{
-				beginRenderPass();
+				beginPass(RenderPassType::Default);
 				defaultPassActive = true;
 			}
 			if (pass.recordFunc)
@@ -1152,6 +1152,7 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 
 	if (defaultPassActive)
 	{
-		endRenderPass();
+		endPass();
+		submitFrame();
 	}
 }
