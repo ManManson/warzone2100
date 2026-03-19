@@ -319,8 +319,12 @@ TITLECODE WzMultiLimitTitleUI::run()
 		}
 	}
 
-	widgDisplayScreen(psWScreen);						// show the widgets currently running
 	return TITLECODE_CONTINUE;
+}
+
+void WzMultiLimitTitleUI::render()
+{
+	widgDisplayScreen(psWScreen);						// show the widgets currently running
 }
 
 // ////////////////////////////////////////////////////////////////////////////

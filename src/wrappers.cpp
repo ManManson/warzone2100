@@ -67,10 +67,83 @@ static HostLaunch hostlaunch = HostLaunch::Normal;  // used to detect if we are 
 static bool bHeadlessAutoGameModeCLIOption = false;
 static bool bActualHeadlessAutoGameMode = false;
 static bool bHostLaunchStartNotReady = false;
+static bool loadingScreenSessionActive = false;
+static bool loadingScreenSessionNeedsPresent = false;
 
 static uint32_t lastTick = 0;
 static int barLeftX, barLeftY, barRightX, barRightY, boxWidth, boxHeight, starsNum, starHeight;
 static STAR *stars = nullptr;
+
+static STAR newStar();
+
+static void renderLoadingScreenPass()
+{
+	const PIELIGHT loadingbar_background = WZCOL_LOADING_BAR_BACKGROUND;
+
+	/* Draw the black rectangle at the bottom, with a two pixel border */
+	pie_UniTransBoxFill(barLeftX - 2, barLeftY - 2, barRightX + 2, barRightY + 2, loadingbar_background);
+
+	for (unsigned int i = 1; i < starsNum; ++i)
+	{
+		stars[i].xPos = stars[i].xPos + stars[i].speed;
+		if (barLeftX + stars[i].xPos >= barRightX)
+		{
+			stars[i] = newStar();
+			stars[i].xPos = 1;
+		}
+		{
+			const int topX = barLeftX + stars[i].xPos;
+			const int topY = barLeftY + i * (boxHeight - starHeight) / starsNum;
+			const int botX = MIN(topX + stars[i].speed, barRightX);
+			const int botY = topY + starHeight;
+
+			pie_UniTransBoxFill(topX, topY, botX, botY, stars[i].colour);
+		}
+	}
+}
+
+static void presentLoadingScreenFrame()
+{
+	gfx_api::RenderGraph loadingGraph;
+
+	if (screen_GetBackDrop())
+	{
+		loadingGraph.addRenderPass(gfx_api::RenderPassType::Default, "LoadingBackdrop",
+			[]
+			{
+				screen_Display();
+			});
+	}
+
+	loadingGraph.addRenderPass(gfx_api::RenderPassType::Default, "LoadingScreen",
+		[]
+		{
+			renderLoadingScreenPass();
+		});
+
+	loadingGraph.execute();
+}
+
+static void requestLoadingScreenPresent()
+{
+	if (!loadingScreenSessionActive)
+	{
+		return;
+	}
+
+	loadingScreenSessionNeedsPresent = true;
+}
+
+static void presentLoadingScreenIfNeeded()
+{
+	if (!loadingScreenSessionActive || !loadingScreenSessionNeedsPresent)
+	{
+		return;
+	}
+
+	loadingScreenSessionNeedsPresent = false;
+	presentLoadingScreenFrame();
+}
 
 static STAR newStar()
 {
@@ -190,9 +263,13 @@ TITLECODE titleLoop()
 	pie_SetFogStatus(false);
 	if (!headlessGameMode() && screen_RestartBackDrop())
 	{
-		// changed value - draw the backdrop
-		// otherwise, pie_ScreenFrameRenderBegin handles drawing it
-		screen_Display();
+		// pie_ScreenFrameRenderBegin has already run for this frame,
+		// so queue the backdrop explicitly when it is re-enabled mid-frame.
+		pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "Backdrop",
+			[]
+			{
+				screen_Display();
+			});
 	}
 	wzShowMouse(true);
 
@@ -245,6 +322,16 @@ TITLECODE titleLoop()
 		// Creates a pointer, so if... when, the UI changes during a run, this does not disappear
 		std::shared_ptr<WzTitleUI> current = wzTitleUICurrent;
 		RetCode = current->run();
+
+		if (!headlessGameMode() && RetCode == TITLECODE_CONTINUE && wzTitleUICurrent)
+		{
+			std::shared_ptr<WzTitleUI> currentForRender = wzTitleUICurrent;
+			pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "TitleUI",
+				[currentForRender]
+				{
+					currentForRender->render();
+				});
+		}
 	}
 
 	if ((RetCode == TITLECODE_SAVEGAMELOAD) || (RetCode == TITLECODE_STARTGAME))
@@ -279,36 +366,8 @@ void loadingScreenCallback()
 	}
 
 	lastTick = currTick;
-
-	pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "LoadingScreen",
-		[]
-		{
-			const PIELIGHT loadingbar_background = WZCOL_LOADING_BAR_BACKGROUND;
-
-			/* Draw the black rectangle at the bottom, with a two pixel border */
-			pie_UniTransBoxFill(barLeftX - 2, barLeftY - 2, barRightX + 2, barRightY + 2, loadingbar_background);
-
-			for (unsigned int i = 1; i < starsNum; ++i)
-			{
-				stars[i].xPos = stars[i].xPos + stars[i].speed;
-				if (barLeftX + stars[i].xPos >= barRightX)
-				{
-					stars[i] = newStar();
-					stars[i].xPos = 1;
-				}
-				{
-					const int topX = barLeftX + stars[i].xPos;
-					const int topY = barLeftY + i * (boxHeight - starHeight) / starsNum;
-					const int botX = MIN(topX + stars[i].speed, barRightX);
-					const int botY = topY + starHeight;
-
-					pie_UniTransBoxFill(topX, topY, botX, botY, stars[i].colour);
-				}
-			}
-		});
-
-	pie_ScreenFrameRenderEnd();
-	pie_ScreenFrameRenderBegin();
+	requestLoadingScreenPresent();
+	presentLoadingScreenIfNeeded();
 
 	audio_Update();
 
@@ -332,10 +391,12 @@ void wzemscripten_display_web_loading_indicator(int x)
 // fill buffers with the static screen
 void initLoadingScreen(bool drawbdrop)
 {
-	pie_ScreenFrameRenderBegin(); // start a frame *if one isn't yet started*
 	setupLoadingScreen();
 	wzShowMouse(false);
 	pie_SetFogStatus(false);
+	loadingScreenSessionActive = true;
+	loadingScreenSessionNeedsPresent = false;
+	lastTick = 0;
 
 #if !defined(__EMSCRIPTEN__)
 	// setup the callback....
@@ -356,11 +417,17 @@ void initLoadingScreen(bool drawbdrop)
 	{
 		screen_StopBackDrop();
 	}
+
+	requestLoadingScreenPresent();
+	presentLoadingScreenIfNeeded();
 }
 
 // shut down the loading screen
 void closeLoadingScreen()
 {
+	loadingScreenSessionActive = false;
+	loadingScreenSessionNeedsPresent = false;
+
 	if (stars)
 	{
 		free(stars);

@@ -2500,12 +2500,15 @@ TITLECODE WzCampaignSelectorTitleUI::run()
 {
 	widgRunScreen(psWScreen);
 
-	widgDisplayScreen(psWScreen); // show the widgets currently running
-
 	if (CancelPressed())
 	{
 		changeTitleUI(parent);
 	}
 
 	return TITLECODE_CONTINUE;
+}
+
+void WzCampaignSelectorTitleUI::render()
+{
+	widgDisplayScreen(psWScreen); // show the widgets currently running
 }

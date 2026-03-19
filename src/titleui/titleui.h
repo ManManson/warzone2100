@@ -42,6 +42,7 @@ public:
 	virtual void start() = 0;
 	// NOTE! When porting, add screen_disableMapPreview(); if relevant!
 	virtual TITLECODE run() = 0;
+	virtual void render() = 0;
 	virtual void screenSizeDidChange(unsigned int oldWidth, unsigned int oldHeight, unsigned int newWidth, unsigned int newHeight);
 };
 
@@ -57,6 +58,7 @@ public:
 	WzOldTitleUI(tMode mode);
 	virtual void start() override;
 	virtual TITLECODE run() override;
+	virtual void render() override;
 	virtual void screenSizeDidChange(unsigned int oldWidth, unsigned int oldHeight, unsigned int newWidth, unsigned int newHeight) override;
 private:
 	tMode mode;
@@ -69,6 +71,7 @@ public:
 	WzProtocolTitleUI();
 	virtual void start() override;
 	virtual TITLECODE run() override;
+	virtual void render() override;
 	virtual void screenSizeDidChange(unsigned int oldWidth, unsigned int oldHeight, unsigned int newWidth, unsigned int newHeight) override;
 private:
 	void openIPDialog();
@@ -89,6 +92,7 @@ public:
 	WzMultiLimitTitleUI(std::shared_ptr<WzMultiplayerOptionsTitleUI> parent);
 	virtual void start() override;
 	virtual TITLECODE run() override;
+	virtual void render() override;
 private:
 	// The parent WzMultiplayerOptionsTitleUI to return to.
 	std::shared_ptr<WzMultiplayerOptionsTitleUI> parent;
@@ -101,6 +105,7 @@ public:
 	WzMsgBoxTitleUI(WzString title, WzString text, std::shared_ptr<WzTitleUI> next);
 	virtual void start() override;
 	virtual TITLECODE run() override;
+	virtual void render() override;
 private:
 	WzString title;
 	WzString text;

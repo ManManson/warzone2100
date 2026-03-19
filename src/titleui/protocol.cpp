@@ -137,17 +137,20 @@ TITLECODE WzProtocolTitleUI::run()
 		break;
 	}
 
-	widgDisplayScreen(psWScreen);							// show the widgets currently running
-	if (psSettingsScreen)
-	{
-		widgDisplayScreen(psSettingsScreen);						// show the widgets currently running
-	}
-
 	if (CancelPressed())
 	{
 		changeTitleMode(MULTI);
 	}
 	return TITLECODE_CONTINUE;
+}
+
+void WzProtocolTitleUI::render()
+{
+	widgDisplayScreen(psWScreen);							// show the widgets currently running
+	if (psSettingsScreen)
+	{
+		widgDisplayScreen(psSettingsScreen);						// show the widgets currently running
+	}
 }
 
 // ////////////////////////////////////////////////////////////////////////////

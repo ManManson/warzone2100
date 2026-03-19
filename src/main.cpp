@@ -1205,11 +1205,7 @@ void mainLoop()
 				// gameLoop handles pie_ScreenFrameRenderEnd()
 				break;
 			case GS_TITLE_SCREEN: // Run the titleloop code
-				pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "TitleScreen",
-					[]
-					{
-						runTitleLoop();
-					});
+				runTitleLoop();
 				pie_ScreenFrameRenderEnd();
 				break;
 			default:
