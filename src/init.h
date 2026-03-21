@@ -38,6 +38,8 @@ extern char fileLoadBuffer[];
 bool systemInitialise(unsigned int horizScalePercentage, unsigned int vertScalePercentage);
 void systemShutdown();
 bool frontendInitialise(const char *ResourceFile);
+bool frontendInitialiseSetup();
+bool frontendInitialiseFinalize();
 bool frontendShutdown();
 bool stageOneInitialise();
 bool stageOneShutDown();

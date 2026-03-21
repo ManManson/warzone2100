@@ -168,7 +168,11 @@ std::string getDefaultSkirmishAI(const bool& displayNameOnly=false);
 
 void kickPlayer(uint32_t player_id, const char *reason, LOBBY_ERROR_TYPES type, bool banPlayer = false);
 void displayKickReasonPopup(const std::string &reason);
+
+struct Sha256;
+
 void loadMapPreview(bool hideInterface);
+void loadMapPreview(bool hideInterface, const char *mapName, const Sha256& mapHash);
 
 bool changeReadyStatus(UBYTE player, bool bReady);
 WzString formatGameName(WzString name);
