@@ -93,4 +93,40 @@ struct MISSION
 	UWORD				iTranspExitTileY[MAX_PLAYERS];
 };
 
+enum class HomeWorldBehavior
+{
+	Parked,
+	LiveSubsystems
+};
+
+struct CampaignMissionMeta
+{
+	LEVEL_TYPE type = LEVEL_TYPE::LDS_NONE;
+	int32_t asCurrentPower[MAX_PLAYERS] = {};
+	UDWORD startTime = 0;
+	SDWORD time = -1;
+	SDWORD ETA = -1;
+	UDWORD cheatTime = 0;
+
+	UWORD homeLZ_X = 0;
+	UWORD homeLZ_Y = 0;
+	SDWORD playerX = 0;
+	SDWORD playerY = 0;
+
+	UWORD iTranspEntryTileX[MAX_PLAYERS] = {};
+	UWORD iTranspEntryTileY[MAX_PLAYERS] = {};
+	UWORD iTranspExitTileX[MAX_PLAYERS] = {};
+	UWORD iTranspExitTileY[MAX_PLAYERS] = {};
+};
+
+struct CampaignRuntime
+{
+	CampaignMissionMeta meta;
+	std::unique_ptr<GameWorld> homeWorld;
+	std::unique_ptr<GameWorld> awayWorld;
+	GameWorld *activeWorld = nullptr;
+	HomeWorldBehavior homeWorldBehavior = HomeWorldBehavior::Parked;
+	PerPlayerDroidLists limboDroids;
+};
+
 #endif // __INCLUDED_MISSIONDEF_H__

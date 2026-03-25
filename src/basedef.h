@@ -86,6 +86,8 @@ enum OBJECT_FLAG
 
 struct WEAPON_STATS;
 
+struct GameWorld;
+
 struct BASE_OBJECT : public SIMPLE_OBJECT
 {
 	BASE_OBJECT(OBJECT_TYPE type, uint32_t id, unsigned player);
@@ -123,6 +125,8 @@ public:
 	// Query visibility for display purposes (i.e. for `selectedPlayer`)
 	// *DO NOT USE TO QUERY VISIBILITY FOR CALCULATIONS INVOLVING GAME / SIMULATION STATE*
 	UBYTE visibleForLocalDisplay() const;
+
+	GameWorld* owningWorld = nullptr;
 };
 
 /// Space-time coordinate, including orientation.
