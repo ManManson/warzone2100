@@ -85,15 +85,18 @@ uint32_t generateSynchronisedObjectId();
 
 /* add the droid to the Droid Lists */
 void addDroid(DROID *psDroidToAdd, PerPlayerDroidLists& pList);
+void addDroid(GameWorld& world, DROID* psDroidToAdd);
 
 /*destroy a droid */
 void killDroid(DROID *psDel);
 
 /* Remove all droids */
 void freeAllDroids();
+void freeAllDroids(GameWorld& world);
 
 /*Remove a single Droid from its list*/
 void removeDroid(DROID *psDroidToRemove, PerPlayerDroidLists& pList);
+void removeDroid(GameWorld& world, DROID* psDroidToRemove);
 
 /*Removes all droids that may be stored in the mission lists*/
 void freeAllMissionDroids();
@@ -103,24 +106,28 @@ void freeAllLimboDroids();
 
 /* add the structure to the Structure Lists */
 void addStructure(STRUCTURE *psStructToAdd);
+void addStructure(GameWorld& world, STRUCTURE* psStructToAdd);
 
 /* Destroy a structure */
 void killStruct(STRUCTURE *psDel);
 
 /* Remove all structures */
 void freeAllStructs();
+void freeAllStructs(GameWorld& world);
 
 /*Remove a single Structure from a list*/
 void removeStructureFromList(STRUCTURE *psStructToRemove, PerPlayerStructureLists& pList);
 
 /* add the feature to the Feature Lists */
 void addFeature(FEATURE *psFeatureToAdd);
+void addFeature(GameWorld& world, FEATURE* psFeatureToAdd);
 
 /* Destroy a feature */
 void killFeature(FEATURE *psDel);
 
 /* Remove all features */
 void freeAllFeatures();
+void freeAllFeatures(GameWorld& world);
 
 /* Create a new Flag Position */
 bool createFlagPosition(FLAG_POSITION **ppsNew, UDWORD player);
@@ -148,6 +155,17 @@ BASE_OBJECT* getBaseObjFromId(const std::list<ObjectType*>& list, unsigned id)
 
 BASE_OBJECT *getBaseObjFromData(unsigned id, unsigned player, OBJECT_TYPE type);
 BASE_OBJECT *getBaseObjFromId(UDWORD id);
+
+struct GameWorld;
+
+PerPlayerDroidLists& droidListsForWorld(GameWorld& world);
+const PerPlayerDroidLists& droidListsForWorld(const GameWorld& world);
+
+PerPlayerStructureLists& structureListsForWorld(GameWorld& world);
+const PerPlayerStructureLists& structureListsForWorld(const GameWorld& world);
+
+PerPlayerFeatureLists& featureListsForWorld(GameWorld& world);
+const PerPlayerFeatureLists& featureListsForWorld(const GameWorld& world);
 
 UDWORD getRepairIdFromFlag(const FLAG_POSITION *psFlag);
 

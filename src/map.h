@@ -435,8 +435,27 @@ int32_t mapHeightForWorld(const GameWorld& world);
 MAPTILE* mapTile(GameWorld& world, int32_t x, int32_t y);
 const MAPTILE* mapTile(const GameWorld& world, int32_t x, int32_t y);
 
+MAPTILE* worldTile(GameWorld& world, int32_t x, int32_t y);
+const MAPTILE* worldTile(const GameWorld& world, int32_t x, int32_t y);
+
 bool tileOnMap(const GameWorld& world, SDWORD x, SDWORD y);
 bool worldOnMap(const GameWorld& world, int x, int y);
+
+int32_t map_TileHeight(const GameWorld& world, int32_t x, int32_t y);
+int32_t map_WaterHeight(const GameWorld& world, int32_t x, int32_t y);
+int32_t map_TileHeightSurface(const GameWorld& world, int32_t x, int32_t y);
+
+uint8_t auxTile(const GameWorld& world, int x, int y, int player);
+uint8_t blockTile(const GameWorld& world, int x, int y, int slot);
+
+void auxSet(GameWorld& world, int x, int y, int player, int state);
+void auxClear(GameWorld& world, int x, int y, int player, int state);
+void auxSetAll(GameWorld& world, int x, int y, int state);
+void auxClearAll(GameWorld& world, int x, int y, int state);
+void auxSetBlocking(GameWorld& world, int x, int y, int state);
+void auxClearBlocking(GameWorld& world, int x, int y, int state);
+void auxMapStore(GameWorld& world, int player, int slot);
+void auxMapRestore(GameWorld& world, int player, int slot, int mask);
 
 /* Save the map data */
 bool mapSaveToWzMapData(WzMap::MapData& output);

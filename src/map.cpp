@@ -2282,6 +2282,16 @@ const MAPTILE *mapTile(const GameWorld& world, int32_t x, int32_t y)
 	return mapTile(const_cast<GameWorld&>(world), x, y);
 }
 
+MAPTILE* worldTile(GameWorld& world, int32_t x, int32_t y)
+{
+	return mapTile(world, map_coord(x), map_coord(y));
+}
+
+const MAPTILE* worldTile(const GameWorld& world, int32_t x, int32_t y)
+{
+	return mapTile(world, map_coord(x), map_coord(y));
+}
+
 bool tileOnMap(const GameWorld& world, SDWORD x, SDWORD y)
 {
 	return (x >= 0) && (x < mapWidthForWorld(world)) && (y >= 0) && (y < mapHeightForWorld(world));
@@ -2291,4 +2301,147 @@ bool worldOnMap(const GameWorld& world, int x, int y)
 {
 	return (x >= 0) && (x < (mapWidthForWorld(world) << TILE_SHIFT)) &&
 	       (y >= 0) && (y < (mapHeightForWorld(world) << TILE_SHIFT));
+}
+
+int32_t map_TileHeight(const GameWorld& world, int32_t x, int32_t y)
+{
+	if (isActiveWorld(world))
+	{
+		return map_TileHeight(x, y);
+	}
+	if (x >= world.map.width || y >= world.map.height || x < 0 || y < 0)
+	{
+		return 0;
+	}
+	return world.map.tiles[x + y * world.map.width].height;
+}
+
+int32_t map_WaterHeight(const GameWorld& world, int32_t x, int32_t y)
+{
+	if (isActiveWorld(world))
+	{
+		return map_WaterHeight(x, y);
+	}
+	if (x >= world.map.width || y >= world.map.height || x < 0 || y < 0)
+	{
+		return 0;
+	}
+	return world.map.tiles[x + y * world.map.width].waterLevel;
+}
+
+int32_t map_TileHeightSurface(const GameWorld& world, int32_t x, int32_t y)
+{
+	return MAX(map_TileHeight(world, x, y), map_WaterHeight(world, x, y));
+}
+
+uint8_t auxTIle(const GameWorld& world, int x, int y, int player)
+{
+	ASSERT_OR_RETURN(AUXBITS_ALL, player >= 0 && player < MAX_PLAYERS + AUX_MAX, "invalid player: %d", player);
+	if (isActiveWorld(world))
+	{
+		return auxTile(x, y, player);
+	}
+	return world.map.auxMap[player][x + y * world.map.width];
+}
+
+uint8_t blockTile(const GameWorld& world, int x, int y, int slot)
+{
+	ASSERT_OR_RETURN(0, slot >= 0 && slot < AUX_MAX, "invalid block map slot: %d", slot);
+	if (isActiveWorld(world))
+	{
+		return blockTile(x, y, slot);
+	}
+	return world.map.blockMap[slot][x + y * world.map.width];
+}
+
+void auxSet(GameWorld& world, int x, int y, int player, int state)
+{
+	if (isActiveWorld(world))
+	{
+		auxSet(x, y, player, state);
+		return;
+	}
+	world.map.auxMap[player][x + y * world.map.width] |= state;
+}
+
+void auxClear(GameWorld& world, int x, int y, int player, int state)
+{
+	if (isActiveWorld(world))
+	{
+		auxClear(x, y, player, state);
+		return;
+	}
+	world.map.auxMap[player][x + y * world.map.width] &= ~state;
+}
+
+void auxSetAll(GameWorld& world, int x, int y, int state)
+{
+	if (isActiveWorld(world))
+	{
+		auxSetAll(x, y, state);
+		return;
+	}
+	for (int i = 0; i < MAX_PLAYERS; ++i)
+	{
+		auxSet(world, x, y, i, state);
+	}
+}
+
+void auxClearAll(GameWorld& world, int x, int y, int state)
+{
+	if (isActiveWorld(world))
+	{
+		auxClearAll(x, y, state);
+		return;
+	}
+	for (int i = 0; i < MAX_PLAYERS; ++i)
+	{
+		auxClear(world, x, y, i, state);
+	}
+}
+
+void auxSetBlocking(GameWorld& world, int x, int y, int state)
+{
+	if (isActiveWorld(world))
+	{
+		auxSetBlocking(x, y, state);
+		return;
+	}
+	world.map.blockMap[0][x + y * world.map.width] |= state;
+}
+
+void auxClearBlocking(GameWorld& world, int x, int y, int state)
+{
+	if (isActiveWorld(world))
+	{
+		auxClearBlocking(x, y, state);
+		return;
+	}
+	world.map.blockMap[0][x + y * world.map.width] &= ~state;
+}
+
+void auxMapStore(GameWorld& world, int player, int slot)
+{
+	if (isActiveWorld(world))
+	{
+		auxMapStore(player, slot);
+		return;
+	}
+	memcpy(world.map.blockMap[slot].get(), world.map.blockMap[0].get(), sizeof(uint8_t) * world.map.width * world.map.height);
+	memcpy(world.map.auxMap[MAX_PLAYERS + slot].get(), world.map.auxMap[player].get(), sizeof(uint8_t) * world.map.width * world.map.height);
+}
+
+void auxMapRestore(GameWorld& world, int player, int slot, int mask)
+{
+	if (isActiveWorld(world))
+	{
+		auxMapRestore(player, slot, mask);
+		return;
+	}
+	for (int i = 0; i < world.map.height * world.map.width; ++i)
+	{
+		uint8_t original = world.map.auxMap[player][i];
+		uint8_t cached = world.map.auxMap[MAX_PLAYERS + slot][i];
+		world.map.auxMap[player][i] = original ^ ((original ^ cached) & mask);
+	}
 }

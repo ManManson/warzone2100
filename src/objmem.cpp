@@ -44,6 +44,8 @@
 #include "qtscript.h"
 #include "order.h"
 #include "wzcrashhandlingproviders.h"
+#include "game_world.h"
+#include "world_binding.h"
 
 #include <algorithm>
 
@@ -75,6 +77,50 @@ DestroyedObjectsList psDestroyedObj;
 static void objListIntegCheck();
 #endif
 
+PerPlayerDroidLists& droidListsForWorld(GameWorld& world)
+{
+	return isActiveWorld(world) ? apsDroidLists : world.objects.droids;
+}
+
+const PerPlayerDroidLists& droidListsForWorld(const GameWorld& world)
+{
+	return isActiveWorld(world) ? apsDroidLists : world.objects.droids;
+}
+
+PerPlayerStructureLists& structureListsForWorld(GameWorld& world)
+{
+	return isActiveWorld(world) ? apsStructLists : world.objects.structures;
+}
+
+const PerPlayerStructureLists& structureListsForWorld(const GameWorld& world)
+{
+	return isActiveWorld(world) ? apsStructLists : world.objects.structures;
+}
+
+PerPlayerFeatureLists& featureListsForWorld(GameWorld& world)
+{
+	return isActiveWorld(world) ? apsFeatureLists : world.objects.features;
+}
+
+const PerPlayerFeatureLists& featureListsForWorld(const GameWorld& world)
+{
+	return isActiveWorld(world) ? apsFeatureLists : world.objects.features;
+}
+
+static GlobalSensorList& sensorListForWorld(GameWorld& world)
+{
+	return isActiveWorld(world) ? apsSensorList : world.objects.sensors;
+}
+
+static PerPlayerExtractorLists& extractorListsForWorld(GameWorld& world)
+{
+	return isActiveWorld(world) ? apsExtractorLists : world.objects.extractors;
+}
+
+static GlobalOilList& oilListForWorld(GameWorld& world)
+{
+	return isActiveWorld(world) ? apsOilList : world.objects.oils;
+}
 
 /* Initialise the object heaps */
 bool objmemInitialise()
@@ -504,6 +550,27 @@ void addDroid(DROID *psDroidToAdd, PerPlayerDroidLists& pList)
 	}
 }
 
+
+void addDroid(GameWorld &world, DROID *psDroidToAdd)
+{
+	PerPlayerDroidLists& lists = droidListsForWorld(world);
+
+	addObjectToList(lists, psDroidToAdd, psDroidToAdd->player);
+	psDroidToAdd->owningWorld = &world;
+	psDroidToAdd->died = false;
+
+	if (psDroidToAdd->droidType == DROID_SENSOR)
+	{
+		addObjectToFuncList(sensorListForWorld(world), (BASE_OBJECT *)psDroidToAdd, 0);
+	}
+	// Commanders have to get their group back if not already loaded
+	if (psDroidToAdd->droidType == DROID_COMMAND && !psDroidToAdd->psGroup)
+	{
+		DROID_GROUP* psGroup = grpCreate();
+		psGroup->add(psDroidToAdd);
+	}
+}
+
 /* Destroy a droid */
 void killDroid(DROID *psDel)
 {
@@ -605,6 +672,16 @@ void freeAllDroids()
 	freeAllEntitiesImpl<DROID, MAX_PLAYERS>(apsDroidLists);
 }
 
+void freeAllDroids(GameWorld &world)
+{
+	if (isActiveWorld(world))
+	{
+		freeAllDroids();
+		return;
+	}
+	freeAllEntitiesImpl<DROID, MAX_PLAYERS>(world.objects.droids);
+}
+
 /*Remove a single Droid from a list*/
 void removeDroid(DROID* psDroidToRemove, PerPlayerDroidLists& pList)
 {
@@ -630,6 +707,22 @@ void removeDroid(DROID* psDroidToRemove, PerPlayerDroidLists& pList)
 			removeObjectFromFuncList(mission.apsSensorList, (BASE_OBJECT*)psDroidToRemove, 0);
 		}
 	}
+}
+
+void removeDroid(GameWorld &world, DROID *psDroidToRemove)
+{
+	PerPlayerDroidLists& lists = droidListsForWorld(world);
+
+	ASSERT_OR_RETURN(, psDroidToRemove->type == OBJ_DROID, "Pointer is not a unit");
+	ASSERT_OR_RETURN(, psDroidToRemove->player < MAX_PLAYERS, "Invalid player for unit");
+	removeObjectFromList(lists, psDroidToRemove, psDroidToRemove->player);
+
+	if (psDroidToRemove->droidType == DROID_SENSOR)
+	{
+		removeObjectFromFuncList(sensorListForWorld(world), (BASE_OBJECT *)psDroidToRemove, 0);
+	}
+
+	psDroidToRemove->died = NOT_CURRENT_LIST;
 }
 
 /*Removes all droids that may be stored in the mission lists*/
@@ -658,6 +751,22 @@ void addStructure(STRUCTURE *psStructToAdd)
 	else if (psStructToAdd->pStructureType->type == REF_RESOURCE_EXTRACTOR)
 	{
 		addObjectToFuncList(apsExtractorLists, psStructToAdd, psStructToAdd->player);
+	}
+}
+
+void addStructure(GameWorld& world, STRUCTURE* psStructToAdd)
+{
+	addObjectToList(structureListsForWorld(world), psStructToAdd, psStructToAdd->player);
+	psStructToAdd->owningWorld = &world;
+
+	if (psStructToAdd->pStructureType->pSensor
+	    && psStructToAdd->pStructureType->pSensor->location == LOC_TURRET)
+	{
+		addObjectToFuncList(sensorListForWorld(world), (BASE_OBJECT *)psStructToAdd, 0);
+	}
+	else if (psStructToAdd->pStructureType->type == REF_RESOURCE_EXTRACTOR)
+	{
+		addObjectToFuncList(extractorListsForWorld(world), psStructToAdd, psStructToAdd->player);
 	}
 }
 
@@ -727,6 +836,16 @@ void freeAllStructs()
 	freeAllEntitiesImpl<STRUCTURE, MAX_PLAYERS>(apsStructLists);
 }
 
+void freeAllStructs(GameWorld& world)
+{
+	if (isActiveWorld(world))
+	{
+		freeAllStructs();
+		return;
+	}
+	freeAllEntitiesImpl<STRUCTURE, MAX_PLAYERS>(world.objects.structures);
+}
+
 /*Remove a single Structure from a list*/
 void removeStructureFromList(STRUCTURE *psStructToRemove, PerPlayerStructureLists& pList)
 {
@@ -758,6 +877,17 @@ void addFeature(FEATURE *psFeatureToAdd)
 	}
 }
 
+void addFeature(GameWorld& world, FEATURE* psFeatureToAdd)
+{
+	addObjectToList(featureListsForWorld(world), psFeatureToAdd, 0);
+	psFeatureToAdd->owningWorld = &world;
+
+	if (psFeatureToAdd->psStats->subType == FEAT_OIL_RESOURCE)
+	{
+		addObjectToFuncList(oilListForWorld(world), psFeatureToAdd, 0);
+	}
+}
+
 /* Destroy a feature */
 // set the player to 0 since features have player = maxplayers+1. This screws up destroyObject
 // it's a bit of a hack, but hey, it works
@@ -778,6 +908,16 @@ void killFeature(FEATURE *psDel)
 void freeAllFeatures()
 {
 	freeAllEntitiesImpl<FEATURE, MAX_PLAYERS>(apsFeatureLists);
+}
+
+void freeAllFeatures(GameWorld& world)
+{
+	if (isActiveWorld(world))
+	{
+		freeAllFeatures();
+		return;
+	}
+	freeAllEntitiesImpl<FEATURE, MAX_PLAYERS>(world.objects.features);
 }
 
 /**************************  FLAG_POSITION ********************************/
