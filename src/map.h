@@ -427,6 +427,17 @@ public:
 	virtual void printLog(WzMap::LoggingProtocol::LogLevel level, const char *function, int line, const char *str) override;
 };
 
+struct GameWorld;
+
+int32_t mapWidthForWorld(const GameWorld& world);
+int32_t mapHeightForWorld(const GameWorld& world);
+
+MAPTILE* mapTile(GameWorld& world, int32_t x, int32_t y);
+const MAPTILE* mapTile(const GameWorld& world, int32_t x, int32_t y);
+
+bool tileOnMap(const GameWorld& world, SDWORD x, SDWORD y);
+bool worldOnMap(const GameWorld& world, int x, int y);
+
 /* Save the map data */
 bool mapSaveToWzMapData(WzMap::MapData& output);
 

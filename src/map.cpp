@@ -51,6 +51,8 @@
 #include "astar.h"
 #include "fpath.h"
 #include "levels.h"
+#include "game_world.h"
+#include "world_binding.h"
 #include "lib/framework/wzapp.h"
 #include "lib/ivis_opengl/pielighting.h"
 
@@ -2242,4 +2244,51 @@ void mapUpdate()
 		threatUpdate(lastDangerPlayer);
 		wzSemaphorePost(dangerSemaphore);
 	}
+}
+
+int32_t mapWidthForWorld(const GameWorld& world)
+{
+	return isActiveWorld(world) ? mapWidth : world.map.width;
+}
+
+int32_t mapHeightForWorld(const GameWorld& world)
+{
+	return isActiveWorld(world) ? mapHeight : world.map.height;
+}
+
+MAPTILE *mapTile(GameWorld& world, int32_t x, int32_t y)
+{
+	if (isActiveWorld(world))
+	{
+		return mapTile(x, y);
+	}
+	const int32_t width = world.map.width;
+	const int32_t height = world.map.height;
+	// Clamp x and y values to actual ones
+	// Give one tile worth of leeway before asserting, for units/transporters coming in from off-map.
+	ASSERT(x >= -1, "mapTile(world): x value is too small (%d,%d) in %dx%d", x, y, width, height);
+	ASSERT(y >= -1, "mapTile(world): y value is too small (%d,%d) in %dx%d", x, y, width, height);
+	x = MAX(x, 0);
+	y = MAX(y, 0);
+	ASSERT(x < width + 1, "mapTile(world): x value is too big (%d,%d) in %dx%d", x, y, width, height);
+	ASSERT(y < height + 1, "mapTile(world): y value is too big (%d,%d) in %dx%d", x, y, width, height);
+	x = MIN(x, width - 1);
+	y = MIN(y, height - 1);
+	return &world.map.tiles[x + (y * width)];
+}
+
+const MAPTILE *mapTile(const GameWorld& world, int32_t x, int32_t y)
+{
+	return mapTile(const_cast<GameWorld&>(world), x, y);
+}
+
+bool tileOnMap(const GameWorld& world, SDWORD x, SDWORD y)
+{
+	return (x >= 0) && (x < mapWidthForWorld(world)) && (y >= 0) && (y < mapHeightForWorld(world));
+}
+
+bool worldOnMap(const GameWorld& world, int x, int y)
+{
+	return (x >= 0) && (x < (mapWidthForWorld(world) << TILE_SHIFT)) &&
+	       (y >= 0) && (y < (mapHeightForWorld(world) << TILE_SHIFT));
 }

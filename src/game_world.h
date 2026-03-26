@@ -3,7 +3,6 @@
 #include "gateway.h"
 #include "map.h"
 #include "objmem.h"
-#include "src/basedef.h"
 
 #include <memory>
 #include <string>

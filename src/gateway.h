@@ -36,19 +36,27 @@ struct GATEWAY
 
 typedef std::list<GATEWAY *> GATEWAY_LIST;
 
+struct GameWorld;
+
 /// Initialise the gateway system
 bool gwInitialise();
+bool gwInitialise(GameWorld& world);
 
 /// Shutdown the gateway system
 void gwShutDown();
+void gwShutDown(GameWorld& world);
 
 /// Add a gateway to the system
 bool gwNewGateway(int x1, int y1, int x2, int y2);
+bool gwNewGateway(GameWorld& world, int x1, int y1, int x2, int y2);
 
 /// Get number of gateways.
 size_t gwNumGateways();
+size_t gwNumGateways(const GameWorld& world);
 
 /// Get the gateway list.
 GATEWAY_LIST &gwGetGateways();
+GATEWAY_LIST &gwGetGateways(GameWorld& world);
+const GATEWAY_LIST &gwGetGatewaysConst(const GameWorld& world);
 
 #endif // __INCLUDED_SRC_GATEWAY_H__

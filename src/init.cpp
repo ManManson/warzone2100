@@ -103,6 +103,7 @@
 #include "screens/guidescreen.h"
 #include "titleui/widgets/gamebrowserform.h"
 #include "wzapi.h"
+#include "world_binding.h"
 
 #include "wzphysfszipioprovider.h"
 #include <wzmaplib/map_package.h>
@@ -1053,6 +1054,8 @@ bool buildMapList(bool campaignOnly)
 //
 bool systemInitialise(unsigned int horizScalePercentage, unsigned int vertScalePercentage)
 {
+	bindActiveWorld(primaryGameWorld());
+
 	if (!widgInitialise())
 	{
 		return false;
