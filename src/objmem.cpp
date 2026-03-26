@@ -1092,64 +1092,7 @@ static BASE_OBJECT* getBaseObjFromDroidId(const DroidList& list, unsigned id)
 // Find a base object from its id
 BASE_OBJECT *getBaseObjFromData(unsigned id, unsigned player, OBJECT_TYPE type)
 {
-	ASSERT_OR_RETURN(nullptr, player < MAX_PLAYERS || type == OBJ_FEATURE, "Invalid player: %u", player);
-
-	switch (type)
-	{
-	case OBJ_DROID:
-		{
-			auto pDroid = getBaseObjFromDroidId(apsDroidLists[player], id);
-			if (pDroid)
-			{
-				return pDroid;
-			}
-			pDroid = getBaseObjFromDroidId(mission.apsDroidLists[player], id);
-			if (pDroid)
-			{
-				return pDroid;
-			}
-			if (player == 0)
-			{
-				pDroid = getBaseObjFromDroidId(apsLimboDroids[0], id);
-				if (pDroid)
-				{
-					return pDroid;
-				}
-			}
-			break;
-		}
-	case OBJ_STRUCTURE:
-		{
-			auto pStruct = getBaseObjFromId(apsStructLists[player], id);
-			if (pStruct)
-			{
-				return pStruct;
-			}
-			pStruct = getBaseObjFromId(mission.apsStructLists[player], id);
-			if (pStruct)
-			{
-				return pStruct;
-			}
-			break;
-		}
-	case OBJ_FEATURE:
-		{
-			auto pFeat = getBaseObjFromId(apsFeatureLists[0], id);
-			if (pFeat)
-			{
-				return pFeat;
-			}
-			pFeat = getBaseObjFromId(mission.apsFeatureLists[0], id);
-			if (pFeat)
-			{
-				return pFeat;
-			}
-			break;
-		}
-	default:
-		break;
-	}
-	return nullptr;
+	return getBaseObjFromData(activeGameWorld(), id, player, type);
 }
 
 // Find a base object from it's id
@@ -1170,6 +1113,50 @@ BASE_OBJECT *getBaseObjFromId(UDWORD id)
 	ASSERT(!"couldn't find a BASE_OBJ with ID", "getBaseObjFromId() failed for id %d", id);
 
 	return nullptr;
+}
+
+BASE_OBJECT *getBaseObjFromData(GameWorld& world, unsigned id, unsigned player, OBJECT_TYPE type)
+{
+	switch (type)
+	{
+	case OBJ_DROID:
+		return getBaseObjFromDroidId(droidListsForWorld(world)[player], id);
+	case OBJ_STRUCTURE:
+		return getBaseObjFromId(structureListsForWorld(world)[player], id);
+	case OBJ_FEATURE:
+		return getBaseObjFromId(featureListsForWorld(world)[0], id);
+	default:
+		return nullptr;
+	}
+}
+
+const BASE_OBJECT *getBaseObjFromData(const GameWorld& world, unsigned id, unsigned player, OBJECT_TYPE type)
+{
+	return getBaseObjFromData(const_cast<GameWorld&>(world), id, player, type);
+}
+
+BASE_OBJECT *getBaseObjFromId(GameWorld& world, UDWORD id)
+{
+	// Only cover OBJ_DROID, OBJ_STRUCTURE and OBJ_FEATURE types
+	for (size_t type = OBJ_DROID; type != OBJ_PROJECTILE; ++type)
+	{
+		for (size_t player = 0; player != MAX_PLAYERS; ++player)
+		{
+			auto psObj = getBaseObjFromData(world, id, player, static_cast<OBJECT_TYPE>(type));
+			if (psObj)
+			{
+				return psObj;
+			}
+		}
+	}
+	ASSERT(!"couldn't find a BASE_OBJ with ID", "getBaseObjFromId() failed for id %d", id);
+
+	return nullptr;
+}
+
+const BASE_OBJECT *getBaseObjFromId(const GameWorld& world, UDWORD id)
+{
+	return getBaseObjFromId(const_cast<GameWorld&>(world), id);
 }
 
 static UDWORD getRepairIdFromFlagSingleList(const FLAG_POSITION* psFlag, uint32_t player, const StructureList& list)
@@ -1291,4 +1278,14 @@ void objCount(int *droids, int *structures, int *features)
 	}
 
 	*features += apsFeatureLists[0].size();
+}
+
+bool transferDroid(GameWorld& srcWorld, GameWorld& dstWorld, DROID* psDroid)
+{
+	ASSERT_OR_RETURN(false, psDroid != nullptr, "null droid");
+	ASSERT_OR_RETURN(false, psDroid->owningWorld == &srcWorld, "droid/world ownership mismatch");
+
+	removeDroid(srcWorld, psDroid);
+	addDroid(dstWorld, psDroid);
+	return true;
 }

@@ -1708,6 +1708,112 @@ extern int32_t map_Height(int x, int y)
 	return (result + TILE_UNITS / 2) / TILE_UNITS;
 }
 
+extern int32_t map_Height(const GameWorld &world, int x, int y)
+{
+	if (isActiveWorld(world))
+	{
+		return map_Height(x, y);
+	}
+
+	int tileX, tileY;
+	int i, j;
+	int32_t height[2][2], center;
+	int32_t onTileX, onTileY;
+	int32_t left, right, middle;
+	int32_t onBottom, result;
+	int towardsCenter, towardsRight;
+
+	// Clamp x and y values to actual ones
+	// Give one tile worth of leeway before asserting, for units/transporters coming in from off-map.
+	ASSERT(x >= -TILE_UNITS, "map_Height: x value is too small (%d,%d) in %dx%d", map_coord(x), map_coord(y), mapWidthForWorld(world), mapHeightForWorld(world));
+	ASSERT(y >= -TILE_UNITS, "map_Height: y value is too small (%d,%d) in %dx%d", map_coord(x), map_coord(y), mapWidthForWorld(world), mapHeightForWorld(world));
+	x = MAX(x, 0);
+	y = MAX(y, 0);
+	ASSERT(x < world_coord(mapWidthForWorld(world)) + TILE_UNITS, "map_Height: x value is too big (%d,%d) in %dx%d", map_coord(x), map_coord(y), mapWidthForWorld(world), mapHeightForWorld(world));
+	ASSERT(y < world_coord(mapHeightForWorld(world)) + TILE_UNITS, "map_Height: y value is too big (%d,%d) in %dx%d", map_coord(x), map_coord(y), mapWidthForWorld(world), mapHeightForWorld(world));
+	x = MIN(x, world_coord(mapWidthForWorld(world)) - 1);
+	y = MIN(y, world_coord(mapHeightForWorld(world)) - 1);
+
+	// on which tile are these coords?
+	tileX = map_coord(x);
+	tileY = map_coord(y);
+
+	// where on the tile? (scale to (0,1))
+	onTileX = x - world_coord(tileX);
+	onTileY = y - world_coord(tileY);
+
+	// get the height for the corners and center
+	center = 0;
+	for (i = 0; i < 2; i++)
+	{
+		for (j = 0; j < 2; j++)
+		{
+			height[i][j] = map_TileHeightSurface(world, tileX + i, tileY + j);
+			center += height[i][j];
+		}
+	}
+	center /= 4;
+
+	// we have:
+	//   x ->
+	// y 0,0--D--1,0
+	// | |  \    / |
+	// V A  centre C
+	//   | /     \ |
+	//   0,1--B--1,1
+
+	// get heights for left and right corners and the distances
+	if (onTileY > onTileX)
+	{
+		if (onTileY < TILE_UNITS - onTileX)
+		{
+			// A
+			right = height[0][0];
+			left  = height[0][1];
+			towardsCenter = onTileX;
+			towardsRight  = TILE_UNITS - onTileY;
+		}
+		else
+		{
+			// B
+			right = height[0][1];
+			left  = height[1][1];
+			towardsCenter = TILE_UNITS - onTileY;
+			towardsRight  = TILE_UNITS - onTileX;
+		}
+	}
+	else
+	{
+		if (onTileX > TILE_UNITS - onTileY)
+		{
+			// C
+			right = height[1][1];
+			left  = height[1][0];
+			towardsCenter = TILE_UNITS - onTileX;
+			towardsRight  = onTileY;
+		}
+		else
+		{
+			// D
+			right = height[1][0];
+			left  = height[0][0];
+			towardsCenter = onTileY;
+			towardsRight  = onTileX;
+		}
+	}
+	ASSERT(towardsCenter <= TILE_UNITS / 2, "towardsCenter is too high");
+
+	// now we have:
+	//    left   m    right
+	//         center
+
+	middle = (left + right) / 2;
+	onBottom = left * (TILE_UNITS - towardsRight) + right * towardsRight;
+	result = onBottom + (center - middle) * towardsCenter * 2;
+
+	return (result + TILE_UNITS / 2) / TILE_UNITS;
+}
+
 /* returns true if object is above ground */
 bool mapObjIsAboveGround(const SIMPLE_OBJECT *psObj)
 {

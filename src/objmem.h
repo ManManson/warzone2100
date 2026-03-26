@@ -156,6 +156,11 @@ BASE_OBJECT* getBaseObjFromId(const std::list<ObjectType*>& list, unsigned id)
 BASE_OBJECT *getBaseObjFromData(unsigned id, unsigned player, OBJECT_TYPE type);
 BASE_OBJECT *getBaseObjFromId(UDWORD id);
 
+BASE_OBJECT *getBaseObjFromData(GameWorld& world, unsigned id, unsigned player, OBJECT_TYPE type);
+BASE_OBJECT *getBaseObjFromId(GameWorld& world, UDWORD id);
+const BASE_OBJECT *getBaseObjFromData(const GameWorld& world, unsigned id, unsigned player, OBJECT_TYPE type);
+const BASE_OBJECT *getBaseObjFromId(const GameWorld& world, UDWORD id);
+
 struct GameWorld;
 
 PerPlayerDroidLists& droidListsForWorld(GameWorld& world);
@@ -174,5 +179,7 @@ void objCount(int *droids, int *structures, int *features);
 #ifdef DEBUG
 void checkFactoryFlags();
 #endif
+
+bool transferDroid(GameWorld& srcWorld, GameWorld& dstWorld, DROID* psDroid);
 
 #endif // __INCLUDED_SRC_OBJMEM_H__

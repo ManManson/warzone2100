@@ -1095,7 +1095,7 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd)
 	}
 	if (onMission)
 	{
-		visRemoveVisibilityOffWorld((BASE_OBJECT *)psDroidToAdd);
+		visRemoveVisibility((BASE_OBJECT *)psDroidToAdd);
 	}
 	else
 	{

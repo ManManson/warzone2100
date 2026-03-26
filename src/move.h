@@ -51,8 +51,11 @@ void moveUpdateDroid(DROID *psDroid);
 
 SDWORD moveCalcDroidSpeed(DROID *psDroid);
 
+struct GameWorld;
+
 /* update body and turret to local slope */
 void updateDroidOrientation(DROID *psDroid);
+void updateDroidOrientation(GameWorld& world, DROID* psDroid);
 
 /* audio callback used to kill movement sounds */
 bool moveCheckDroidMovingAndVisible(void *psObj);

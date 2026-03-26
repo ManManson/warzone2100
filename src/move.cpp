@@ -36,6 +36,7 @@
 #include "move.h"
 
 #include "objects.h"
+#include "src/world_binding.h"
 #include "visibility.h"
 #include "map.h"
 #include "fpath.h"
@@ -533,6 +534,11 @@ void moveReallyStopDroid(DROID *psDroid)
 /* Get pitch and roll from direction and tile data */
 void updateDroidOrientation(DROID *psDroid)
 {
+	updateDroidOrientation(activeGameWorld(), psDroid);
+}
+
+void updateDroidOrientation(GameWorld& world, DROID* psDroid)
+{
 	int32_t hx0, hx1, hy0, hy1;
 	int newPitch, deltaPitch, pitchLimit;
 	int32_t dzdx, dzdy, dzdv, dzdw;
@@ -550,10 +556,10 @@ void updateDroidOrientation(DROID *psDroid)
 	//    hy0
 	// hx0 * hx1      (* = droid)
 	//    hy1
-	hx1 = map_Height(psDroid->pos.x + d, psDroid->pos.y);
-	hx0 = map_Height(MAX(0, psDroid->pos.x - d), psDroid->pos.y);
-	hy1 = map_Height(psDroid->pos.x, psDroid->pos.y + d);
-	hy0 = map_Height(psDroid->pos.x, MAX(0, psDroid->pos.y - d));
+	hx1 = map_Height(world, psDroid->pos.x + d, psDroid->pos.y);
+	hx0 = map_Height(world, MAX(0, psDroid->pos.x - d), psDroid->pos.y);
+	hy1 = map_Height(world, psDroid->pos.x, psDroid->pos.y + d);
+	hy0 = map_Height(world, psDroid->pos.x, MAX(0, psDroid->pos.y - d));
 
 	//update height in case were in the bottom of a trough
 	psDroid->pos.z = MAX(psDroid->pos.z, (hx0 + hx1) / 2);

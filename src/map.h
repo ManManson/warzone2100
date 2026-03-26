@@ -579,10 +579,16 @@ unsigned map_LineIntersect(Vector3i src, Vector3i dst, unsigned tMax);
 
 /// The max height of the terrain and water at the specified world coordinates
 int32_t map_Height(int x, int y);
+int32_t map_Height(const GameWorld &world, int x, int y);
 
 static inline int32_t map_Height(Vector2i const &v)
 {
 	return map_Height(v.x, v.y);
+}
+
+static inline int32_t map_Height(const GameWorld &world, Vector2i const &v)
+{
+	return map_Height(world, v.x, v.y);
 }
 
 /* returns true if object is above ground */

@@ -120,7 +120,10 @@ BASE_OBJECT::BASE_OBJECT(OBJECT_TYPE type, uint32_t id, unsigned player)
 
 BASE_OBJECT::~BASE_OBJECT()
 {
-	visRemoveVisibility(this);
+	if (owningWorld != nullptr)
+	{
+		visRemoveVisibility(this);
+	}
 }
 
 

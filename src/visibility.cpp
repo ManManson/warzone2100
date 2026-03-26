@@ -391,12 +391,14 @@ static bool rayLOSCallback(Vector2i pos, int32_t dist, void *data)
 /* Remove tile visibility from object */
 void visRemoveVisibility(BASE_OBJECT *psObj)
 {
-	if (mapWidth && mapHeight)
+	GameWorld* world = psObj->owningWorld;
+	ASSERT_OR_RETURN(, world != nullptr, "Object has no owning world");
+
+	if (mapWidthForWorld(*world) && mapHeightForWorld(*world))
 	{
 		for (TILEPOS pos : psObj->watchedTiles)
 		{
-			// FIXME: the mapTile might have been swapped out, see swapMissionPointers()
-			MAPTILE *psTile = mapTile(pos.x, pos.y);
+			MAPTILE *psTile = mapTile(*world, pos.x, pos.y);
 
 			ASSERT(pos.type < 2, "Invalid visibility type %d", (int)pos.type);
 			uint16_t *visionType = (pos.type == 0) ? psTile->sensors : psTile->watchers;
@@ -421,11 +423,6 @@ void visRemoveVisibility(BASE_OBJECT *psObj)
 	}
 	psObj->watchedTiles.clear();
 	psObj->flags.set(OBJECT_FLAG_JAMMED_TILES, false);
-}
-
-void visRemoveVisibilityOffWorld(BASE_OBJECT *psObj)
-{
-	psObj->watchedTiles.clear();
 }
 
 /* Check which tiles can be seen by an object */

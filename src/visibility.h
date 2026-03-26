@@ -64,7 +64,6 @@ void visUpdateLevel();
 
 void setUnderTilesVis(BASE_OBJECT *psObj, UDWORD player);
 
-void visRemoveVisibilityOffWorld(BASE_OBJECT *psObj);
 void visRemoveVisibility(BASE_OBJECT *psObj);
 
 // fast test for whether obj2 is in range of obj1

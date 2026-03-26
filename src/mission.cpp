@@ -1286,7 +1286,7 @@ static void clearCampaignUnits()
 	{
 		orderDroid(psDroid, DORDER_STOP, ModeImmediate);
 		setDroidBase(psDroid, nullptr);
-		visRemoveVisibilityOffWorld((BASE_OBJECT *)psDroid);
+		visRemoveVisibility((BASE_OBJECT *)psDroid);
 		CHECK_DROID(psDroid);
 	}
 }
