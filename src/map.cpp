@@ -2440,7 +2440,7 @@ int32_t map_TileHeightSurface(const GameWorld& world, int32_t x, int32_t y)
 	return MAX(map_TileHeight(world, x, y), map_WaterHeight(world, x, y));
 }
 
-uint8_t auxTIle(const GameWorld& world, int x, int y, int player)
+uint8_t auxTile(const GameWorld& world, int x, int y, int player)
 {
 	ASSERT_OR_RETURN(AUXBITS_ALL, player >= 0 && player < MAX_PLAYERS + AUX_MAX, "invalid player: %d", player);
 	if (isActiveWorld(world))

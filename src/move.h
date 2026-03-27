@@ -53,9 +53,11 @@ SDWORD moveCalcDroidSpeed(DROID *psDroid);
 
 struct GameWorld;
 
-/* update body and turret to local slope */
+/* Update body pitch/roll from terrain under the droid.
+ * The no-world overload uses the currently bound active world only.
+ * When a droid is placed on a non-active map (e.g. explicit home world during campaign return), use the overload that takes GameWorld&. */
 void updateDroidOrientation(DROID *psDroid);
-void updateDroidOrientation(GameWorld& world, DROID* psDroid);
+void updateDroidOrientation(const GameWorld& world, DROID* psDroid);
 
 /* audio callback used to kill movement sounds */
 bool moveCheckDroidMovingAndVisible(void *psObj);

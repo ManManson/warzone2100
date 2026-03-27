@@ -204,15 +204,22 @@ const char *droidGetName(const DROID *psDroid);
 // Set a droid's name.
 void droidSetName(DROID *psDroid, const char *pName);
 
+struct GameWorld;
+
 // returns true when no droid on x,y square.
-bool noDroid(UDWORD x, UDWORD y);				// true if no droid at x,y
+bool noDroid(const GameWorld& world, UDWORD x, UDWORD y);
+bool noDroid(UDWORD x, UDWORD y);				// true if no droid at x,y (active world; see implementation for context)
 // returns an x/y coord to place a droid
+PICKTILE pickHalfATile(const GameWorld& world, UDWORD *x, UDWORD *y, UBYTE numIterations);
 PICKTILE pickHalfATile(UDWORD *x, UDWORD *y, UBYTE numIterations);
+bool zonedPAT(const GameWorld& world, UDWORD x, UDWORD y);
 bool zonedPAT(UDWORD x, UDWORD y);
 bool pickATileGen(UDWORD *x, UDWORD *y, UBYTE numIterations, bool (*function)(UDWORD x, UDWORD y));
 bool pickATileGen(Vector2i *pos, unsigned numIterations, bool (*function)(UDWORD x, UDWORD y));
+bool pickATileGenThreat(const GameWorld& world, UDWORD *x, UDWORD *y, UBYTE numIterations, SDWORD threatRange,
+                        SDWORD player, bool (*function)(UDWORD x, UDWORD y));
 bool pickATileGenThreat(UDWORD *x, UDWORD *y, UBYTE numIterations, SDWORD threatRange,
-                                   SDWORD player, bool (*function)(UDWORD x, UDWORD y));
+                        SDWORD player, bool (*function)(UDWORD x, UDWORD y));
 
 
 //initialises the droid movement model

@@ -37,6 +37,8 @@
 #include "map.h"
 #include "multiplay.h"
 #include "astar.h"
+#include "game_world.h"
+#include "world_binding.h"
 
 #include "fpath.h"
 #include "profiling.h"
@@ -317,22 +319,55 @@ static uint8_t prop2bits(PROPULSION_TYPE propulsion)
 	return bits;
 }
 
-// Check if the map tile at a location blocks a droid
-bool fpathBaseBlockingTile(SDWORD x, SDWORD y, PROPULSION_TYPE propulsion, int mapIndex, FPATH_MOVETYPE moveType)
+static void scrollLimitsForWorld(const GameWorld& world, SDWORD& sminX, SDWORD& smaxX, SDWORD& sminY, SDWORD& smaxY)
 {
+	if (isActiveWorld(world))
+	{
+		sminX = scrollMinX;
+		smaxX = scrollMaxX;
+		sminY = scrollMinY;
+		smaxY = scrollMaxY;
+		return;
+	}
+	const int mw = mapWidthForWorld(world);
+	const int mh = mapHeightForWorld(world);
+	const WorldScrollLimits& s = world.map.scroll;
+	if (s.maxX <= s.minX || s.maxY <= s.minY)
+	{
+		sminX = 0;
+		smaxX = mw;
+		sminY = 0;
+		smaxY = mh;
+	}
+	else
+	{
+		sminX = s.minX;
+		smaxX = s.maxX;
+		sminY = s.minY;
+		smaxY = s.maxY;
+	}
+}
+
+// Check if the map tile at a location blocks a droid
+bool fpathBaseBlockingTile(const GameWorld& world, SDWORD x, SDWORD y, PROPULSION_TYPE propulsion, int mapIndex, FPATH_MOVETYPE moveType)
+{
+	const int mw = mapWidthForWorld(world);
+	const int mh = mapHeightForWorld(world);
 	/* All tiles outside of the map and on map border are blocking. */
-	if (x < 1 || y < 1 || x > mapWidth - 1 || y > mapHeight - 1)
+	if (x < 1 || y < 1 || x > mw - 1 || y > mh - 1)
 	{
 		return true;
 	}
 
+	SDWORD sminX, smaxX, sminY, smaxY;
+	scrollLimitsForWorld(world, sminX, smaxX, sminY, smaxY);
 	/* Check scroll limits (used in campaign to partition the map. */
-	if (propulsion != PROPULSION_TYPE_LIFT && (x < scrollMinX + 1 || y < scrollMinY + 1 || x >= scrollMaxX - 1 || y >= scrollMaxY - 1))
+	if (propulsion != PROPULSION_TYPE_LIFT && (x < sminX + 1 || y < sminY + 1 || x >= smaxX - 1 || y >= smaxY - 1))
 	{
 		// coords off map - auto blocking tile
 		return true;
 	}
-	unsigned aux = auxTile(x, y, mapIndex);
+	unsigned aux = auxTile(world, x, y, mapIndex);
 
 	int auxMask = 0;
 	switch (moveType)
@@ -349,7 +384,12 @@ bool fpathBaseBlockingTile(SDWORD x, SDWORD y, PROPULSION_TYPE propulsion, int m
 	}
 
 	// the MAX hack below is because blockTile() range does not include player-specific versions...
-	return (blockTile(x, y, MAX(0, mapIndex - MAX_PLAYERS)) & unitbits) != 0;  // finally check if move is blocked by propulsion related factors
+	return (blockTile(world, x, y, MAX(0, mapIndex - MAX_PLAYERS)) & unitbits) != 0;  // finally check if move is blocked by propulsion related factors
+}
+
+bool fpathBaseBlockingTile(SDWORD x, SDWORD y, PROPULSION_TYPE propulsion, int mapIndex, FPATH_MOVETYPE moveType)
+{
+	return fpathBaseBlockingTile(activeGameWorld(), x, y, propulsion, mapIndex, moveType);
 }
 
 bool fpathDroidBlockingTile(DROID *psDroid, int x, int y, FPATH_MOVETYPE moveType)
@@ -363,12 +403,17 @@ bool fpathBlockingTile(SDWORD x, SDWORD y, PROPULSION_TYPE propulsion)
 	return fpathBaseBlockingTile(x, y, propulsion, 0, FMT_BLOCK);  // with FMT_BLOCK, it is irrelevant which player is passed in
 }
 
+bool fpathBlockingTile(const GameWorld& world, SDWORD x, SDWORD y, PROPULSION_TYPE propulsion)
+{
+	return fpathBaseBlockingTile(world, x, y, propulsion, 0, FMT_BLOCK);
+}
+
 
 // Returns the closest non-blocking tile to pos, or returns pos if no non-blocking tiles are present within a 2 tile distance.
-static Position findNonblockingPosition(Position pos, PROPULSION_TYPE propulsion, int player = 0, FPATH_MOVETYPE moveType = FMT_BLOCK)
+static Position findNonblockingPosition(const GameWorld& world, Position pos, PROPULSION_TYPE propulsion, int player = 0, FPATH_MOVETYPE moveType = FMT_BLOCK)
 {
 	Vector2i centreTile = map_coord(pos.xy());
-	if (!fpathBaseBlockingTile(centreTile.x, centreTile.y, propulsion, player, moveType))
+	if (!fpathBaseBlockingTile(world, centreTile.x, centreTile.y, propulsion, player, moveType))
 	{
 		return pos;  // Fast case, pos is not on a blocking tile.
 	}
@@ -381,7 +426,7 @@ static Position findNonblockingPosition(Position pos, PROPULSION_TYPE propulsion
 			Vector2i tile = centreTile + Vector2i(x, y);
 			Vector2i diff = world_coord(tile) + Vector2i(TILE_UNITS / 2, TILE_UNITS / 2) - pos.xy();
 			int distSq = dot(diff, diff);
-			if (distSq < bestDistSq && !fpathBaseBlockingTile(tile.x, tile.y, propulsion, player, moveType))
+			if (distSq < bestDistSq && !fpathBaseBlockingTile(world, tile.x, tile.y, propulsion, player, moveType))
 			{
 				bestTile = tile;
 				bestDistSq = distSq;
@@ -393,6 +438,11 @@ static Position findNonblockingPosition(Position pos, PROPULSION_TYPE propulsion
 	Vector2i maxCoord = minCoord + Vector2i(TILE_UNITS - 1, TILE_UNITS - 1);
 
 	return Position(std::min(std::max(pos.x, minCoord.x), maxCoord.x), std::min(std::max(pos.y, minCoord.y), maxCoord.y), pos.z);
+}
+
+static Position findNonblockingPosition(Position pos, PROPULSION_TYPE propulsion, int player = 0, FPATH_MOVETYPE moveType = FMT_BLOCK)
+{
+	return findNonblockingPosition(activeGameWorld(), pos, propulsion, player, moveType);
 }
 
 
@@ -749,18 +799,24 @@ void fpathTest(int x, int y, int x2, int y2)
 	(void)r;  // Squelch unused-but-set warning.
 }
 
-bool fpathCheck(Position orig, Position dest, PROPULSION_TYPE propulsion)
+bool fpathCheck(const GameWorld& world, Position orig, Position dest, PROPULSION_TYPE propulsion)
 {
 	// We have to be careful with this check because it is called on
 	// load when playing campaign on droids that are on the other
 	// map during missions, and those maps are usually larger.
-	if (!worldOnMap(orig.xy()) || !worldOnMap(dest.xy()))
+	Vector2i origW = orig.xy();
+	Vector2i destW = dest.xy();
+	if (!worldOnMap(world, origW.x, origW.y) || !worldOnMap(world, destW.x, destW.y))
 	{
 		return false;
 	}
 
-	MAPTILE *origTile = worldTile(findNonblockingPosition(orig, propulsion).xy());
-	MAPTILE *destTile = worldTile(findNonblockingPosition(dest, propulsion).xy());
+	Position origAdj = findNonblockingPosition(world, orig, propulsion);
+	Position destAdj = findNonblockingPosition(world, dest, propulsion);
+	Vector2i origTc = origAdj.xy();
+	Vector2i destTc = destAdj.xy();
+	const MAPTILE *origTile = worldTile(world, origTc.x, origTc.y);
+	const MAPTILE *destTile = worldTile(world, destTc.x, destTc.y);
 
 	ASSERT_OR_RETURN(false, propulsion != PROPULSION_TYPE_NUM, "Bad propulsion type");
 	ASSERT_OR_RETURN(false, origTile != nullptr && destTile != nullptr, "Bad tile parameter");
@@ -783,4 +839,9 @@ bool fpathCheck(Position orig, Position dest, PROPULSION_TYPE propulsion)
 
 	ASSERT(false, "Should never get here, unknown propulsion !");
 	return false;	// should never get here
+}
+
+bool fpathCheck(Position orig, Position dest, PROPULSION_TYPE propulsion)
+{
+	return fpathCheck(activeGameWorld(), orig, dest, propulsion);
 }

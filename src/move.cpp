@@ -537,7 +537,7 @@ void updateDroidOrientation(DROID *psDroid)
 	updateDroidOrientation(activeGameWorld(), psDroid);
 }
 
-void updateDroidOrientation(GameWorld& world, DROID* psDroid)
+void updateDroidOrientation(const GameWorld& world, DROID* psDroid)
 {
 	int32_t hx0, hx1, hy0, hy1;
 	int newPitch, deltaPitch, pitchLimit;

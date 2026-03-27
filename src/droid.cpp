@@ -62,6 +62,8 @@
 #include "text.h"
 #include "cmddroid.h"
 #include "fpath.h"
+#include "game_world.h"
+#include "world_binding.h"
 #include "projectile.h"
 #include "mission.h"
 #include "levels.h"
@@ -2637,17 +2639,14 @@ void droidSetName(DROID *psDroid, const char *pName)
 
 // ////////////////////////////////////////////////////////////////////////////
 // returns true when no droid on x,y square.
-bool noDroid(UDWORD x, UDWORD y)
+bool noDroid(const GameWorld& world, UDWORD x, UDWORD y)
 {
-	unsigned int i;
-
-	// check each droid list
-	for (i = 0; i < MAX_PLAYERS; ++i)
+	for (unsigned int i = 0; i < MAX_PLAYERS; ++i)
 	{
-		for (const DROID* psDroid : apsDroidLists[i])
+		for (const DROID* psDroid : droidListsForWorld(world)[i])
 		{
 			if (map_coord(psDroid->pos.x) == x
-				&& map_coord(psDroid->pos.y) == y)
+			    && map_coord(psDroid->pos.y) == y)
 			{
 				return false;
 			}
@@ -2656,19 +2655,22 @@ bool noDroid(UDWORD x, UDWORD y)
 	return true;
 }
 
+bool noDroid(UDWORD x, UDWORD y)
+{
+	return noDroid(activeGameWorld(), x, y);
+}
+
 // ////////////////////////////////////////////////////////////////////////////
 // returns true when at most one droid on x,y square.
-static bool oneDroidMax(UDWORD x, UDWORD y)
+static bool oneDroidMax(const GameWorld& world, UDWORD x, UDWORD y)
 {
-	UDWORD i;
 	bool bFound = false;
-	// check each droid list
-	for (i = 0; i < MAX_PLAYERS; i++)
+	for (unsigned i = 0; i < MAX_PLAYERS; i++)
 	{
-		for (const DROID* pD : apsDroidLists[i])
+		for (const DROID* pD : droidListsForWorld(world)[i])
 		{
 			if (map_coord(pD->pos.x) == x
-				&& map_coord(pD->pos.y) == y)
+			    && map_coord(pD->pos.y) == y)
 			{
 				if (bFound)
 				{
@@ -2684,20 +2686,22 @@ static bool oneDroidMax(UDWORD x, UDWORD y)
 
 // ////////////////////////////////////////////////////////////////////////////
 // returns true if it's a sensible place to put that droid.
-static bool sensiblePlace(SDWORD x, SDWORD y, PROPULSION_TYPE propulsion)
+static bool sensiblePlace(const GameWorld& world, SDWORD x, SDWORD y, PROPULSION_TYPE propulsion)
 {
+	const int mw = mapWidthForWorld(world);
+	const int mh = mapHeightForWorld(world);
 	// not too near the edges.
-	if ((x < TOO_NEAR_EDGE) || (x > (SDWORD)(mapWidth - TOO_NEAR_EDGE)))
+	if ((x < TOO_NEAR_EDGE) || (x > (SDWORD)(mw - TOO_NEAR_EDGE)))
 	{
 		return false;
 	}
-	if ((y < TOO_NEAR_EDGE) || (y > (SDWORD)(mapHeight - TOO_NEAR_EDGE)))
+	if ((y < TOO_NEAR_EDGE) || (y > (SDWORD)(mh - TOO_NEAR_EDGE)))
 	{
 		return false;
 	}
 
 	// not on a blocking tile.
-	if (fpathBlockingTile(x, y, propulsion))
+	if (fpathBlockingTile(world, x, y, propulsion))
 	{
 		return false;
 	}
@@ -2707,14 +2711,24 @@ static bool sensiblePlace(SDWORD x, SDWORD y, PROPULSION_TYPE propulsion)
 
 // ------------------------------------------------------------------------------------
 // Should stop things being placed in inaccessible areas? Assume wheeled propulsion.
+bool zonedPAT(const GameWorld& world, UDWORD x, UDWORD y)
+{
+	return sensiblePlace(world, x, y, PROPULSION_TYPE_WHEELED) && noDroid(world, x, y);
+}
+
 bool	zonedPAT(UDWORD x, UDWORD y)
 {
-	return sensiblePlace(x, y, PROPULSION_TYPE_WHEELED) && noDroid(x, y);
+	return zonedPAT(activeGameWorld(), x, y);
+}
+
+static bool canFitDroid(const GameWorld& world, UDWORD x, UDWORD y)
+{
+	return sensiblePlace(world, x, y, PROPULSION_TYPE_WHEELED) && oneDroidMax(world, x, y);
 }
 
 static bool canFitDroid(UDWORD x, UDWORD y)
 {
-	return sensiblePlace(x, y, PROPULSION_TYPE_WHEELED) && oneDroidMax(x, y);
+	return canFitDroid(activeGameWorld(), x, y);
 }
 
 /// find a tile for which the function will return true
@@ -2731,14 +2745,27 @@ bool pickATileGen(Vector2i *pos, unsigned numIterations, bool (*function)(UDWORD
 	return ret;
 }
 
-static bool ThreatInRange(SDWORD player, SDWORD range, SDWORD rangeX, SDWORD rangeY, bool bVTOLs)
+bool pickATileGen(const GameWorld& world, UDWORD *x, UDWORD *y, UBYTE numIterations, bool (*function)(UDWORD x, UDWORD y))
 {
-	UDWORD				i, structType;
+	return pickATileGenThreat(world, x, y, numIterations, -1, -1, function);
+}
+
+bool pickATileGen(const GameWorld& world, Vector2i *pos, unsigned numIterations, bool (*function)(UDWORD x, UDWORD y))
+{
+	UDWORD x = pos->x, y = pos->y;
+	bool ret = pickATileGenThreat(world, &x, &y, numIterations, -1, -1, function);
+	*pos = Vector2i(x, y);
+	return ret;
+}
+
+static bool ThreatInRange(const GameWorld& world, SDWORD player, SDWORD range, SDWORD rangeX, SDWORD rangeY, bool bVTOLs)
+{
+	UDWORD structType;
 
 	const int tx = map_coord(rangeX);
 	const int ty = map_coord(rangeY);
 
-	for (i = 0; i < MAX_PLAYERS; i++)
+	for (unsigned i = 0; i < MAX_PLAYERS; i++)
 	{
 		if ((alliances[player][i] == ALLIANCE_FORMED) || (i == player))
 		{
@@ -2746,7 +2773,7 @@ static bool ThreatInRange(SDWORD player, SDWORD range, SDWORD rangeX, SDWORD ran
 		}
 
 		//check structures
-		for (const STRUCTURE* psStruct : apsStructLists[i])
+		for (const STRUCTURE* psStruct : structureListsForWorld(world)[i])
 		{
 			if (psStruct->visible[player] || psStruct->born == 2)	// if can see it or started there
 			{
@@ -2764,7 +2791,7 @@ static bool ThreatInRange(SDWORD player, SDWORD range, SDWORD rangeX, SDWORD ran
 					case REF_FORTRESS:
 
 						if (range < 0
-							|| world_coord(static_cast<int32_t>(hypotf(tx - map_coord(psStruct->pos.x), ty - map_coord(psStruct->pos.y)))) < range)	//enemy in range
+						    || world_coord(static_cast<int32_t>(hypotf(tx - map_coord(psStruct->pos.x), ty - map_coord(psStruct->pos.y)))) < range)	//enemy in range
 						{
 							return true;
 						}
@@ -2776,7 +2803,7 @@ static bool ThreatInRange(SDWORD player, SDWORD range, SDWORD rangeX, SDWORD ran
 		}
 
 		//check droids
-		for (const DROID* psDroid : apsDroidLists[i])
+		for (const DROID* psDroid : droidListsForWorld(world)[i])
 		{
 			if (psDroid->visible[player])		//can see this droid?
 			{
@@ -2792,7 +2819,7 @@ static bool ThreatInRange(SDWORD player, SDWORD range, SDWORD rangeX, SDWORD ran
 				}
 
 				if (range < 0
-					|| world_coord(static_cast<int32_t>(hypotf(tx - map_coord(psDroid->pos.x), ty - map_coord(psDroid->pos.y)))) < range)	//enemy in range
+				    || world_coord(static_cast<int32_t>(hypotf(tx - map_coord(psDroid->pos.x), ty - map_coord(psDroid->pos.y)))) < range)	//enemy in range
 				{
 					return true;
 				}
@@ -2804,18 +2831,21 @@ static bool ThreatInRange(SDWORD player, SDWORD range, SDWORD rangeX, SDWORD ran
 }
 
 /// find a tile for which the passed function will return true without any threat in the specified range
-bool	pickATileGenThreat(UDWORD *x, UDWORD *y, UBYTE numIterations, SDWORD threatRange,
-						   SDWORD player, bool (*function)(UDWORD x, UDWORD y))
+bool pickATileGenThreat(const GameWorld& world, UDWORD *x, UDWORD *y, UBYTE numIterations, SDWORD threatRange,
+                        SDWORD player, bool (*function)(UDWORD x, UDWORD y))
 {
 	SDWORD		i, j;
 	SDWORD		startX, endX, startY, endY;
 	UDWORD		passes;
 	Vector3i	origin(world_coord(*x), world_coord(*y), 0);
 
-	ASSERT_OR_RETURN(false, *x < mapWidth, "x coordinate is off-map for pickATileGen");
-	ASSERT_OR_RETURN(false, *y < mapHeight, "y coordinate is off-map for pickATileGen");
+	const int mw = mapWidthForWorld(world);
+	const int mh = mapHeightForWorld(world);
 
-	if (function(*x, *y) && ((threatRange <= 0) || (!ThreatInRange(player, threatRange, *x, *y, false))))	//TODO: vtol check really not needed?
+	ASSERT_OR_RETURN(false, *x < static_cast<UDWORD>(mw), "x coordinate is off-map for pickATileGen");
+	ASSERT_OR_RETURN(false, *y < static_cast<UDWORD>(mh), "y coordinate is off-map for pickATileGen");
+
+	if (function(*x, *y) && ((threatRange <= 0) || (!ThreatInRange(world, player, threatRange, *x, *y, false))))	//TODO: vtol check really not needed?
 	{
 		return (true);
 	}
@@ -2838,8 +2868,8 @@ bool	pickATileGenThreat(UDWORD *x, UDWORD *y, UBYTE numIterations, SDWORD threat
 
 					/* Good enough? */
 					if (function(i, j)
-						&& fpathCheck(origin, newPos, PROPULSION_TYPE_WHEELED)
-						&& ((threatRange <= 0) || (!ThreatInRange(player, threatRange, world_coord(i), world_coord(j), false))))
+					    && fpathCheck(world, origin, newPos, PROPULSION_TYPE_WHEELED)
+					    && ((threatRange <= 0) || (!ThreatInRange(world, player, threatRange, world_coord(i), world_coord(j), false))))
 					{
 						/* Set exit conditions and get out NOW */
 						*x = i;	*y = j;
@@ -2856,10 +2886,21 @@ bool	pickATileGenThreat(UDWORD *x, UDWORD *y, UBYTE numIterations, SDWORD threat
 
 }
 
+bool	pickATileGenThreat(UDWORD *x, UDWORD *y, UBYTE numIterations, SDWORD threatRange,
+			   SDWORD player, bool (*function)(UDWORD x, UDWORD y))
+{
+	return pickATileGenThreat(activeGameWorld(), x, y, numIterations, threatRange, player, function);
+}
+
 /// find a tile for a wheeled droid with only one other droid present
+PICKTILE pickHalfATile(const GameWorld& world, UDWORD *x, UDWORD *y, UBYTE numIterations)
+{
+	return pickATileGen(world, x, y, numIterations, canFitDroid) ? FREE_TILE : NO_FREE_TILE;
+}
+
 PICKTILE pickHalfATile(UDWORD *x, UDWORD *y, UBYTE numIterations)
 {
-	return pickATileGen(x, y, numIterations, canFitDroid) ? FREE_TILE : NO_FREE_TILE;
+	return pickHalfATile(activeGameWorld(), x, y, numIterations);
 }
 
 /* Looks through the players list of droids to see if any of them are
