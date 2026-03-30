@@ -35,6 +35,7 @@
 #include <wzmaplib/map.h>
 
 #include "map.h"
+#include "game_world.h"
 #include "hci.h"
 #include "projectile.h"
 #include "display3d.h"
@@ -1248,6 +1249,22 @@ bool mapSaveToWzMapData(WzMap::MapData& output)
 	}
 
 	return true;
+}
+
+MAPTILE *mapTile(WorldMapState &map, int32_t x, int32_t y)
+{
+	const int32_t mw = map.width;
+	const int32_t mh = map.height;
+	ASSERT(x >= -1, "mapTile: x value is too small (%d,%d) in %dx%d", x, y, mw, mh);
+	ASSERT(y >= -1, "mapTile: y value is too small (%d,%d) in %dx%d", x, y, mw, mh);
+	x = MAX(x, 0);
+	y = MAX(y, 0);
+	ASSERT(x < mw + 1, "mapTile: x value is too big (%d,%d) in %dx%d", x, y, mw, mh);
+	ASSERT(y < mh + 1, "mapTile: y value is too big (%d,%d) in %dx%d", x, y, mw, mh);
+	x = MIN(x, mw - 1);
+	y = MIN(y, mh - 1);
+
+	return &map.tiles[x + (y * mw)];
 }
 
 /* Shutdown the map module */

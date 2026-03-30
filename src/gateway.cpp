@@ -28,6 +28,7 @@
 
 #include "map.h"
 #include "wrappers.h"
+#include "game_world.h"
 
 #include "gateway.h"
 
@@ -151,6 +152,11 @@ size_t gwNumGateways()
 GATEWAY_LIST &gwGetGateways()
 {
 	return psGateways;
+}
+
+GATEWAY_LIST &gwGetGateways(GameWorld &world)
+{
+	return world.map.gateways;
 }
 
 // Release a gateway

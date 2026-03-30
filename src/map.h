@@ -430,6 +430,10 @@ public:
 /* Save the map data */
 bool mapSaveToWzMapData(WzMap::MapData& output);
 
+struct WorldMapState;
+/** Return a pointer to the tile structure at x,y in map coordinates (world-parameterized map state; see GAME_WORLD_REFACTORING_V2_IMPL §5.1). */
+MAPTILE *mapTile(WorldMapState &map, int32_t x, int32_t y);
+
 /** Return a pointer to the tile structure at x,y in map coordinates */
 static inline WZ_DECL_PURE MAPTILE *mapTile(int32_t x, int32_t y)
 {

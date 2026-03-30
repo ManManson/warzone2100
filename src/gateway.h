@@ -36,6 +36,8 @@ struct GATEWAY
 
 typedef std::list<GATEWAY *> GATEWAY_LIST;
 
+struct GameWorld;
+
 /// Initialise the gateway system
 bool gwInitialise();
 
@@ -50,5 +52,8 @@ size_t gwNumGateways();
 
 /// Get the gateway list.
 GATEWAY_LIST &gwGetGateways();
+
+/// Gateway list for a specific world map (GAME_WORLD_REFACTORING_V2_IMPL §5.3).
+GATEWAY_LIST &gwGetGateways(GameWorld &world);
 
 #endif // __INCLUDED_SRC_GATEWAY_H__

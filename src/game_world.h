@@ -50,3 +50,30 @@ struct GameWorld
 	bool isLoaded() const;
 	void reset();
 };
+
+// World-parameterized map accessors (GAME_WORLD_REFACTORING_V2_IMPL §5.1–5.2). Same indexing as global mapTile / auxTile / blockTile in map.h.
+inline MAPTILE *mapTile(GameWorld &world, int32_t x, int32_t y)
+{
+	return mapTile(world.map, x, y);
+}
+
+inline uint8_t auxTile(WorldMapState &m, int x, int y, int player)
+{
+	ASSERT_OR_RETURN(AUXBITS_ALL, player >= 0 && player < MAX_PLAYERS + AUX_MAX, "invalid player: %d", player);
+	return m.auxMap[player][x + y * m.width];
+}
+
+inline uint8_t blockTile(WorldMapState &m, int x, int y, int slot)
+{
+	return m.blockMap[slot][x + y * m.width];
+}
+
+inline uint8_t auxTile(GameWorld &world, int x, int y, int player)
+{
+	return auxTile(world.map, x, y, player);
+}
+
+inline uint8_t blockTile(GameWorld &world, int x, int y, int slot)
+{
+	return blockTile(world.map, x, y, slot);
+}
