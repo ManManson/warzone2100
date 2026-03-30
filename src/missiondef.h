@@ -122,9 +122,6 @@ struct CampaignMissionMeta
 struct CampaignRuntime
 {
 	CampaignMissionMeta meta;
-	std::unique_ptr<GameWorld> homeWorld;
-	std::unique_ptr<GameWorld> awayWorld;
-	GameWorld *activeWorld = nullptr;
 	HomeWorldBehavior homeWorldBehavior = HomeWorldBehavior::Parked;
 	PerPlayerDroidLists limboDroids;
 };
