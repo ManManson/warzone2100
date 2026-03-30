@@ -431,7 +431,7 @@ void countUpdate(bool synch)
 				break;
 			}
 		}
-		for (DROID *psCurr : mission.apsDroidLists[i])
+		for (DROID *psCurr : missionParkedHomeWorld().objects.droids[i])
 		{
 			numMissionDroids[i]++;
 			switch (psCurr->droidType)
@@ -485,7 +485,7 @@ void countUpdate(bool synch)
 				setLasSatExists(true, i);
 			}
 		}
-		for (const STRUCTURE *psCBuilding : mission.apsStructLists[i])
+		for (const STRUCTURE *psCBuilding : missionParkedHomeWorld().objects.structures[i])
 		{
 			if (psCBuilding == nullptr || isDead(psCBuilding))
 			{
@@ -571,7 +571,7 @@ static void gameStateUpdate()
 			});
 		});
 		executeFnAndProcessScriptQueuedRemovals([i]() {
-			mutating_list_iterate(mission.apsDroidLists[i], [](DROID* d)
+			mutating_list_iterate(missionParkedHomeWorld().objects.droids[i], [](DROID* d)
 			{
 				missionDroidUpdate(d);
 				return IterationResult::CONTINUE_ITERATION;
@@ -586,7 +586,7 @@ static void gameStateUpdate()
 			});
 		});
 		executeFnAndProcessScriptQueuedRemovals([i]() {
-			mutating_list_iterate(mission.apsStructLists[i], [](STRUCTURE* s)
+			mutating_list_iterate(missionParkedHomeWorld().objects.structures[i], [](STRUCTURE* s)
 			{
 				structureUpdate(s, true); // update for mission
 				return IterationResult::CONTINUE_ITERATION;

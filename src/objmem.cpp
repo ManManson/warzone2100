@@ -248,10 +248,10 @@ static bool checkReferences(BASE_OBJECT *psVictim)
 	for (unsigned plr = 0; plr < MAX_PLAYERS; ++plr)
 	{
 		if (!checkPlrStructReferences(psVictim, apsStructLists)) { return false; }
-		if (!checkPlrStructReferences(psVictim, mission.apsStructLists)) { return false; }
+		if (!checkPlrStructReferences(psVictim, missionParkedHomeWorld().objects.structures)) { return false; }
 
 		if (!checkPlrDroidReferences(psVictim, apsDroidLists)) { return false; }
-		if (!checkPlrDroidReferences(psVictim, mission.apsDroidLists)) { return false; }
+		if (!checkPlrDroidReferences(psVictim, missionParkedHomeWorld().objects.droids)) { return false; }
 		if (!checkPlrDroidReferences(psVictim, apsLimboDroids)) { return false; }
 	}
 	return true;
@@ -495,11 +495,11 @@ void addDroid(DROID *psDroidToAdd, PerPlayerDroidLists& pList)
 			psGroup->add(psDroidToAdd);
 		}
 	}
-	else if (&pList[psDroidToAdd->player] == &mission.apsDroidLists[psDroidToAdd->player])
+	else if (&pList[psDroidToAdd->player] == &missionParkedHomeWorld().objects.droids[psDroidToAdd->player])
 	{
 		if (psDroidToAdd->droidType == DROID_SENSOR)
 		{
-			addObjectToFuncList(mission.apsSensorList, (BASE_OBJECT *)psDroidToAdd, 0);
+			addObjectToFuncList(missionParkedHomeWorld().objects.sensors, (BASE_OBJECT *)psDroidToAdd, 0);
 		}
 	}
 }
@@ -623,11 +623,11 @@ void removeDroid(DROID* psDroidToRemove, PerPlayerDroidLists& pList)
 		}
 		psDroidToRemove->died = NOT_CURRENT_LIST;
 	}
-	else if (&pList[psDroidToRemove->player] == &mission.apsDroidLists[psDroidToRemove->player])
+	else if (&pList[psDroidToRemove->player] == &missionParkedHomeWorld().objects.droids[psDroidToRemove->player])
 	{
 		if (psDroidToRemove->droidType == DROID_SENSOR)
 		{
-			removeObjectFromFuncList(mission.apsSensorList, (BASE_OBJECT*)psDroidToRemove, 0);
+			removeObjectFromFuncList(missionParkedHomeWorld().objects.sensors, (BASE_OBJECT*)psDroidToRemove, 0);
 		}
 	}
 }
@@ -635,7 +635,7 @@ void removeDroid(DROID* psDroidToRemove, PerPlayerDroidLists& pList)
 /*Removes all droids that may be stored in the mission lists*/
 void freeAllMissionDroids()
 {
-	freeAllEntitiesImpl<DROID, MAX_PLAYERS>(mission.apsDroidLists);
+	freeAllEntitiesImpl<DROID, MAX_PLAYERS>(missionParkedHomeWorld().objects.droids);
 }
 
 /*Removes all droids that may be stored in the limbo lists*/
@@ -963,7 +963,7 @@ BASE_OBJECT *getBaseObjFromData(unsigned id, unsigned player, OBJECT_TYPE type)
 			{
 				return pDroid;
 			}
-			pDroid = getBaseObjFromDroidId(mission.apsDroidLists[player], id);
+			pDroid = getBaseObjFromDroidId(missionParkedHomeWorld().objects.droids[player], id);
 			if (pDroid)
 			{
 				return pDroid;
@@ -985,7 +985,7 @@ BASE_OBJECT *getBaseObjFromData(unsigned id, unsigned player, OBJECT_TYPE type)
 			{
 				return pStruct;
 			}
-			pStruct = getBaseObjFromId(mission.apsStructLists[player], id);
+			pStruct = getBaseObjFromId(missionParkedHomeWorld().objects.structures[player], id);
 			if (pStruct)
 			{
 				return pStruct;
@@ -999,7 +999,7 @@ BASE_OBJECT *getBaseObjFromData(unsigned id, unsigned player, OBJECT_TYPE type)
 			{
 				return pFeat;
 			}
-			pFeat = getBaseObjFromId(mission.apsFeatureLists[0], id);
+			pFeat = getBaseObjFromId(missionParkedHomeWorld().objects.features[0], id);
 			if (pFeat)
 			{
 				return pFeat;
@@ -1076,7 +1076,7 @@ UDWORD getRepairIdFromFlag(const FLAG_POSITION *psFlag)
 		}
 		case 1:
 		{
-			auto id = getRepairIdFromFlagSingleList(psFlag, player, mission.apsStructLists[player]);
+			auto id = getRepairIdFromFlagSingleList(psFlag, player, missionParkedHomeWorld().objects.structures[player]);
 			if (id != UDWORD_MAX)
 			{
 				return id;

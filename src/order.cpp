@@ -3430,7 +3430,7 @@ static inline RtrBestResult decideWhereToRepairAndBalance(DROID *psDroid)
 		&& secondaryGetState(psDroid, DSO_ACCEPT_RETREP)))
 	{
 		// one of these lists is empty when on mission
-		DroidList* psdroidList = !apsDroidLists[psDroid->player].empty() ? &apsDroidLists[psDroid->player] : &mission.apsDroidLists[psDroid->player];
+		DroidList* psdroidList = !apsDroidLists[psDroid->player].empty() ? &apsDroidLists[psDroid->player] : &missionParkedHomeWorld().objects.droids[psDroid->player];
 		if (!psdroidList->empty())
 		{
 			for (DROID* psCurr : *psdroidList)

@@ -28,6 +28,7 @@
 #include "power.h"
 #include "levels.h"
 #include "missiondef.h"
+#include "gamesessionworlds.h"
 #include "group.h"
 
 /**

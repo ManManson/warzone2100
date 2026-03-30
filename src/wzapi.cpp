@@ -1079,7 +1079,7 @@ std::vector<const STRUCTURE *> wzapi::enumStruct(WZAPI_PARAMS(optional<int> _pla
 //--
 std::vector<const STRUCTURE *> wzapi::enumStructOffWorld(WZAPI_PARAMS(optional<int> _player, optional<STRUCTURE_TYPE_or_statsName_string> _structureType, optional<int> _playerFilter))
 {
-	return _enumStruct_fromList(context, _player, _structureType, _playerFilter, (mission.apsStructLists));
+	return _enumStruct_fromList(context, _player, _structureType, _playerFilter, (missionParkedHomeWorld().objects.structures));
 }
 
 //-- ## enumDroid([player[, droidType[, playerFilter]]])
@@ -2001,7 +2001,7 @@ bool wzapi::addDroidToTransporter(WZAPI_PARAMS(game_object_identifier transporte
 	DROID *psDroid = IdToMissionDroid(droidId, droidPlayer);
 	SCRIPT_ASSERT(false, context, psDroid, "No such droid id %d belonging to player %d", droidId, droidPlayer);
 	SCRIPT_ASSERT(false, context, checkTransporterSpace(psTransporter, psDroid), "Not enough room in transporter %d for droid %d", transporterId, droidId);
-	bool removeSuccessful = droidRemove(psDroid, mission.apsDroidLists);
+	bool removeSuccessful = droidRemove(psDroid, missionParkedHomeWorld().objects.droids);
 	SCRIPT_ASSERT(false, context, removeSuccessful, "Could not remove droid id %d from mission list", droidId);
 	psTransporter->psGroup->add(psDroid);
 	return true;
@@ -3486,7 +3486,7 @@ static void dirtyAllDroids(int player)
 	{
 		psDroid->flags.set(OBJECT_FLAG_DIRTY);
 	}
-	for (DROID *psDroid : mission.apsDroidLists[player])
+	for (DROID *psDroid : missionParkedHomeWorld().objects.droids[player])
 	{
 		psDroid->flags.set(OBJECT_FLAG_DIRTY);
 	}
@@ -3502,7 +3502,7 @@ static void dirtyAllStructures(int player)
 	{
 		psCurr->flags.set(OBJECT_FLAG_DIRTY);
 	}
-	for (STRUCTURE *psCurr : mission.apsStructLists[player])
+	for (STRUCTURE *psCurr : missionParkedHomeWorld().objects.structures[player])
 	{
 		psCurr->flags.set(OBJECT_FLAG_DIRTY);
 	}
@@ -3834,7 +3834,7 @@ bool wzapi::setUpgradeStats(WZAPI_BASE_PARAMS(int player, const std::string& nam
 					psCurr->resistance = value;
 				}
 			}
-			for (STRUCTURE *psCurr : mission.apsStructLists[player])
+			for (STRUCTURE *psCurr : missionParkedHomeWorld().objects.structures[player])
 			{
 				if (psStats == psCurr->pStructureType && psStats->upgrade[player].resistance < value)
 				{
@@ -3854,7 +3854,7 @@ bool wzapi::setUpgradeStats(WZAPI_BASE_PARAMS(int player, const std::string& nam
 					psCurr->body = (psCurr->body * value) / psStats->upgrade[player].hitpoints;
 				}
 			}
-			for (STRUCTURE *psCurr : mission.apsStructLists[player])
+			for (STRUCTURE *psCurr : missionParkedHomeWorld().objects.structures[player])
 			{
 				if (psStats == psCurr->pStructureType && (!bMultiPlayer || (bMultiPlayer && psStats->upgrade[player].hitpoints < value)))
 				{

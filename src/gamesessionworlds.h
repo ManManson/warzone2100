@@ -1,5 +1,7 @@
 #pragma once
 
+#include "game_world.h"
+
 #include <memory>
 
 enum class WorldSessionMode
@@ -7,8 +9,6 @@ enum class WorldSessionMode
 	Solo,
 	CampaignDual,
 };
-
-struct GameWorld;
 
 class GameSessionWorlds
 {
@@ -37,3 +37,6 @@ GameWorld &activeGameWorld();
 const GameWorld &activeGameWorldConst();
 void bindActiveWorld(GameWorld &world);
 bool hasActiveWorld();
+
+/** Parked campaign home map/objects while the player is on an off-world mission (stored in GameSessionWorlds::primary). */
+GameWorld &missionParkedHomeWorld();

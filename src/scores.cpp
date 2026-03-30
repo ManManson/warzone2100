@@ -300,7 +300,7 @@ END_GAME_STATS_DATA	collectEndGameStatsData()
 			switch (idx)
 			{
 				case 0: dList = &apsDroidLists[selectedPlayer]; break;
-				case 1: dList = &mission.apsDroidLists[selectedPlayer]; break;
+				case 1: dList = &missionParkedHomeWorld().objects.droids[selectedPlayer]; break;
 				case 2: if (prevMissionType == LEVEL_TYPE::LDS_MKEEP_LIMBO) { dList = &apsLimboDroids[selectedPlayer]; } break;
 				default: dList = nullptr;
 			}

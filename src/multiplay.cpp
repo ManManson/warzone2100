@@ -673,7 +673,7 @@ DROID *IdToMissionDroid(UDWORD id, UDWORD player)
 	{
 		for (int i = 0; i < MAX_PLAYERS; i++)
 		{
-			DROID* d = (DROID*)getBaseObjFromId(mission.apsDroidLists[i], id);
+			DROID* d = (DROID*)getBaseObjFromId(missionParkedHomeWorld().objects.droids[i], id);
 			if (d)
 			{
 				return d;
@@ -682,7 +682,7 @@ DROID *IdToMissionDroid(UDWORD id, UDWORD player)
 	}
 	else if (player < MAX_PLAYERS)
 	{
-		DROID* d = (DROID*)getBaseObjFromId(mission.apsDroidLists[player], id);
+		DROID* d = (DROID*)getBaseObjFromId(missionParkedHomeWorld().objects.droids[player], id);
 		if (d)
 		{
 			return d;
@@ -700,7 +700,7 @@ static STRUCTURE* _IdToStruct(UDWORD id, UDWORD beginPlayer, UDWORD endPlayer)
 		{
 			return s;
 		}
-		s = (STRUCTURE*)getBaseObjFromId(mission.apsStructLists[i], id);
+		s = (STRUCTURE*)getBaseObjFromId(missionParkedHomeWorld().objects.structures[i], id);
 		if (s)
 		{
 			return s;

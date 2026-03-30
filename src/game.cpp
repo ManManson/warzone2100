@@ -2720,14 +2720,14 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		for (player = 0; player < MAX_PLAYERS; player++)
 		{
 			apsLimboDroids[player].clear();
-			mission.apsDroidLists[player].clear();
-			mission.apsStructLists[player].clear();
-			mission.apsFeatureLists[player].clear();
-			mission.apsFlagPosLists[player].clear();
-			mission.apsExtractorLists[player].clear();
+			missionParkedHomeWorld().objects.droids[player].clear();
+			missionParkedHomeWorld().objects.structures[player].clear();
+			missionParkedHomeWorld().objects.features[player].clear();
+			missionParkedHomeWorld().objects.flags[player].clear();
+			missionParkedHomeWorld().objects.extractors[player].clear();
 		}
-		mission.apsOilList[0].clear();
-		mission.apsSensorList[0].clear();
+		missionParkedHomeWorld().objects.oils[0].clear();
+		missionParkedHomeWorld().objects.sensors[0].clear();
 
 		// Stuff added after level load to avoid being reset or initialised during load
 		// always !keepObjects
@@ -3001,10 +3001,10 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		//the scroll limits for the mission map have already been written
 		if (saveGameVersion >= VERSION_29)
 		{
-			missionScrollMinX = (UWORD)mission.scrollMinX;
-			missionScrollMinY = (UWORD)mission.scrollMinY;
-			missionScrollMaxX = (UWORD)mission.scrollMaxX;
-			missionScrollMaxY = (UWORD)mission.scrollMaxY;
+			missionScrollMinX = (UWORD)missionParkedHomeWorld().map.scroll.minX;
+			missionScrollMinY = (UWORD)missionParkedHomeWorld().map.scroll.minY;
+			missionScrollMaxX = (UWORD)missionParkedHomeWorld().map.scroll.maxX;
+			missionScrollMaxY = (UWORD)missionParkedHomeWorld().map.scroll.maxY;
 		}
 
 		//load the map and the droids then swap pointers
@@ -3078,7 +3078,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		}
 		else
 		{
-			structMap[aFileName] = &mission.apsStructLists;	// we swap pointers below
+			structMap[aFileName] = &missionParkedHomeWorld().objects.structures;	// we swap pointers below
 		}
 
 		// load in the mission droids, if any
@@ -3086,7 +3086,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		strcat(aFileName, "mdroid.json");
 		if (loadSaveDroid(aFileName, apsDroidLists))
 		{
-			droidMap[aFileName] = &mission.apsDroidLists; // need to swap here to read correct list later
+			droidMap[aFileName] = &missionParkedHomeWorld().objects.droids; // need to swap here to read correct list later
 		}
 
 		/* after we've loaded in the units we need to redo the orientation because
@@ -3113,10 +3113,10 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		//once the mission map has been loaded reset the mission scroll limits
 		if (saveGameVersion >= VERSION_29)
 		{
-			mission.scrollMinX = missionScrollMinX;
-			mission.scrollMinY = missionScrollMinY;
-			mission.scrollMaxX = missionScrollMaxX;
-			mission.scrollMaxY = missionScrollMaxY;
+			missionParkedHomeWorld().map.scroll.minX = missionScrollMinX;
+			missionParkedHomeWorld().map.scroll.minY = missionScrollMinY;
+			missionParkedHomeWorld().map.scroll.maxX = missionScrollMaxX;
+			missionParkedHomeWorld().map.scroll.maxY = missionScrollMaxY;
 		}
 	}
 
@@ -3253,10 +3253,10 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 			aFileName[fileExten] = '\0';
 			strcat(aFileName, "mdroid.json");
 
-			// load the data into mission.apsDroidLists, if any
-			if (loadSaveDroid(aFileName, mission.apsDroidLists))
+			// load the data into missionParkedHomeWorld().objects.droids, if any
+			if (loadSaveDroid(aFileName, missionParkedHomeWorld().objects.droids))
 			{
-				droidMap[aFileName] = &mission.apsDroidLists;
+				droidMap[aFileName] = &missionParkedHomeWorld().objects.droids;
 			}
 		}
 	}
@@ -3474,7 +3474,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 			//Which later causes issues in saveCampaignData() which tries to extract
 			//the first transporter group sent off at Beta-end by reversing this very list.
 			ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer is out of bounds: %" PRIu32 "", selectedPlayer);
-			mission.apsDroidLists[selectedPlayer].reverse();
+			missionParkedHomeWorld().objects.droids[selectedPlayer].reverse();
 		}
 	}
 
@@ -3499,7 +3499,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		 * the day excuses...excuses...excuses
 		 */
 		ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer is out of bounds: %" PRIu32 "", selectedPlayer);
-		if (mission.apsDroidLists[selectedPlayer].empty())
+		if (missionParkedHomeWorld().objects.droids[selectedPlayer].empty())
 		{
 			//set the mission type
 			startMissionSave(LEVEL_TYPE::LDS_EXPAND);
@@ -3746,7 +3746,7 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 	CurrentFileName[fileExtension] = '\0';
 	strcat(CurrentFileName, "mdroid.json");
 	/*Write the swapped droid lists to the file*/
-	if (!writeDroidFile(CurrentFileName, mission.apsDroidLists))
+	if (!writeDroidFile(CurrentFileName, missionParkedHomeWorld().objects.droids))
 	{
 		debug(LOG_ERROR, "writeDroidFile(\"%s\") failed", CurrentFileName);
 		goto error;
@@ -4557,10 +4557,10 @@ bool gameLoadV(PHYSFS_file *fileHandle, unsigned int version, nonstd::optional<n
 
 	if (saveGameVersion >= VERSION_29)
 	{
-		mission.scrollMinX = saveGameData.missionScrollMinX;
-		mission.scrollMinY = saveGameData.missionScrollMinY;
-		mission.scrollMaxX = saveGameData.missionScrollMaxX;
-		mission.scrollMaxY = saveGameData.missionScrollMaxY;
+		missionParkedHomeWorld().map.scroll.minX = saveGameData.missionScrollMinX;
+		missionParkedHomeWorld().map.scroll.minY = saveGameData.missionScrollMinY;
+		missionParkedHomeWorld().map.scroll.maxX = saveGameData.missionScrollMaxX;
+		missionParkedHomeWorld().map.scroll.maxY = saveGameData.missionScrollMaxY;
 	}
 
 	if (saveGameVersion >= VERSION_31)
@@ -4847,8 +4847,8 @@ static bool writeMainFile(const std::string &fileName, SDWORD saveType)
 	save.setValue("missionCheatTime", mission.cheatTime);
 	save.setVector2i("missionHomeLZ", Vector2i(mission.homeLZ_X, mission.homeLZ_Y));
 	save.setVector2i("missionPlayerPos", Vector2i(mission.playerX, mission.playerY));
-	save.setVector2i("missionScrollMin", Vector2i(mission.scrollMinX, mission.scrollMinY));
-	save.setVector2i("missionScrollMax", Vector2i(mission.scrollMaxX, mission.scrollMaxY));
+	save.setVector2i("missionScrollMin", Vector2i(missionParkedHomeWorld().map.scroll.minX, missionParkedHomeWorld().map.scroll.minY));
+	save.setVector2i("missionScrollMax", Vector2i(missionParkedHomeWorld().map.scroll.maxX, missionParkedHomeWorld().map.scroll.maxY));
 	save.setValue("offWorldKeepLists", offWorldKeepLists);
 	save.setValue("rubbleTile", getRubbleTileNum());
 	save.setValue("waterTile", getWaterTileNum());
@@ -5042,10 +5042,10 @@ static bool writeGameFile(const char *fileName, SDWORD saveType)
 	saveGame.missionHomeLZ_Y =		mission.homeLZ_Y;
 	saveGame.missionPlayerX =		mission.playerX;
 	saveGame.missionPlayerY =		mission.playerY;
-	saveGame.missionScrollMinX = (UWORD)mission.scrollMinX;
-	saveGame.missionScrollMinY = (UWORD)mission.scrollMinY;
-	saveGame.missionScrollMaxX = (UWORD)mission.scrollMaxX;
-	saveGame.missionScrollMaxY = (UWORD)mission.scrollMaxY;
+	saveGame.missionScrollMinX = (UWORD)missionParkedHomeWorld().map.scroll.minX;
+	saveGame.missionScrollMinY = (UWORD)missionParkedHomeWorld().map.scroll.minY;
+	saveGame.missionScrollMaxX = (UWORD)missionParkedHomeWorld().map.scroll.maxX;
+	saveGame.missionScrollMaxY = (UWORD)missionParkedHomeWorld().map.scroll.maxY;
 
 	saveGame.offWorldKeepLists = offWorldKeepLists;
 	saveGame.RubbleTile	= getRubbleTileNum();
@@ -5441,7 +5441,7 @@ static bool loadSaveDroidPointers(const WzString &pFileName, PerPlayerDroidLists
 foundDroid:
 		if (!psDroid)
 		{
-			DROID* d = (DROID*)getBaseObjFromId(mission.apsDroidLists[player], id);
+			DROID* d = (DROID*)getBaseObjFromId(missionParkedHomeWorld().objects.droids[player], id);
 			// FIXME
 			if (d)
 			{
@@ -6101,7 +6101,7 @@ static bool writeDroidFile(const char *pFileName, const PerPlayerDroidLists& pps
 {
 	nlohmann::json mRoot = nlohmann::json::object();
 	int counter = 0;
-	bool onMission = (&ppsCurrentDroidLists == &mission.apsDroidLists);
+	bool onMission = (&ppsCurrentDroidLists == &missionParkedHomeWorld().objects.droids);
 
 	for (int player = 0; player < MAX_PLAYERS; player++)
 	{
@@ -6123,7 +6123,7 @@ static bool writeDroidFile(const char *pFileName, const PerPlayerDroidLists& pps
 					}
 				}
 				//always save transporter droids that are in the mission list with an invalid value
-				if (&ppsCurrentDroidLists[player] == &mission.apsDroidLists[player])
+				if (&ppsCurrentDroidLists[player] == &missionParkedHomeWorld().objects.droids[player])
 				{
 					mRoot[droidKey.toStdString()]["position"] = Vector3i(INVALID_XY, INVALID_XY, -1); // Must be INVALID_XY or else unit placement could get messed up in missionResetDroids().
 				}
@@ -6922,7 +6922,7 @@ bool loadSaveStructurePointers(const WzString& filename, PerPlayerStructureLists
 				{
 					DROID *psCommander = (DROID *)getBaseObjFromData(tid, tplayer, ttype);
 					ASSERT(psCommander, "Commander %d not found for building %d", tid, id);
-					if (ppList == &mission.apsStructLists)
+					if (ppList == &missionParkedHomeWorld().objects.structures)
 					{
 						psFactory->psCommander = psCommander;
 					}
@@ -7634,7 +7634,7 @@ void loadFixupResearchPendingStates()
 				if (psLab == nullptr)
 				{
 					// check the mission list
-					psLab = findResearchingFacilityByResearchIndex(mission.apsStructLists, plr, statInc);
+					psLab = findResearchingFacilityByResearchIndex(missionParkedHomeWorld().objects.structures, plr, statInc);
 				}
 
 				if (psLab != nullptr)

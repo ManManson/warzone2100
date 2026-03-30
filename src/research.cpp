@@ -1656,7 +1656,7 @@ static void replaceComponent(COMPONENT_STATS *pNewComponent, COMPONENT_STATS *pO
 	}
 
 	replaceDroidComponent(apsDroidLists[player], oldType, oldCompInc, newCompInc);
-	replaceDroidComponent(mission.apsDroidLists[player], oldType, oldCompInc, newCompInc);
+	replaceDroidComponent(missionParkedHomeWorld().objects.droids[player], oldType, oldCompInc, newCompInc);
 	replaceDroidComponent(apsLimboDroids[player], oldType, oldCompInc, newCompInc);
 	const auto replaceComponentInTemplate = [oldType, oldCompInc, newCompInc](DROID_TEMPLATE* psTemplates) {
 		switch (oldType)
@@ -1703,7 +1703,7 @@ static void replaceComponent(COMPONENT_STATS *pNewComponent, COMPONENT_STATS *pO
 		}
 	}
 	replaceStructureComponent(apsStructLists[player], oldType, oldCompInc, newCompInc, player);
-	replaceStructureComponent(mission.apsStructLists[player], oldType, oldCompInc, newCompInc, player);
+	replaceStructureComponent(missionParkedHomeWorld().objects.structures[player], oldType, oldCompInc, newCompInc, player);
 }
 
 /*Looks through all the currently allocated stats to check the name is not

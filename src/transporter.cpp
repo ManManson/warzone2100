@@ -605,7 +605,7 @@ bool intAddDroidsAvailForm()
 	sBarInit.sMinorCol = WZCOL_ACTION_PROGRESS_BAR_MINOR;
 
 	//add droids built before the mission
-	for (DROID *psDroid : mission.apsDroidLists[selectedPlayer])
+	for (DROID *psDroid : missionParkedHomeWorld().objects.droids[selectedPlayer])
 	{
 		//stop adding the buttons once IDTRANS_DROIDEND has been reached
 		if (nextButtonId == IDTRANS_DROIDEND)
@@ -952,7 +952,7 @@ void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode)
 	//add it back into apsDroidLists
 	if (onMission)
 	{
-		addDroid(psDroid, mission.apsDroidLists);
+		addDroid(psDroid, missionParkedHomeWorld().objects.droids);
 	}
 	else
 	{
@@ -1075,7 +1075,7 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd)
 	if (onMission)
 	{
 		// removing from droid mission list
-		bDroidRemoved = droidRemove(psDroidToAdd, mission.apsDroidLists);
+		bDroidRemoved = droidRemove(psDroidToAdd, missionParkedHomeWorld().objects.droids);
 	}
 	else
 	{
@@ -1156,7 +1156,7 @@ DroidList* transInterfaceDroidList()
 	ASSERT_OR_RETURN(nullptr, selectedPlayer < MAX_PLAYERS, "Cannot be called for selectedPlayer: %" PRIu32 "", selectedPlayer);
 	if (onMission)
 	{
-		return &mission.apsDroidLists[selectedPlayer];
+		return &missionParkedHomeWorld().objects.droids[selectedPlayer];
 	}
 	else
 	{

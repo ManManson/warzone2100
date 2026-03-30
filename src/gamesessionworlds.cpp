@@ -55,3 +55,14 @@ bool hasActiveWorld()
 {
 	return GameSessionWorlds::instance().active != nullptr;
 }
+
+GameWorld &missionParkedHomeWorld()
+{
+	GameSessionWorlds &s = GameSessionWorlds::instance();
+	if (!s.primary)
+	{
+		s.primary = std::make_unique<GameWorld>();
+		s.primary->debugName = "primary";
+	}
+	return *s.primary;
+}

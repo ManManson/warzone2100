@@ -2724,7 +2724,7 @@ StructureList *interfaceStructList()
 
 	if (offWorldKeepLists)
 	{
-		return &mission.apsStructLists[selectedPlayer];
+		return &missionParkedHomeWorld().objects.structures[selectedPlayer];
 	}
 	else
 	{

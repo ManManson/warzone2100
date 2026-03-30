@@ -804,7 +804,7 @@ void actionUpdateDroid(DROID *psDroid)
 			{
 				UDWORD droidX, droidY;
 
-				if (!droidRemove(psDroid, mission.apsDroidLists))
+				if (!droidRemove(psDroid, missionParkedHomeWorld().objects.droids))
 				{
 					ASSERT_OR_RETURN(, false, "Unable to remove transporter from mission list");
 				}

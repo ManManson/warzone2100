@@ -273,29 +273,29 @@ void initMission()
 	mission.type = LEVEL_TYPE::LDS_NONE;
 	for (int inc = 0; inc < MAX_PLAYERS; inc++)
 	{
-		mission.apsStructLists[inc].clear();
-		mission.apsDroidLists[inc].clear();
-		mission.apsFeatureLists[inc].clear();
-		mission.apsFlagPosLists[inc].clear();
-		mission.apsExtractorLists[inc].clear();
+		missionParkedHomeWorld().objects.structures[inc].clear();
+		missionParkedHomeWorld().objects.droids[inc].clear();
+		missionParkedHomeWorld().objects.features[inc].clear();
+		missionParkedHomeWorld().objects.flags[inc].clear();
+		missionParkedHomeWorld().objects.extractors[inc].clear();
 		apsLimboDroids[inc].clear();
 	}
-	mission.apsSensorList[0].clear();
-	mission.apsOilList[0].clear();
+	missionParkedHomeWorld().objects.sensors[0].clear();
+	missionParkedHomeWorld().objects.oils[0].clear();
 	offWorldKeepLists = false;
 	mission.time = -1;
 	setMissionCountDown();
 
 	mission.ETA = -1;
 	mission.startTime = 0;
-	mission.psGateways.clear(); // just in case
-	mission.mapHeight = 0;
-	mission.mapWidth = 0;
-	for (auto &i : mission.psBlockMap)
+	missionParkedHomeWorld().map.gateways.clear(); // just in case
+	missionParkedHomeWorld().map.height = 0;
+	missionParkedHomeWorld().map.width = 0;
+	for (auto &i : missionParkedHomeWorld().map.blockMap)
 	{
 		i.reset();
 	}
-	for (auto &i : mission.psAuxMap)
+	for (auto &i : missionParkedHomeWorld().map.auxMap)
 	{
 		i.reset();
 	}
@@ -308,12 +308,18 @@ void initMission()
 
 	//start as not cheating!
 	mission.cheatTime = 0;
+
+	// Session: parked campaign home lives in primary; bind active for activeGameWorld() (see GAME_WORLD_REFACTORING_V2_IMPL §4.6).
+	GameSessionWorlds &gsw = GameSessionWorlds::instance();
+	ASSERT(gsw.primary != nullptr, "initMission: primary must exist after missionParkedHomeWorld() use");
+	gsw.setMode(WorldSessionMode::Solo);
+	gsw.setActiveToPrimary();
 }
 
 //this is called everytime the game is quit
 void releaseMission()
 {
-	/* mission.apsDroidLists may contain some droids that have been transferred from one campaign to the next */
+	/* missionParkedHomeWorld().objects.droids may contain some droids that have been transferred from one campaign to the next */
 	freeAllMissionDroids();
 
 	/* apsLimboDroids may contain some droids that have been saved at the end of one mission and not yet used */
@@ -338,34 +344,34 @@ bool missionShutDown()
 
 		for (int inc = 0; inc < MAX_PLAYERS; inc++)
 		{
-			apsDroidLists[inc] = std::move(mission.apsDroidLists[inc]);
-			mission.apsDroidLists[inc].clear();
-			apsStructLists[inc] = std::move(mission.apsStructLists[inc]);
-			mission.apsStructLists[inc].clear();
-			apsFeatureLists[inc] = std::move(mission.apsFeatureLists[inc]);
-			mission.apsFeatureLists[inc].clear();
-			apsFlagPosLists[inc] = std::move(mission.apsFlagPosLists[inc]);
-			mission.apsFlagPosLists[inc].clear();
-			apsExtractorLists[inc] = std::move(mission.apsExtractorLists[inc]);
-			mission.apsExtractorLists[inc].clear();
+			apsDroidLists[inc] = std::move(missionParkedHomeWorld().objects.droids[inc]);
+			missionParkedHomeWorld().objects.droids[inc].clear();
+			apsStructLists[inc] = std::move(missionParkedHomeWorld().objects.structures[inc]);
+			missionParkedHomeWorld().objects.structures[inc].clear();
+			apsFeatureLists[inc] = std::move(missionParkedHomeWorld().objects.features[inc]);
+			missionParkedHomeWorld().objects.features[inc].clear();
+			apsFlagPosLists[inc] = std::move(missionParkedHomeWorld().objects.flags[inc]);
+			missionParkedHomeWorld().objects.flags[inc].clear();
+			apsExtractorLists[inc] = std::move(missionParkedHomeWorld().objects.extractors[inc]);
+			missionParkedHomeWorld().objects.extractors[inc].clear();
 		}
-		apsSensorList[0] = std::move(mission.apsSensorList[0]);
-		apsOilList[0] = std::move(mission.apsOilList[0]);
-		mission.apsSensorList[0].clear();
-		mission.apsOilList[0].clear();
+		apsSensorList[0] = std::move(missionParkedHomeWorld().objects.sensors[0]);
+		apsOilList[0] = std::move(missionParkedHomeWorld().objects.oils[0]);
+		missionParkedHomeWorld().objects.sensors[0].clear();
+		missionParkedHomeWorld().objects.oils[0].clear();
 
-		psMapTiles = std::move(mission.psMapTiles);
-		mapWidth = mission.mapWidth;
-		mapHeight = mission.mapHeight;
-		for (int i = 0; i < ARRAY_SIZE(mission.psBlockMap); ++i)
+		psMapTiles = std::move(missionParkedHomeWorld().map.tiles);
+		mapWidth = missionParkedHomeWorld().map.width;
+		mapHeight = missionParkedHomeWorld().map.height;
+		for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.blockMap); ++i)
 		{
-			psBlockMap[i] = std::move(mission.psBlockMap[i]);
+			psBlockMap[i] = std::move(missionParkedHomeWorld().map.blockMap[i]);
 		}
-		for (int i = 0; i < ARRAY_SIZE(mission.psAuxMap); ++i)
+		for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.auxMap); ++i)
 		{
-			psAuxMap[i] = std::move(mission.psAuxMap[i]);
+			psAuxMap[i] = std::move(missionParkedHomeWorld().map.auxMap[i]);
 		}
-		std::swap(mission.psGateways, gwGetGateways());
+		std::swap(missionParkedHomeWorld().map.gateways, gwGetGateways());
 	}
 	keybindShutdown();
 	// sorry if this breaks something - but it looks like it's what should happen - John
@@ -567,7 +573,7 @@ void addTransporterTimerInterface()
 	if (mission.ETA >= 0 && selectedPlayer < MAX_PLAYERS)
 	{
 		//check the player has at least one Transporter back at base
-		for (DROID *psDroid : mission.apsDroidLists[selectedPlayer])
+		for (DROID *psDroid : missionParkedHomeWorld().objects.droids[selectedPlayer])
 		{
 			if (psDroid->isTransporter())
 			{
@@ -625,7 +631,7 @@ void missionFlyTransportersIn(SDWORD iPlayer, bool bTrackTransporter)
 	iZ = (UWORD)(map_Height(iX, iY) + OFFSCREEN_HEIGHT);
 
 	//get the droids for the mission
-	mutating_list_iterate(mission.apsDroidLists[iPlayer], [iPlayer, bTrackTransporter, iX, iY, iZ, iLandX, iLandY](DROID* psTransporter)
+	mutating_list_iterate(missionParkedHomeWorld().objects.droids[iPlayer], [iPlayer, bTrackTransporter, iX, iY, iZ, iLandX, iLandY](DROID* psTransporter)
 	{
 		SDWORD iDx, iDy;
 
@@ -638,7 +644,7 @@ void missionFlyTransportersIn(SDWORD iPlayer, bool bTrackTransporter)
 				psTransporter->watchedTiles.clear();
 
 				// Remove out of stored list and add to current Droid list
-				if (droidRemove(psTransporter, mission.apsDroidLists))
+				if (droidRemove(psTransporter, missionParkedHomeWorld().objects.droids))
 				{
 					// Do not want to add it unless managed to remove it from the previous list
 					addDroid(psTransporter, apsDroidLists);
@@ -772,36 +778,36 @@ static void saveMissionData()
 	resetHomeStructureObjects(); //get rid of soon-to-be illegal references of droids in repair facilities and rearming pads.
 
 	//save the mission data
-	mission.psMapTiles = std::move(psMapTiles);
-	mission.mapWidth = mapWidth;
-	mission.mapHeight = mapHeight;
-	for (int i = 0; i < ARRAY_SIZE(mission.psBlockMap); ++i)
+	missionParkedHomeWorld().map.tiles = std::move(psMapTiles);
+	missionParkedHomeWorld().map.width = mapWidth;
+	missionParkedHomeWorld().map.height = mapHeight;
+	for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.blockMap); ++i)
 	{
-		mission.psBlockMap[i] = std::move(psBlockMap[i]);
+		missionParkedHomeWorld().map.blockMap[i] = std::move(psBlockMap[i]);
 	}
-	for (int i = 0; i < ARRAY_SIZE(mission.psAuxMap); ++i)
+	for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.auxMap); ++i)
 	{
-		mission.psAuxMap[i] = std::move(psAuxMap[i]);
+		missionParkedHomeWorld().map.auxMap[i] = std::move(psAuxMap[i]);
 	}
-	mission.scrollMinX = scrollMinX;
-	mission.scrollMinY = scrollMinY;
-	mission.scrollMaxX = scrollMaxX;
-	mission.scrollMaxY = scrollMaxY;
-	std::swap(mission.psGateways, gwGetGateways());
+	missionParkedHomeWorld().map.scroll.minX = scrollMinX;
+	missionParkedHomeWorld().map.scroll.minY = scrollMinY;
+	missionParkedHomeWorld().map.scroll.maxX = scrollMaxX;
+	missionParkedHomeWorld().map.scroll.maxY = scrollMaxY;
+	std::swap(missionParkedHomeWorld().map.gateways, gwGetGateways());
 	// save the selectedPlayer's LZ
 	mission.homeLZ_X = getLandingX(selectedPlayer);
 	mission.homeLZ_Y = getLandingY(selectedPlayer);
 
 	for (unsigned int inc = 0; inc < MAX_PLAYERS; ++inc)
 	{
-		mission.apsStructLists[inc] = apsStructLists[inc];
-		mission.apsDroidLists[inc] = apsDroidLists[inc];
-		mission.apsFeatureLists[inc] = apsFeatureLists[inc];
-		mission.apsFlagPosLists[inc] = apsFlagPosLists[inc];
-		mission.apsExtractorLists[inc] = apsExtractorLists[inc];
+		missionParkedHomeWorld().objects.structures[inc] = apsStructLists[inc];
+		missionParkedHomeWorld().objects.droids[inc] = apsDroidLists[inc];
+		missionParkedHomeWorld().objects.features[inc] = apsFeatureLists[inc];
+		missionParkedHomeWorld().objects.flags[inc] = apsFlagPosLists[inc];
+		missionParkedHomeWorld().objects.extractors[inc] = apsExtractorLists[inc];
 	}
-	mission.apsSensorList[0] = apsSensorList[0];
-	mission.apsOilList[0] = apsOilList[0];
+	missionParkedHomeWorld().objects.sensors[0] = apsSensorList[0];
+	missionParkedHomeWorld().objects.oils[0] = apsOilList[0];
 
 	mission.playerX = playerPos.p.x;
 	mission.playerY = playerPos.p.z;
@@ -849,57 +855,57 @@ void restoreMissionData()
 	//restore the game pointers
 	for (inc = 0; inc < MAX_PLAYERS; inc++)
 	{
-		apsDroidLists[inc] = std::move(mission.apsDroidLists[inc]);
-		mission.apsDroidLists[inc].clear();
+		apsDroidLists[inc] = std::move(missionParkedHomeWorld().objects.droids[inc]);
+		missionParkedHomeWorld().objects.droids[inc].clear();
 		for (DROID* psObj : apsDroidLists[inc])
 		{
 			psObj->died = false;	//make sure the died flag is not set
 		}
 
-		apsStructLists[inc] = std::move(mission.apsStructLists[inc]);
-		mission.apsStructLists[inc].clear();
+		apsStructLists[inc] = std::move(missionParkedHomeWorld().objects.structures[inc]);
+		missionParkedHomeWorld().objects.structures[inc].clear();
 
-		apsFeatureLists[inc] = std::move(mission.apsFeatureLists[inc]);
-		mission.apsFeatureLists[inc].clear();
+		apsFeatureLists[inc] = std::move(missionParkedHomeWorld().objects.features[inc]);
+		missionParkedHomeWorld().objects.features[inc].clear();
 
-		apsFlagPosLists[inc] = std::move(mission.apsFlagPosLists[inc]);
-		mission.apsFlagPosLists[inc].clear();
+		apsFlagPosLists[inc] = std::move(missionParkedHomeWorld().objects.flags[inc]);
+		missionParkedHomeWorld().objects.flags[inc].clear();
 
-		apsExtractorLists[inc] = std::move(mission.apsExtractorLists[inc]);
-		mission.apsExtractorLists[inc].clear();
+		apsExtractorLists[inc] = std::move(missionParkedHomeWorld().objects.extractors[inc]);
+		missionParkedHomeWorld().objects.extractors[inc].clear();
 	}
-	apsSensorList[0] = std::move(mission.apsSensorList[0]);
-	apsOilList[0] = std::move(mission.apsOilList[0]);
-	mission.apsSensorList[0].clear();
+	apsSensorList[0] = std::move(missionParkedHomeWorld().objects.sensors[0]);
+	apsOilList[0] = std::move(missionParkedHomeWorld().objects.oils[0]);
+	missionParkedHomeWorld().objects.sensors[0].clear();
 	apsOilList[0].clear();
 	//swap mission data over
 
-	psMapTiles = std::move(mission.psMapTiles);
+	psMapTiles = std::move(missionParkedHomeWorld().map.tiles);
 
-	mapWidth = mission.mapWidth;
-	mapHeight = mission.mapHeight;
-	for (int i = 0; i < ARRAY_SIZE(mission.psBlockMap); ++i)
+	mapWidth = missionParkedHomeWorld().map.width;
+	mapHeight = missionParkedHomeWorld().map.height;
+	for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.blockMap); ++i)
 	{
-		psBlockMap[i] = std::move(mission.psBlockMap[i]);
+		psBlockMap[i] = std::move(missionParkedHomeWorld().map.blockMap[i]);
 	}
-	for (int i = 0; i < ARRAY_SIZE(mission.psAuxMap); ++i)
+	for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.auxMap); ++i)
 	{
-		psAuxMap[i] = std::move(mission.psAuxMap[i]);
+		psAuxMap[i] = std::move(missionParkedHomeWorld().map.auxMap[i]);
 	}
-	scrollMinX = mission.scrollMinX;
-	scrollMinY = mission.scrollMinY;
-	scrollMaxX = mission.scrollMaxX;
-	scrollMaxY = mission.scrollMaxY;
-	std::swap(mission.psGateways, gwGetGateways());
+	scrollMinX = missionParkedHomeWorld().map.scroll.minX;
+	scrollMinY = missionParkedHomeWorld().map.scroll.minY;
+	scrollMaxX = missionParkedHomeWorld().map.scroll.maxX;
+	scrollMaxY = missionParkedHomeWorld().map.scroll.maxY;
+	std::swap(missionParkedHomeWorld().map.gateways, gwGetGateways());
 	//and clear the mission pointers
-	mission.psMapTiles	= nullptr;
-	mission.mapWidth	= 0;
-	mission.mapHeight	= 0;
-	mission.scrollMinX	= 0;
-	mission.scrollMinY	= 0;
-	mission.scrollMaxX	= 0;
-	mission.scrollMaxY	= 0;
-	mission.psGateways.clear();
+	missionParkedHomeWorld().map.tiles	= nullptr;
+	missionParkedHomeWorld().map.width	= 0;
+	missionParkedHomeWorld().map.height	= 0;
+	missionParkedHomeWorld().map.scroll.minX	= 0;
+	missionParkedHomeWorld().map.scroll.minY	= 0;
+	missionParkedHomeWorld().map.scroll.maxX	= 0;
+	missionParkedHomeWorld().map.scroll.maxY	= 0;
+	missionParkedHomeWorld().map.gateways.clear();
 
 	//reset the current structure lists
 	setCurrentStructQuantity(false);
@@ -931,7 +937,7 @@ void saveMissionLimboData()
 	{
 		if (droidRemove(psDroid, apsDroidLists))
 		{
-			addDroid(psDroid, mission.apsDroidLists);
+			addDroid(psDroid, missionParkedHomeWorld().objects.droids);
 		}
 		return IterationResult::CONTINUE_ITERATION;
 	});
@@ -1017,10 +1023,10 @@ void restoreMissionLimboData()
 
 	/*the droids stored in the mission droid list need to be added back
 	into the current droid list*/
-	mutating_list_iterate(mission.apsDroidLists[selectedPlayer], [](DROID* psDroid)
+	mutating_list_iterate(missionParkedHomeWorld().objects.droids[selectedPlayer], [](DROID* psDroid)
 	{
 		//remove out of stored list and add to current Droid list
-		if (droidRemove(psDroid, mission.apsDroidLists))
+		if (droidRemove(psDroid, missionParkedHomeWorld().objects.droids))
 		{
 			addDroid(psDroid, apsDroidLists);
 			//reset droid orders
@@ -1033,7 +1039,7 @@ void restoreMissionLimboData()
 		}
 		return IterationResult::CONTINUE_ITERATION;
 	});
-	ASSERT(mission.apsDroidLists[selectedPlayer].empty(), "list should be empty");
+	ASSERT(missionParkedHomeWorld().objects.droids[selectedPlayer].empty(), "list should be empty");
 }
 
 /*Saves the necessary data when moving from one campaign to the start of the
@@ -1067,7 +1073,7 @@ void saveCampaignData()
 					psCurr->pos.x = INVALID_XY;
 					psCurr->pos.y = INVALID_XY;
 					// Add it back into current droid lists
-					addDroid(psCurr, mission.apsDroidLists);
+					addDroid(psCurr, missionParkedHomeWorld().objects.droids);
 
 					return IterationResult::CONTINUE_ITERATION;
 				});
@@ -1077,7 +1083,7 @@ void saveCampaignData()
 					//cam change add droid
 					psDroid->pos.x = INVALID_XY;
 					psDroid->pos.y = INVALID_XY;
-					addDroid(psDroid, mission.apsDroidLists);
+					addDroid(psDroid, missionParkedHomeWorld().objects.droids);
 				}
 			}
 			return IterationResult::CONTINUE_ITERATION;
@@ -1086,9 +1092,9 @@ void saveCampaignData()
 	else
 	{
 		// Reserve the droids for selected player for start of next campaign
-		mission.apsDroidLists[selectedPlayer] = std::move(apsDroidLists[selectedPlayer]);
+		missionParkedHomeWorld().objects.droids[selectedPlayer] = std::move(apsDroidLists[selectedPlayer]);
 		apsDroidLists[selectedPlayer].clear();
-		for (DROID* psDroid : mission.apsDroidLists[selectedPlayer])
+		for (DROID* psDroid : missionParkedHomeWorld().objects.droids[selectedPlayer])
 		{
 			//cam change add droid
 			psDroid->pos.x = INVALID_XY;
@@ -1101,22 +1107,22 @@ void saveCampaignData()
 	{
 		/*now that every unit for the selected player has been moved into the
 		mission list - reverse it and fill the transporter with the first ten units*/
-		mission.apsDroidLists[selectedPlayer].reverse();
+		missionParkedHomeWorld().objects.droids[selectedPlayer].reverse();
 
 		//find the *first* transporter
-		mutating_list_iterate(mission.apsDroidLists[selectedPlayer], [](DROID* psDroid)
+		mutating_list_iterate(missionParkedHomeWorld().objects.droids[selectedPlayer], [](DROID* psDroid)
 		{
 			if (psDroid->isTransporter())
 			{
 				//fill it with droids from the mission list
-				mutating_list_iterate(mission.apsDroidLists[selectedPlayer], [psDroid](DROID* psSafeDroid)
+				mutating_list_iterate(missionParkedHomeWorld().objects.droids[selectedPlayer], [psDroid](DROID* psSafeDroid)
 				{
 					if (psSafeDroid != psDroid)
 					{
 						//add to the Transporter, checking for when full
 						if (checkTransporterSpace(psDroid, psSafeDroid))
 						{
-							if (droidRemove(psSafeDroid, mission.apsDroidLists))
+							if (droidRemove(psSafeDroid, missionParkedHomeWorld().objects.droids))
 							{
 								psDroid->psGroup->add(psSafeDroid);
 							}
@@ -1310,7 +1316,7 @@ static void processMission()
 		{
 			int	x, y;
 
-			addDroid(psDroid, mission.apsDroidLists);
+			addDroid(psDroid, missionParkedHomeWorld().objects.droids);
 			droidX = getHomeLandingX();
 			droidY = getHomeLandingY();
 			// Swap the droid and map pointers
@@ -1385,33 +1391,33 @@ void swapMissionPointers()
 {
 	debug(LOG_SAVE, "called");
 
-	std::swap(psMapTiles, mission.psMapTiles);
-	std::swap(mapWidth,   mission.mapWidth);
-	std::swap(mapHeight,  mission.mapHeight);
-	for (int i = 0; i < ARRAY_SIZE(mission.psBlockMap); ++i)
+	std::swap(psMapTiles, missionParkedHomeWorld().map.tiles);
+	std::swap(mapWidth,   missionParkedHomeWorld().map.width);
+	std::swap(mapHeight,  missionParkedHomeWorld().map.height);
+	for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.blockMap); ++i)
 	{
-		std::swap(psBlockMap[i], mission.psBlockMap[i]);
+		std::swap(psBlockMap[i], missionParkedHomeWorld().map.blockMap[i]);
 	}
-	for (int i = 0; i < ARRAY_SIZE(mission.psAuxMap); ++i)
+	for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.auxMap); ++i)
 	{
-		std::swap(psAuxMap[i],   mission.psAuxMap[i]);
+		std::swap(psAuxMap[i],   missionParkedHomeWorld().map.auxMap[i]);
 	}
 	//swap gateway zones
-	std::swap(mission.psGateways, gwGetGateways());
-	std::swap(scrollMinX, mission.scrollMinX);
-	std::swap(scrollMinY, mission.scrollMinY);
-	std::swap(scrollMaxX, mission.scrollMaxX);
-	std::swap(scrollMaxY, mission.scrollMaxY);
+	std::swap(missionParkedHomeWorld().map.gateways, gwGetGateways());
+	std::swap(scrollMinX, missionParkedHomeWorld().map.scroll.minX);
+	std::swap(scrollMinY, missionParkedHomeWorld().map.scroll.minY);
+	std::swap(scrollMaxX, missionParkedHomeWorld().map.scroll.maxX);
+	std::swap(scrollMaxY, missionParkedHomeWorld().map.scroll.maxY);
 	for (unsigned inc = 0; inc < MAX_PLAYERS; inc++)
 	{
-		std::swap(apsDroidLists[inc],     mission.apsDroidLists[inc]);
-		std::swap(apsStructLists[inc],    mission.apsStructLists[inc]);
-		std::swap(apsFeatureLists[inc],   mission.apsFeatureLists[inc]);
-		std::swap(apsFlagPosLists[inc],   mission.apsFlagPosLists[inc]);
-		std::swap(apsExtractorLists[inc], mission.apsExtractorLists[inc]);
+		std::swap(apsDroidLists[inc],     missionParkedHomeWorld().objects.droids[inc]);
+		std::swap(apsStructLists[inc],    missionParkedHomeWorld().objects.structures[inc]);
+		std::swap(apsFeatureLists[inc],   missionParkedHomeWorld().objects.features[inc]);
+		std::swap(apsFlagPosLists[inc],   missionParkedHomeWorld().objects.flags[inc]);
+		std::swap(apsExtractorLists[inc], missionParkedHomeWorld().objects.extractors[inc]);
 	}
-	std::swap(apsSensorList[0], mission.apsSensorList[0]);
-	std::swap(apsOilList[0],    mission.apsOilList[0]);
+	std::swap(apsSensorList[0], missionParkedHomeWorld().objects.sensors[0]);
+	std::swap(apsOilList[0],    missionParkedHomeWorld().objects.oils[0]);
 }
 
 void endMission()
@@ -1885,7 +1891,7 @@ void missionMoveTransporterOffWorld(DROID *psTransporter)
 
 		if (droidRemove(psTransporter, apsDroidLists))
 		{
-			addDroid(psTransporter, mission.apsDroidLists);
+			addDroid(psTransporter, missionParkedHomeWorld().objects.droids);
 		}
 
 		//stop the droid moving - the moveUpdate happens AFTER the orderUpdate and can cause problems if the droid moves from one tile to another
@@ -1917,11 +1923,11 @@ void missionMoveTransporterOffWorld(DROID *psTransporter)
 		if (psTransporter->player == selectedPlayer)
 		{
 			ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer %" PRIu32 " exceeds MAX_PLAYERS", selectedPlayer);
-			auto droidIt = std::find_if(mission.apsDroidLists[selectedPlayer].begin(), mission.apsDroidLists[selectedPlayer].end(), [](DROID* d)
+			auto droidIt = std::find_if(missionParkedHomeWorld().objects.droids[selectedPlayer].begin(), missionParkedHomeWorld().objects.droids[selectedPlayer].end(), [](DROID* d)
 			{
 				return !d->isTransporter();
 			});
-			if (droidIt == mission.apsDroidLists[selectedPlayer].end())
+			if (droidIt == missionParkedHomeWorld().objects.droids[selectedPlayer].end())
 			{
 				triggerEvent(TRIGGER_TRANSPORTER_DONE, psTransporter);
 			}
@@ -2623,7 +2629,7 @@ DROID *buildMissionDroid(DROID_TEMPLATE *psTempl, UDWORD x, UDWORD y, UDWORD pla
 	{
 		return nullptr;
 	}
-	addDroid(psNewDroid, mission.apsDroidLists);
+	addDroid(psNewDroid, missionParkedHomeWorld().objects.droids);
 	//set its x/y to impossible values so can detect when return from mission
 	psNewDroid->pos.x = INVALID_XY;
 	psNewDroid->pos.y = INVALID_XY;
@@ -2994,7 +3000,7 @@ void missionDestroyObjects()
 			});
 
 			//clear out the mission lists as well to make sure no Transporters exist
-			apsDroidLists[Player] = std::move(mission.apsDroidLists[Player]);
+			apsDroidLists[Player] = std::move(missionParkedHomeWorld().objects.droids[Player]);
 
 			mutating_list_iterate(apsDroidLists[Player], [](DROID* psDroid)
 			{
@@ -3003,7 +3009,7 @@ void missionDestroyObjects()
 				removeDroidBase(psDroid);
 				return IterationResult::CONTINUE_ITERATION;
 			});
-			mission.apsDroidLists[Player].clear();
+			missionParkedHomeWorld().objects.droids[Player].clear();
 
 			mutating_list_iterate(apsStructLists[Player], [](STRUCTURE* s)
 			{
@@ -3070,13 +3076,13 @@ void processPreviousCampDroids()
 	ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer %" PRIu32 " exceeds MAX_PLAYERS", selectedPlayer);
 
 	// See if any are left
-	if (!mission.apsDroidLists[selectedPlayer].empty())
+	if (!missionParkedHomeWorld().objects.droids[selectedPlayer].empty())
 	{
-		mutating_list_iterate(mission.apsDroidLists[selectedPlayer], [](DROID* psDroid)
+		mutating_list_iterate(missionParkedHomeWorld().objects.droids[selectedPlayer], [](DROID* psDroid)
 		{
 			// We want to kill off all droids now! - AB 27/01/99
 			// KILL OFF TRANSPORTER
-			if (droidRemove(psDroid, mission.apsDroidLists))
+			if (droidRemove(psDroid, missionParkedHomeWorld().objects.droids))
 			{
 				addDroid(psDroid, apsDroidLists);
 				vanishDroid(psDroid);
@@ -3144,7 +3150,7 @@ void moveDroidsToSafety(DROID *psTransporter)
 			//cam change add droid
 			psDroid->pos.x = INVALID_XY;
 			psDroid->pos.y = INVALID_XY;
-			addDroid(psDroid, mission.apsDroidLists);
+			addDroid(psDroid, missionParkedHomeWorld().objects.droids);
 
 			return IterationResult::CONTINUE_ITERATION;
 		});
@@ -3153,7 +3159,7 @@ void moveDroidsToSafety(DROID *psTransporter)
 	//move the transporter into the mission list also
 	if (droidRemove(psTransporter, apsDroidLists))
 	{
-		addDroid(psTransporter, mission.apsDroidLists);
+		addDroid(psTransporter, missionParkedHomeWorld().objects.droids);
 	}
 }
 
@@ -3190,7 +3196,7 @@ static DROID *find_transporter()
 			return droid;
 		}
 	}
-	for (DROID* droid : mission.apsDroidLists[selectedPlayer])
+	for (DROID* droid : missionParkedHomeWorld().objects.droids[selectedPlayer])
 	{
 		if (droid->isTransporter())
 		{
@@ -3276,7 +3282,7 @@ void emptyTransporters(bool bOffWorld)
 						//take it out of the Transporter group
 						psTransporter->psGroup->remove(psDroid);
 						//add it back into current droid lists
-						addDroid(psDroid, mission.apsDroidLists);
+						addDroid(psDroid, missionParkedHomeWorld().objects.droids);
 
 						return IterationResult::CONTINUE_ITERATION;
 					});
@@ -3294,7 +3300,7 @@ void emptyTransporters(bool bOffWorld)
 	});
 
 	//deal with any transporters that are waiting to come over
-	mutating_list_iterate(mission.apsDroidLists[selectedPlayer], [](DROID* psTransporter)
+	mutating_list_iterate(missionParkedHomeWorld().objects.droids[selectedPlayer], [](DROID* psTransporter)
 	{
 		if (psTransporter->isTransporter())
 		{
@@ -3308,7 +3314,7 @@ void emptyTransporters(bool bOffWorld)
 				//take it out of the Transporter group
 				psTransporter->psGroup->remove(psDroid);
 				//add it back into mission droid lists
-				addDroid(psDroid, mission.apsDroidLists);
+				addDroid(psDroid, missionParkedHomeWorld().objects.droids);
 
 				return IterationResult::CONTINUE_ITERATION;
 			});

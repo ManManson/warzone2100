@@ -2359,7 +2359,7 @@ void assignFactoryCommandDroid(STRUCTURE *psStruct, DROID *psCommander)
 		}
 		else
 		{
-			addFlagPositionToList(psFact->psAssemblyPoint, mission.apsFlagPosLists);
+			addFlagPositionToList(psFact->psAssemblyPoint, missionParkedHomeWorld().objects.flags);
 		}
 	}
 
@@ -2414,7 +2414,7 @@ void clearCommandDroidFactory(DROID *psDroid)
 			}
 		}
 	}
-	for (STRUCTURE* psCurr : mission.apsStructLists[selectedPlayer])
+	for (STRUCTURE* psCurr : missionParkedHomeWorld().objects.structures[selectedPlayer])
 	{
 		if ((psCurr->pStructureType->type == REF_FACTORY) ||
 		    (psCurr->pStructureType->type == REF_CYBORG_FACTORY) ||
@@ -2788,7 +2788,7 @@ bool structureExists(int player, STRUCTURE_TYPE type, bool built, bool isMission
 		return false;
 	}
 
-	StructureList* pList = isMission ? &mission.apsStructLists[player] : &apsStructLists[player];
+	StructureList* pList = isMission ? &missionParkedHomeWorld().objects.structures[player] : &apsStructLists[player];
 	for (const STRUCTURE *psCurr : *pList)
 	{
 		if (psCurr->pStructureType->type == type && (!built || (built && psCurr->status == SS_BUILT)))
@@ -3078,7 +3078,7 @@ static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
 		{
 			count1 += s == psStructure;
 		}
-		for (const STRUCTURE* s : mission.apsStructLists[psStructure->player])
+		for (const STRUCTURE* s : missionParkedHomeWorld().objects.structures[psStructure->player])
 		{
 			count2 += s == psStructure;
 		}
