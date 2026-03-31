@@ -38,22 +38,10 @@ typedef std::list<GATEWAY *> GATEWAY_LIST;
 
 struct GameWorld;
 
-/// Initialise the gateway system
-bool gwInitialise();
-
-/// Shutdown the gateway system
-void gwShutDown();
-
-/// Add a gateway to the system
-bool gwNewGateway(int x1, int y1, int x2, int y2);
-
-/// Get number of gateways.
-size_t gwNumGateways();
-
-/// Get the gateway list.
-GATEWAY_LIST &gwGetGateways();
-
-/// Gateway list for a specific world map (GAME_WORLD_REFACTORING_V2_IMPL §5.3).
+bool gwInitialise(GameWorld &world);
+void gwShutDown(GameWorld &world);
+bool gwNewGateway(GameWorld &world, int x1, int y1, int x2, int y2);
+size_t gwNumGateways(GameWorld &world);
 GATEWAY_LIST &gwGetGateways(GameWorld &world);
 
 #endif // __INCLUDED_SRC_GATEWAY_H__

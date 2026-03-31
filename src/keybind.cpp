@@ -29,6 +29,7 @@
 #include "levels.h"
 #include "basedef.h"
 #include "map.h"
+#include "game_world.h"
 #include "warcam.h"
 #include "warzoneconfig.h"
 #include "console.h"
@@ -326,11 +327,11 @@ void	kf_HalveHeights()
 {
 	MAPTILE	*psTile;
 
-	for (int j = 0; j < mapHeight; ++j)
+	for (int j = 0; j < activeGameWorld().map.height; ++j)
 	{
-		for (int i = 0; i < mapWidth; ++i)
+		for (int i = 0; i < activeGameWorld().map.width; ++i)
 		{
-			psTile = mapTile(i, j);
+			psTile = mapTile(activeGameWorld(), i, j);
 			psTile->height /= 2;
 		}
 	}
@@ -805,7 +806,7 @@ void	kf_TogglePower()
 /* Recalculates the lighting values for a tile */
 void	kf_RecalcLighting()
 {
-	initLighting(0, 0, mapWidth, mapHeight);
+	initLighting(0, 0, activeGameWorld().map.width, activeGameWorld().map.height);
 	addConsoleMessage(_("Lighting values for all tiles recalculated"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
 }
 
@@ -846,7 +847,7 @@ void	kf_AllAvailable()
 void	kf_TriFlip()
 {
 	MAPTILE	*psTile;
-	psTile = mapTile(mouseTileX, mouseTileY);
+	psTile = mapTile(activeGameWorld(), mouseTileX, mouseTileY);
 	TOGGLE_TRIFLIP(psTile);
 //	addConsoleMessage(_("Triangle flip status toggled"),DEFAULT_JUSTIFY,SYSTEM_MESSAGE);
 }
@@ -856,7 +857,7 @@ void	kf_TriFlip()
 /* Debug info about a map tile */
 void	kf_TileInfo()
 {
-	MAPTILE	*psTile = mapTile(mouseTileX, mouseTileY);
+	MAPTILE	*psTile = mapTile(activeGameWorld(), mouseTileX, mouseTileY);
 
 	debug(LOG_ERROR, "Tile position=(%d, %d) Terrain=%d Texture=%u Height=%d Illumination=%u",
 	      mouseTileX, mouseTileY, (int)terrainType(psTile), TileNumber_tile(psTile->texture), psTile->height,
@@ -920,7 +921,7 @@ void kf_MapCheck()
 
 	for (DROID* psDroid : apsDroidLists[selectedPlayer])
 	{
-		psDroid->pos.z = map_Height(psDroid->pos.x, psDroid->pos.y);
+		psDroid->pos.z = map_Height(activeGameWorld(), psDroid->pos.x, psDroid->pos.y);
 	}
 
 	for (STRUCTURE* psStruct : apsStructLists[selectedPlayer])
@@ -930,7 +931,7 @@ void kf_MapCheck()
 
 	for (auto& psFlag : apsFlagPosLists[selectedPlayer])
 	{
-		psFlag->coords.z = map_Height(psFlag->coords.x, psFlag->coords.y) + ASSEMBLY_POINT_Z_PADDING;
+		psFlag->coords.z = map_Height(activeGameWorld(), psFlag->coords.x, psFlag->coords.y) + ASSEMBLY_POINT_Z_PADDING;
 	}
 }
 
@@ -989,9 +990,9 @@ MappableFunction kf_RadarZoom(const int multiplier)
 // --------------------------------------------------------------------------
 void kf_MaxScrollLimits()
 {
-	scrollMinX = scrollMinY = 0;
-	scrollMaxX = mapWidth;
-	scrollMaxY = mapHeight;
+	activeGameWorld().map.scroll.minX = activeGameWorld().map.scroll.minY = 0;
+	activeGameWorld().map.scroll.maxX = activeGameWorld().map.width;
+	activeGameWorld().map.scroll.maxY = activeGameWorld().map.height;
 }
 
 // --------------------------------------------------------------------------

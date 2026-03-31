@@ -25,6 +25,7 @@
  */
 
 #include "lib/framework/frame.h"
+#include "game_world.h"
 #include "lib/framework/fixedpoint.h"
 #include "lib/framework/math_ext.h"
 #include "lib/netplay/sync_debug.h"
@@ -275,7 +276,7 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 		predict += Vector3i(iSinCosR(psDroid->sMove.moveDir, psDroid->sMove.speed * flightTime / GAME_TICKS_PER_SEC), 0);
 		if (!psDroid->isFlying() && !psDroid->isFlightBasedTransporter())
 		{
-			predict.z = map_Height(predict.xy());  // Predict that the object will be on the ground.
+			predict.z = map_Height(activeGameWorld(), predict.xy());  // Predict that the object will be on the ground.
 		}
 	}
 
@@ -327,8 +328,8 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 	}
 
 	// Make sure we don't pass any negative or out of bounds numbers to proj_SendProjectile
-	CLIP(predict.x, 0, world_coord(mapWidth - 1));
-	CLIP(predict.y, 0, world_coord(mapHeight - 1));
+	CLIP(predict.x, 0, world_coord(activeGameWorld().map.width - 1));
+	CLIP(predict.y, 0, world_coord(activeGameWorld().map.height - 1));
 
 	proj_SendProjectileAngled(psWeap, psAttacker, psAttacker->player, predict, psTarget, bVisibleAnyway, weapon_slot, min_angle, fireTime);
 	return true;

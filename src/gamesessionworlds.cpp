@@ -66,3 +66,19 @@ GameWorld &missionParkedHomeWorld()
 	}
 	return *s.primary;
 }
+
+void ensureOffworldWorld()
+{
+	GameSessionWorlds &s = GameSessionWorlds::instance();
+	if (!s.offworld)
+	{
+		s.offworld = std::make_unique<GameWorld>();
+		s.offworld->debugName = "offworld";
+	}
+}
+
+GameWorld &offworldWorld()
+{
+	ensureOffworldWorld();
+	return *GameSessionWorlds::instance().offworld;
+}

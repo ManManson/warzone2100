@@ -44,6 +44,8 @@
 #include "qtscript.h"
 #include "order.h"
 #include "wzcrashhandlingproviders.h"
+#include "game_world.h"
+#include "gamesessionworlds.h"
 
 #include <algorithm>
 
@@ -468,6 +470,109 @@ static inline void releaseAllObjectsInList(PerPlayerObjectLists<OBJECT, MAX_PLAY
  * The actual object memory management functions for the different object types
  */
 
+static GameWorld *worldForGlobalSimLists()
+{
+	GameSessionWorlds &gsw = GameSessionWorlds::instance();
+	if (gsw.mode != WorldSessionMode::CampaignDual)
+	{
+		return &activeGameWorld();
+	}
+	return missionMapSlotsInvertedForWorldBinding() ? &missionParkedHomeWorld() : &activeGameWorld();
+}
+
+static GameWorld *worldForParkedHomeObjectLists()
+{
+	GameSessionWorlds &gsw = GameSessionWorlds::instance();
+	if (gsw.mode != WorldSessionMode::CampaignDual)
+	{
+		return &missionParkedHomeWorld();
+	}
+	return missionMapSlotsInvertedForWorldBinding() ? &offworldWorld() : &missionParkedHomeWorld();
+}
+
+static void assignOwningWorldForDroid(DROID *d, PerPlayerDroidLists &pList)
+{
+	if (&pList == &apsDroidLists)
+	{
+		d->owningWorld = worldForGlobalSimLists();
+	}
+	else if (&pList == &missionParkedHomeWorld().objects.droids)
+	{
+		d->owningWorld = worldForParkedHomeObjectLists();
+	}
+	else if (&pList == &apsLimboDroids)
+	{
+		d->owningWorld = nullptr;
+	}
+	else
+	{
+		debug(LOG_ERROR, "addDroid: unknown PerPlayerDroidLists");
+		d->owningWorld = nullptr;
+	}
+}
+
+void objmemRefreshOwningWorldsForCampaignLists()
+{
+	GameSessionWorlds &gsw = GameSessionWorlds::instance();
+	if (gsw.mode != WorldSessionMode::CampaignDual)
+	{
+		return;
+	}
+	GameWorld *const gW = worldForGlobalSimLists();
+	GameWorld *const pW = worldForParkedHomeObjectLists();
+	for (unsigned i = 0; i < MAX_PLAYERS; ++i)
+	{
+		for (DROID *d : apsDroidLists[i])
+		{
+			d->owningWorld = gW;
+		}
+		for (DROID *d : missionParkedHomeWorld().objects.droids[i])
+		{
+			d->owningWorld = pW;
+		}
+		for (STRUCTURE *s : apsStructLists[i])
+		{
+			s->owningWorld = gW;
+		}
+		for (STRUCTURE *s : missionParkedHomeWorld().objects.structures[i])
+		{
+			s->owningWorld = pW;
+		}
+		for (STRUCTURE *s : apsExtractorLists[i])
+		{
+			s->owningWorld = gW;
+		}
+		for (STRUCTURE *s : missionParkedHomeWorld().objects.extractors[i])
+		{
+			s->owningWorld = pW;
+		}
+		for (FEATURE *f : apsFeatureLists[i])
+		{
+			f->owningWorld = gW;
+		}
+		for (FEATURE *f : missionParkedHomeWorld().objects.features[i])
+		{
+			f->owningWorld = pW;
+		}
+	}
+	for (BASE_OBJECT *o : apsSensorList[0])
+	{
+		o->owningWorld = gW;
+	}
+	for (BASE_OBJECT *o : missionParkedHomeWorld().objects.sensors[0])
+	{
+		o->owningWorld = pW;
+	}
+	for (FEATURE *f : apsOilList[0])
+	{
+		f->owningWorld = gW;
+	}
+	for (FEATURE *f : missionParkedHomeWorld().objects.oils[0])
+	{
+		f->owningWorld = pW;
+	}
+}
+
 /***************************  DROID  *********************************/
 
 /* add the droid to the Droid Lists */
@@ -475,6 +580,7 @@ void addDroid(DROID *psDroidToAdd, PerPlayerDroidLists& pList)
 {
 	DROID_GROUP	*psGroup;
 
+	assignOwningWorldForDroid(psDroidToAdd, pList);
 	addObjectToList(pList, psDroidToAdd, psDroidToAdd->player);
 
 	/* Whenever a droid gets added to a list other than the current list
@@ -630,6 +736,7 @@ void removeDroid(DROID* psDroidToRemove, PerPlayerDroidLists& pList)
 			removeObjectFromFuncList(missionParkedHomeWorld().objects.sensors, (BASE_OBJECT*)psDroidToRemove, 0);
 		}
 	}
+	psDroidToRemove->owningWorld = nullptr;
 }
 
 /*Removes all droids that may be stored in the mission lists*/
@@ -649,6 +756,7 @@ void freeAllLimboDroids()
 /* add the structure to the Structure Lists */
 void addStructure(STRUCTURE *psStructToAdd)
 {
+	psStructToAdd->owningWorld = worldForGlobalSimLists();
 	addObjectToList(apsStructLists, psStructToAdd, psStructToAdd->player);
 	if (psStructToAdd->pStructureType->pSensor
 	    && psStructToAdd->pStructureType->pSensor->location == LOC_TURRET)
@@ -744,6 +852,7 @@ void removeStructureFromList(STRUCTURE *psStructToRemove, PerPlayerStructureList
 	{
 		removeObjectFromFuncList(apsExtractorLists, psStructToRemove, psStructToRemove->player);
 	}
+	psStructToRemove->owningWorld = nullptr;
 }
 
 /**************************  FEATURE  *********************************/
@@ -751,6 +860,7 @@ void removeStructureFromList(STRUCTURE *psStructToRemove, PerPlayerStructureList
 /* add the feature to the Feature Lists */
 void addFeature(FEATURE *psFeatureToAdd)
 {
+	psFeatureToAdd->owningWorld = worldForGlobalSimLists();
 	addObjectToList(apsFeatureLists, psFeatureToAdd, 0);
 	if (psFeatureToAdd->psStats->subType == FEAT_OIL_RESOURCE)
 	{

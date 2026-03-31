@@ -22,6 +22,7 @@
 #define __INCLUDED_SRC_GEOMETRY_H__
 
 #include "map.h"
+#include "game_world.h"
 
 struct QUAD
 {
@@ -34,40 +35,8 @@ Vector2i positionInQuad(Vector2i const &pt, QUAD const &quad);
 DROID *getNearestDroid(UDWORD x, UDWORD y, bool bSelected);
 bool objectOnScreen(const BASE_OBJECT *object, SDWORD tolerance);
 
-static inline STRUCTURE *getTileStructure(UDWORD x, UDWORD y)
-{
-	BASE_OBJECT *psObj = mapTile(x, y)->psObject;
-	if (psObj && psObj->type == OBJ_STRUCTURE)
-	{
-		return (STRUCTURE *)psObj;
-	}
-	return nullptr;
-}
-
-static inline FEATURE *getTileFeature(UDWORD x, UDWORD y)
-{
-	BASE_OBJECT *psObj = mapTile(x, y)->psObject;
-	if (psObj && psObj->type == OBJ_FEATURE)
-	{
-		return (FEATURE *)psObj;
-	}
-	return nullptr;
-}
-
-/// WARNING: Returns NULL if tile not visible to selectedPlayer.
-/// Must *NOT* be used for anything game-state/simulation-calculation related
-static inline BASE_OBJECT *getTileOccupier(UDWORD x, UDWORD y)
-{
-	MAPTILE *psTile = mapTile(x, y);
-
-	if (TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(psTile))
-	{
-		return mapTile(x, y)->psObject;
-	}
-	else
-	{
-		return nullptr;
-	}
-}
+STRUCTURE *getTileStructure(GameWorld &world, UDWORD x, UDWORD y);
+FEATURE *getTileFeature(GameWorld &world, UDWORD x, UDWORD y);
+BASE_OBJECT *getTileOccupier(GameWorld &world, UDWORD x, UDWORD y);
 
 #endif // __INCLUDED_SRC_GEOMETRY_H__

@@ -36,6 +36,7 @@
 #include "lib/framework/object_list_iteration.h"
 #include "lib/ivis_opengl/piepalette.h" // for pal_Init()
 #include "map.h"
+#include "game_world.h"
 
 #include "game.h"									// for loading maps
 #include "hci.h"
@@ -503,9 +504,9 @@ bool multiplayerWinSequence(bool firstCall)
 			pos2.x = 128;
 		}
 
-		if ((unsigned)pos2.x > world_coord(mapWidth))
+		if ((unsigned)pos2.x > world_coord(activeGameWorld().map.width))
 		{
-			pos2.x = world_coord(mapWidth);
+			pos2.x = world_coord(activeGameWorld().map.width);
 		}
 
 		if (pos2.z < 0)
@@ -513,9 +514,9 @@ bool multiplayerWinSequence(bool firstCall)
 			pos2.z = 128;
 		}
 
-		if ((unsigned)pos2.z > world_coord(mapHeight))
+		if ((unsigned)pos2.z > world_coord(activeGameWorld().map.height))
 		{
-			pos2.z = world_coord(mapHeight);
+			pos2.z = world_coord(activeGameWorld().map.height);
 		}
 
 		addEffect(&pos2, EFFECT_FIREWORK, FIREWORK_TYPE_LAUNCHER, false, nullptr, 0);	// throw up some fire works.
@@ -996,8 +997,8 @@ Vector3i cameraToHome(UDWORD player, bool scroll, bool fromSave)
 	}
 	else														//or map center.
 	{
-		x = mapWidth / 2;
-		y = mapHeight / 2;
+		x = activeGameWorld().map.width / 2;
+		y = activeGameWorld().map.height / 2;
 	}
 
 
@@ -1012,7 +1013,7 @@ Vector3i cameraToHome(UDWORD player, bool scroll, bool fromSave)
 
 	Vector3i res;
 	res.x = world_coord(x);
-	res.y = map_TileHeight(x, y);
+	res.y = map_TileHeight(activeGameWorld(), x, y);
 	res.z = world_coord(y);
 	return res;
 }
@@ -2562,7 +2563,7 @@ VIEWDATA *CreateBeaconViewData(SDWORD sender, UDWORD LocX, UDWORD LocY)
 	((VIEW_PROXIMITY *)psViewData->pData)->y = (UDWORD)LocY;
 
 	//check the z value is at least the height of the terrain
-	height = map_Height(LocX, LocY);
+	height = map_Height(activeGameWorld(), LocX, LocY);
 
 	((VIEW_PROXIMITY *)psViewData->pData)->z = height;
 

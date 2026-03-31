@@ -53,6 +53,7 @@
 #include "objects.h"
 #include "loop.h"
 #include "map.h"
+#include "game_world.h"
 #include "radar.h"
 
 #include "display3d.h"
@@ -1703,8 +1704,8 @@ void drawRadarBlips(int radarX, int radarY, float pixSizeH, float pixSizeV, cons
 	static const uint16_t *const imagesProxTypes[] = {imagesEnemy, imagesResource, imagesArtifact};
 
 	// store the width & height of the radar/mini-map
-	width = scrollMaxX - scrollMinX;
-	height = scrollMaxY - scrollMinY;
+	width = activeGameWorld().map.scroll.maxX - activeGameWorld().map.scroll.minX;
+	height = activeGameWorld().map.scroll.maxY - activeGameWorld().map.scroll.minY;
 
 	/* Go through all the proximity Displays */
 	if (selectedPlayer < MAX_PLAYERS)
@@ -1736,7 +1737,7 @@ void drawRadarBlips(int radarX, int radarY, float pixSizeH, float pixSizeV, cons
 				if (psFeature && psFeature->psStats && psFeature->psStats->subType == FEAT_OIL_RESOURCE)
 				{
 					images = imagesResource;
-					if (fireOnLocation(psFeature->pos.x, psFeature->pos.y))
+					if (fireOnLocation(activeGameWorld(), psFeature->pos.x, psFeature->pos.y))
 					{
 						images = imagesBurningResource;
 						animationLength = ARRAY_SIZE(imagesBurningResource) - 1;  // Longer animation for burning oil wells.
@@ -1769,13 +1770,13 @@ void drawRadarBlips(int radarX, int radarY, float pixSizeH, float pixSizeV, cons
 			{
 				const VIEW_PROXIMITY* psViewProx = (VIEW_PROXIMITY*)psProxDisp->psMessage->pViewData->pData;
 
-				x = static_cast<int>((psViewProx->x / TILE_UNITS - scrollMinX) * pixSizeH);
-				y = static_cast<int>((psViewProx->y / TILE_UNITS - scrollMinY) * pixSizeV);
+				x = static_cast<int>((psViewProx->x / TILE_UNITS - activeGameWorld().map.scroll.minX) * pixSizeH);
+				y = static_cast<int>((psViewProx->y / TILE_UNITS - activeGameWorld().map.scroll.minY) * pixSizeV);
 			}
 			else if (psProxDisp->type == POS_PROXOBJ)
 			{
-				x = static_cast<int>((psProxDisp->psMessage->psObj->pos.x / TILE_UNITS - scrollMinX) * pixSizeH);
-				y = static_cast<int>((psProxDisp->psMessage->psObj->pos.y / TILE_UNITS - scrollMinY) * pixSizeV);
+				x = static_cast<int>((psProxDisp->psMessage->psObj->pos.x / TILE_UNITS - activeGameWorld().map.scroll.minX) * pixSizeH);
+				y = static_cast<int>((psProxDisp->psMessage->psObj->pos.y / TILE_UNITS - activeGameWorld().map.scroll.minY) * pixSizeV);
 			}
 			else
 			{
@@ -1798,8 +1799,8 @@ void drawRadarBlips(int radarX, int radarY, float pixSizeH, float pixSizeV, cons
 	{
 		unsigned        animationLength = ARRAY_SIZE(imagesEnemy) - 1;
 		int             strobe = (realTime / delay) % animationLength;
-		x = static_cast<int>((x / TILE_UNITS - scrollMinX) * pixSizeH);
-		y = static_cast<int>((y / TILE_UNITS - scrollMinY) * pixSizeV);
+		x = static_cast<int>((x / TILE_UNITS - activeGameWorld().map.scroll.minX) * pixSizeH);
+		y = static_cast<int>((y / TILE_UNITS - activeGameWorld().map.scroll.minY) * pixSizeV);
 		imageID = imagesEnemy[strobe];
 
 		// NOTE:  On certain missions (limbo & expand), there is still valid data that is stored outside the

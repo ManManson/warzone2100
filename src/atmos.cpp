@@ -32,6 +32,7 @@
 #include "effects.h"
 #include "loop.h"
 #include "map.h"
+#include "game_world.h"
 #include "miscimd.h"
 #include "profiling.h"
 #include "lib/gamelib/gtime.h"
@@ -135,8 +136,8 @@ static void processParticle(ATPART *psPart)
 
 		/* If it's gone off the WORLD... */
 		if (psPart->position.x < 0 || psPart->position.z < 0 ||
-		    psPart->position.x > ((mapWidth - 1)*TILE_UNITS) ||
-		    psPart->position.z > ((mapHeight - 1)*TILE_UNITS))
+		    psPart->position.x > ((activeGameWorld().map.width - 1)*TILE_UNITS) ||
+		    psPart->position.z > ((activeGameWorld().map.height - 1)*TILE_UNITS))
 		{
 			/* The kill it */
 			psPart->status = APS_INACTIVE;
@@ -147,7 +148,7 @@ static void processParticle(ATPART *psPart)
 		if (psPart->position.y < TILE_MAX_HEIGHT)
 		{
 			/* Get ground height */
-			groundHeight = map_Height(static_cast<int>(psPart->position.x), static_cast<int>(psPart->position.z));
+			groundHeight = map_Height(activeGameWorld(), static_cast<int>(psPart->position.x), static_cast<int>(psPart->position.z));
 
 			/* Are we below ground? */
 			if ((int)psPart->position.y < groundHeight
@@ -159,7 +160,7 @@ static void processParticle(ATPART *psPart)
 				{
 					x = map_coord(static_cast<int32_t>(psPart->position.x));
 					y = map_coord(static_cast<int32_t>(psPart->position.z));
-					psTile = mapTile(x, y);
+					psTile = mapTile(activeGameWorld(), x, y);
 					if (terrainType(psTile) == TER_WATER && TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(psTile)) // display-only check for adding effect
 					{
 						pos.x = static_cast<int>(psPart->position.x);
@@ -298,8 +299,8 @@ void atmosUpdateSystem()
 
 			/* If we've got one on the grid */
 			if (pos.x > 0 && pos.z > 0 &&
-			    pos.x < (SDWORD)world_coord(mapWidth - 1) &&
-			    pos.z < (SDWORD)world_coord(mapHeight - 1))
+			    pos.x < (SDWORD)world_coord(activeGameWorld().map.width - 1) &&
+			    pos.z < (SDWORD)world_coord(activeGameWorld().map.height - 1))
 			{
 				/* On grid, so which particle shall we add? */
 				switch (weather)

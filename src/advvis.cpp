@@ -28,6 +28,7 @@
 #include "advvis.h"
 #include "profiling.h"
 #include "map.h"
+#include "game_world.h"
 
 // ------------------------------------------------------------------------------------
 #define FADE_IN_TIME	(GAME_TICKS_PER_SEC/10)
@@ -48,7 +49,7 @@ inline float getTileIllumination(const MAPTILE *psTile)
 void	avUpdateTiles()
 {
 	WZ_PROFILE_SCOPE(avUpdateTiles);
-	const int len = mapHeight * mapWidth;
+	const int len = activeGameWorld().map.height * activeGameWorld().map.width;
 	const int playermask = 1 << selectedPlayer;
 	UDWORD i = 0;
 	float maxLevel, increment = graphicsTimeAdjustedIncrement(FADE_IN_TIME);	// call once per frame
@@ -59,7 +60,7 @@ void	avUpdateTiles()
 	/* Go through the tiles */
 	for (; i < len; i++)
 	{
-		psTile = &psMapTiles[i];
+		psTile = &activeGameWorld().map.tiles[i];
 		maxLevel = getTileIllumination(psTile);
 
 		if (psTile->level > MIN_ILLUM || psTile->tileExploredBits & playermask)	// seen
@@ -112,11 +113,11 @@ void	setRevealStatus(bool val)
 // ------------------------------------------------------------------------------------
 void	preProcessVisibility()
 {
-	for (int i = 0; i < mapWidth; i++)
+	for (int i = 0; i < activeGameWorld().map.width; i++)
 	{
-		for (int j = 0; j < mapHeight; j++)
+		for (int j = 0; j < activeGameWorld().map.height; j++)
 		{
-			MAPTILE *psTile = mapTile(i, j);
+			MAPTILE *psTile = mapTile(activeGameWorld(), i, j);
 			psTile->level = bRevealActive ? MIN(MIN_ILLUM, getTileIllumination(psTile) / 4.0f) : 0;
 
 			if (TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(psTile))

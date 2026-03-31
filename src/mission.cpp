@@ -23,8 +23,11 @@
  * All the stuff relevant to a mission.
  */
 #include <time.h>
+#include <algorithm>
 
 #include "mission.h"
+#include "objmem.h"
+#include "game_world.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/wzapp.h"
@@ -148,6 +151,9 @@ static UBYTE   missionCountDown;
 //flag to indicate whether the coded mission countdown is played
 static UBYTE   bPlayCountDown;
 
+// Odd number of swapMissionPointers() calls inverts which slot holds home vs mission map/objects.
+static bool    g_swapMissionMapSlotsInverted = false;
+
 //FUNCTIONS**************
 static void addLandingLights(UDWORD x, UDWORD y);
 static void resetHomeStructureObjects();
@@ -165,6 +171,7 @@ static void endMissionOffKeepLimbo();
 static void endMissionExpandLimbo();
 
 static void saveMissionData();
+static void ensureCanonicalMissionMapSlotsBeforeRestore();
 static void restoreMissionData();
 static void saveCampaignData();
 static void missionResetDroids();
@@ -309,6 +316,8 @@ void initMission()
 	//start as not cheating!
 	mission.cheatTime = 0;
 
+	g_swapMissionMapSlotsInverted = false;
+
 	// Session: parked campaign home lives in primary; bind active for activeGameWorld() (see GAME_WORLD_REFACTORING_V2_IMPL §4.6).
 	GameSessionWorlds &gsw = GameSessionWorlds::instance();
 	ASSERT(gsw.primary != nullptr, "initMission: primary must exist after missionParkedHomeWorld() use");
@@ -335,12 +344,14 @@ bool missionShutDown()
 		//clear out the audio
 		audio_StopAll();
 
+		ensureCanonicalMissionMapSlotsBeforeRestore();
+
 		freeAllDroids();
 		freeAllStructs();
 		freeAllFeatures();
 		freeAllFlagPositions();
 		releaseAllProxDisp();
-		gwShutDown();
+		gwShutDown(activeGameWorld());
 
 		for (int inc = 0; inc < MAX_PLAYERS; inc++)
 		{
@@ -360,18 +371,15 @@ bool missionShutDown()
 		missionParkedHomeWorld().objects.sensors[0].clear();
 		missionParkedHomeWorld().objects.oils[0].clear();
 
-		psMapTiles = std::move(missionParkedHomeWorld().map.tiles);
-		mapWidth = missionParkedHomeWorld().map.width;
-		mapHeight = missionParkedHomeWorld().map.height;
-		for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.blockMap); ++i)
-		{
-			psBlockMap[i] = std::move(missionParkedHomeWorld().map.blockMap[i]);
-		}
-		for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.auxMap); ++i)
-		{
-			psAuxMap[i] = std::move(missionParkedHomeWorld().map.auxMap[i]);
-		}
-		std::swap(missionParkedHomeWorld().map.gateways, gwGetGateways());
+		ensureOffworldWorld();
+		GameWorld &parked = missionParkedHomeWorld();
+		GameWorld &live = offworldWorld();
+		// Home map remained in primary (parked) during the mission; offworld holds the mission map.
+		// Clear the mission map and bind active to primary — do not move home into offworld (that
+		// emptied primary and broke missionParkedHomeWorld().map for the next offworld transition).
+		live.map = WorldMapState();
+		GameSessionWorlds::instance().setMode(WorldSessionMode::Solo);
+		bindActiveWorld(parked);
 	}
 	keybindShutdown();
 	// sorry if this breaks something - but it looks like it's what should happen - John
@@ -628,7 +636,7 @@ void missionFlyTransportersIn(SDWORD iPlayer, bool bTrackTransporter)
 	iLandX = getLandingX(iPlayer);
 	iLandY = getLandingY(iPlayer);
 	missionGetTransporterEntry(iPlayer, &iX, &iY);
-	iZ = (UWORD)(map_Height(iX, iY) + OFFSCREEN_HEIGHT);
+	iZ = (UWORD)(map_Height(activeGameWorld(), iX, iY) + OFFSCREEN_HEIGHT);
 
 	//get the droids for the mission
 	mutating_list_iterate(missionParkedHomeWorld().objects.droids[iPlayer], [iPlayer, bTrackTransporter, iX, iY, iZ, iLandX, iLandY](DROID* psTransporter)
@@ -777,23 +785,11 @@ static void saveMissionData()
 
 	resetHomeStructureObjects(); //get rid of soon-to-be illegal references of droids in repair facilities and rearming pads.
 
-	//save the mission data
-	missionParkedHomeWorld().map.tiles = std::move(psMapTiles);
-	missionParkedHomeWorld().map.width = mapWidth;
-	missionParkedHomeWorld().map.height = mapHeight;
-	for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.blockMap); ++i)
-	{
-		missionParkedHomeWorld().map.blockMap[i] = std::move(psBlockMap[i]);
-	}
-	for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.auxMap); ++i)
-	{
-		missionParkedHomeWorld().map.auxMap[i] = std::move(psAuxMap[i]);
-	}
-	missionParkedHomeWorld().map.scroll.minX = scrollMinX;
-	missionParkedHomeWorld().map.scroll.minY = scrollMinY;
-	missionParkedHomeWorld().map.scroll.maxX = scrollMaxX;
-	missionParkedHomeWorld().map.scroll.maxY = scrollMaxY;
-	std::swap(missionParkedHomeWorld().map.gateways, gwGetGateways());
+	// Park home in primary.map; bind active to empty offworld so loadGame fills mission map there.
+	ensureOffworldWorld();
+	GameSessionWorlds &gsw = GameSessionWorlds::instance();
+	gsw.setMode(WorldSessionMode::CampaignDual);
+	gsw.setActiveToOffworld();
 	// save the selectedPlayer's LZ
 	mission.homeLZ_X = getLandingX(selectedPlayer);
 	mission.homeLZ_Y = getLandingY(selectedPlayer);
@@ -831,11 +827,37 @@ static void saveMissionData()
 	i.e. We shoudn't have called SwapMissionPointers()
 
 */
-void restoreMissionData()
+bool missionMapSlotsInvertedForWorldBinding()
+{
+	return g_swapMissionMapSlotsInverted;
+}
+
+void missionResetSwapMissionMapSlotsParity()
+{
+	g_swapMissionMapSlotsInverted = false;
+}
+
+static void ensureCanonicalMissionMapSlotsBeforeRestore()
+{
+	GameSessionWorlds &gsw = GameSessionWorlds::instance();
+	if (gsw.mode != WorldSessionMode::CampaignDual)
+	{
+		return;
+	}
+	if (!g_swapMissionMapSlotsInverted)
+	{
+		return;
+	}
+	swapMissionPointers();
+}
+
+static void restoreMissionData()
 {
 	UDWORD		inc;
 
 	debug(LOG_SAVE, "called");
+
+	ensureCanonicalMissionMapSlotsBeforeRestore();
 
 	//clear out the audio
 	audio_StopAll();
@@ -846,7 +868,7 @@ void restoreMissionData()
 	freeAllStructs();
 	freeAllFeatures();
 	freeAllFlagPositions();
-	gwShutDown();
+	gwShutDown(activeGameWorld());
 	if (game.type != LEVEL_TYPE::CAMPAIGN)
 	{
 		ASSERT(false, "game type isn't campaign, but we are in a campaign game!");
@@ -879,33 +901,15 @@ void restoreMissionData()
 	missionParkedHomeWorld().objects.sensors[0].clear();
 	apsOilList[0].clear();
 	//swap mission data over
-
-	psMapTiles = std::move(missionParkedHomeWorld().map.tiles);
-
-	mapWidth = missionParkedHomeWorld().map.width;
-	mapHeight = missionParkedHomeWorld().map.height;
-	for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.blockMap); ++i)
-	{
-		psBlockMap[i] = std::move(missionParkedHomeWorld().map.blockMap[i]);
-	}
-	for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.auxMap); ++i)
-	{
-		psAuxMap[i] = std::move(missionParkedHomeWorld().map.auxMap[i]);
-	}
-	scrollMinX = missionParkedHomeWorld().map.scroll.minX;
-	scrollMinY = missionParkedHomeWorld().map.scroll.minY;
-	scrollMaxX = missionParkedHomeWorld().map.scroll.maxX;
-	scrollMaxY = missionParkedHomeWorld().map.scroll.maxY;
-	std::swap(missionParkedHomeWorld().map.gateways, gwGetGateways());
-	//and clear the mission pointers
-	missionParkedHomeWorld().map.tiles	= nullptr;
-	missionParkedHomeWorld().map.width	= 0;
-	missionParkedHomeWorld().map.height	= 0;
-	missionParkedHomeWorld().map.scroll.minX	= 0;
-	missionParkedHomeWorld().map.scroll.minY	= 0;
-	missionParkedHomeWorld().map.scroll.maxX	= 0;
-	missionParkedHomeWorld().map.scroll.maxY	= 0;
-	missionParkedHomeWorld().map.gateways.clear();
+	ensureOffworldWorld();
+	GameWorld &parked = missionParkedHomeWorld();
+	GameWorld &live = offworldWorld();
+	// Home map stayed in primary during the mission; offworld had the mission map. Drop mission data
+	// from offworld and bind active to primary so terrain/radar match home and saveMissionData sees
+	// the home map in missionParkedHomeWorld().map again.
+	live.map = WorldMapState();
+	GameSessionWorlds::instance().setMode(WorldSessionMode::Solo);
+	bindActiveWorld(parked);
 
 	//reset the current structure lists
 	setCurrentStructQuantity(false);
@@ -993,8 +997,8 @@ void placeLimboDroids()
 			}
 			psDroid->pos.x = (UWORD)world_coord(droidX);
 			psDroid->pos.y = (UWORD)world_coord(droidY);
-			ASSERT(worldOnMap(psDroid->pos.x, psDroid->pos.y), "limbo droid is not on the map");
-			psDroid->pos.z = map_Height(psDroid->pos.x, psDroid->pos.y);
+			ASSERT(worldOnMap(activeGameWorld(), psDroid->pos.x, psDroid->pos.y), "limbo droid is not on the map");
+			psDroid->pos.z = map_Height(activeGameWorld(), psDroid->pos.x, psDroid->pos.y);
 			updateDroidOrientation(psDroid);
 			psDroid->selected = false;
 			//this is mainly for VTOLs
@@ -1327,7 +1331,7 @@ static void processMission()
 			x = (UWORD)world_coord(droidX);
 			y = (UWORD)world_coord(droidY);
 			droidSetPosition(psDroid, x, y);
-			ASSERT(worldOnMap(psDroid->pos.x, psDroid->pos.y), "the droid is not on the map");
+			ASSERT(worldOnMap(activeGameWorld(), psDroid->pos.x, psDroid->pos.y), "the droid is not on the map");
 			updateDroidOrientation(psDroid);
 			// Swap the droid and map pointers back again
 			swapMissionPointers();
@@ -1391,23 +1395,9 @@ void swapMissionPointers()
 {
 	debug(LOG_SAVE, "called");
 
-	std::swap(psMapTiles, missionParkedHomeWorld().map.tiles);
-	std::swap(mapWidth,   missionParkedHomeWorld().map.width);
-	std::swap(mapHeight,  missionParkedHomeWorld().map.height);
-	for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.blockMap); ++i)
-	{
-		std::swap(psBlockMap[i], missionParkedHomeWorld().map.blockMap[i]);
-	}
-	for (int i = 0; i < ARRAY_SIZE(missionParkedHomeWorld().map.auxMap); ++i)
-	{
-		std::swap(psAuxMap[i],   missionParkedHomeWorld().map.auxMap[i]);
-	}
-	//swap gateway zones
-	std::swap(missionParkedHomeWorld().map.gateways, gwGetGateways());
-	std::swap(scrollMinX, missionParkedHomeWorld().map.scroll.minX);
-	std::swap(scrollMinY, missionParkedHomeWorld().map.scroll.minY);
-	std::swap(scrollMaxX, missionParkedHomeWorld().map.scroll.maxX);
-	std::swap(scrollMaxY, missionParkedHomeWorld().map.scroll.maxY);
+	ensureOffworldWorld();
+	g_swapMissionMapSlotsInverted = !g_swapMissionMapSlotsInverted;
+	std::swap(missionParkedHomeWorld().map, offworldWorld().map);
 	for (unsigned inc = 0; inc < MAX_PLAYERS; inc++)
 	{
 		std::swap(apsDroidLists[inc],     missionParkedHomeWorld().objects.droids[inc]);
@@ -1418,6 +1408,8 @@ void swapMissionPointers()
 	}
 	std::swap(apsSensorList[0], missionParkedHomeWorld().objects.sensors[0]);
 	std::swap(apsOilList[0],    missionParkedHomeWorld().objects.oils[0]);
+
+	objmemRefreshOwningWorldsForCampaignLists();
 }
 
 void endMission()
@@ -1722,8 +1714,8 @@ static void missionResetDroids()
 				// check the droid is a reasonable distance from the edge of the map
 				if (psDroid->pos.x <= world_coord(EDGE_SIZE) ||
 					psDroid->pos.y <= world_coord(EDGE_SIZE) ||
-					psDroid->pos.x >= world_coord(mapWidth - EDGE_SIZE) ||
-					psDroid->pos.y >= world_coord(mapHeight - EDGE_SIZE))
+					psDroid->pos.x >= world_coord(activeGameWorld().map.width - EDGE_SIZE) ||
+					psDroid->pos.y >= world_coord(activeGameWorld().map.height - EDGE_SIZE))
 				{
 					debug(LOG_ERROR, "missionResetUnits: unit too close to edge of map - removing");
 					vanishDroid(psDroid);
@@ -2819,7 +2811,7 @@ static inline void addLandingLight(int x, int y, LAND_LIGHT_SPEC spec, bool lit)
 
 	pos.x = x;
 	pos.z = y;
-	pos.y = map_Height(x, y) + AboveGround;
+	pos.y = map_Height(activeGameWorld(), x, y) + AboveGround;
 
 	effectSetLandLightSpec(spec);
 
@@ -2847,8 +2839,8 @@ bool withinLandingZone(UDWORD x, UDWORD y)
 {
 	UDWORD		inc;
 
-	ASSERT(x < mapWidth, "withinLandingZone: x coord bigger than mapWidth");
-	ASSERT(y < mapHeight, "withinLandingZone: y coord bigger than mapHeight");
+	ASSERT(x < activeGameWorld().map.width, "withinLandingZone: x coord bigger than mapWidth");
+	ASSERT(y < activeGameWorld().map.height, "withinLandingZone: y coord bigger than mapHeight");
 
 
 	for (inc = 0; inc < MAX_NOGO_AREAS; inc++)
@@ -2894,24 +2886,24 @@ void missionSetTransporterEntry(SDWORD iPlayer, SDWORD iEntryTileX, SDWORD iEntr
 {
 	ASSERT_OR_RETURN(, iPlayer < MAX_PLAYERS, "missionSetTransporterEntry: player %i too high", iPlayer);
 
-	if ((iEntryTileX > scrollMinX) && (iEntryTileX < scrollMaxX))
+	if ((iEntryTileX > activeGameWorld().map.scroll.minX) && (iEntryTileX < activeGameWorld().map.scroll.maxX))
 	{
 		mission.iTranspEntryTileX[iPlayer] = (UWORD) iEntryTileX;
 	}
 	else
 	{
-		debug(LOG_SAVE, "entry point x %i outside scroll limits %i->%i", iEntryTileX, scrollMinX, scrollMaxX);
-		mission.iTranspEntryTileX[iPlayer] = (UWORD)(scrollMinX + EDGE_SIZE);
+		debug(LOG_SAVE, "entry point x %i outside scroll limits %i->%i", iEntryTileX, activeGameWorld().map.scroll.minX, activeGameWorld().map.scroll.maxX);
+		mission.iTranspEntryTileX[iPlayer] = (UWORD)(activeGameWorld().map.scroll.minX + EDGE_SIZE);
 	}
 
-	if ((iEntryTileY > scrollMinY) && (iEntryTileY < scrollMaxY))
+	if ((iEntryTileY > activeGameWorld().map.scroll.minY) && (iEntryTileY < activeGameWorld().map.scroll.maxY))
 	{
 		mission.iTranspEntryTileY[iPlayer] = (UWORD) iEntryTileY;
 	}
 	else
 	{
-		debug(LOG_SAVE, "entry point y %i outside scroll limits %i->%i", iEntryTileY, scrollMinY, scrollMaxY);
-		mission.iTranspEntryTileY[iPlayer] = (UWORD)(scrollMinY + EDGE_SIZE);
+		debug(LOG_SAVE, "entry point y %i outside scroll limits %i->%i", iEntryTileY, activeGameWorld().map.scroll.minY, activeGameWorld().map.scroll.maxY);
+		mission.iTranspEntryTileY[iPlayer] = (UWORD)(activeGameWorld().map.scroll.minY + EDGE_SIZE);
 	}
 }
 
@@ -2919,24 +2911,24 @@ void missionSetTransporterExit(SDWORD iPlayer, SDWORD iExitTileX, SDWORD iExitTi
 {
 	ASSERT_OR_RETURN(, iPlayer < MAX_PLAYERS, "missionSetTransporterExit: player %i too high", iPlayer);
 
-	if ((iExitTileX > scrollMinX) && (iExitTileX < scrollMaxX))
+	if ((iExitTileX > activeGameWorld().map.scroll.minX) && (iExitTileX < activeGameWorld().map.scroll.maxX))
 	{
 		mission.iTranspExitTileX[iPlayer] = (UWORD) iExitTileX;
 	}
 	else
 	{
-		debug(LOG_SAVE, "entry point x %i outside scroll limits %i->%i", iExitTileX, scrollMinX, scrollMaxX);
-		mission.iTranspExitTileX[iPlayer] = (UWORD)(scrollMinX + EDGE_SIZE);
+		debug(LOG_SAVE, "entry point x %i outside scroll limits %i->%i", iExitTileX, activeGameWorld().map.scroll.minX, activeGameWorld().map.scroll.maxX);
+		mission.iTranspExitTileX[iPlayer] = (UWORD)(activeGameWorld().map.scroll.minX + EDGE_SIZE);
 	}
 
-	if ((iExitTileY > scrollMinY) && (iExitTileY < scrollMaxY))
+	if ((iExitTileY > activeGameWorld().map.scroll.minY) && (iExitTileY < activeGameWorld().map.scroll.maxY))
 	{
 		mission.iTranspExitTileY[iPlayer] = (UWORD) iExitTileY;
 	}
 	else
 	{
-		debug(LOG_SAVE, "entry point y %i outside scroll limits %i->%i", iExitTileY, scrollMinY, scrollMaxY);
-		mission.iTranspExitTileY[iPlayer] = (UWORD)(scrollMinY + EDGE_SIZE);
+		debug(LOG_SAVE, "entry point y %i outside scroll limits %i->%i", iExitTileY, activeGameWorld().map.scroll.minY, activeGameWorld().map.scroll.maxY);
+		mission.iTranspExitTileY[iPlayer] = (UWORD)(activeGameWorld().map.scroll.minY + EDGE_SIZE);
 	}
 }
 

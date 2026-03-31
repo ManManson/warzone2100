@@ -40,3 +40,9 @@ bool hasActiveWorld();
 
 /** Parked campaign home map/objects while the player is on an off-world mission (stored in GameSessionWorlds::primary). */
 GameWorld &missionParkedHomeWorld();
+
+/** Ensure offworld GameWorld exists (campaign mission live map vs parked primary). */
+void ensureOffworldWorld();
+
+/** Live off-world map GameWorld (same as GameSessionWorlds::offworld). */
+GameWorld &offworldWorld();

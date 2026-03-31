@@ -24,6 +24,7 @@
  *
  */
 #include "lib/framework/frame.h"
+#include "game_world.h"
 
 #include <string.h>
 
@@ -1160,7 +1161,7 @@ void systemShutdown()
 	notificationsShutDown();
 	widgShutDown();
 	fpathShutdown();
-	mapShutdown();
+	mapShutdown(activeGameWorld());
 	modelShutdown();
 	debug(LOG_MAIN, "shutting down everything else");
 	pal_ShutDown();		// currently unused stub
@@ -1432,11 +1433,14 @@ bool stageOneShutDown()
 	ResearchRelease();
 
 	//free up the gateway stuff?
-	gwShutDown();
+	if (hasActiveWorld())
+	{
+		gwShutDown(activeGameWorld());
+	}
 
 	shutdownTerrain();
 
-	if (!mapShutdown())
+	if (!mapShutdown(activeGameWorld()))
 	{
 		return false;
 	}
@@ -1529,7 +1533,12 @@ bool stageTwoInitialise()
 		return false;
 	}
 
-	if (!gwInitialise())
+	if (!hasActiveWorld())
+	{
+		debug(LOG_FATAL, "stageTwoInitialise: no active world (map binding)");
+		return false;
+	}
+	if (!gwInitialise(activeGameWorld()))
 	{
 		return false;
 	}
@@ -1619,9 +1628,12 @@ bool stageTwoShutDown()
 	cmdDroidShutDown();
 
 	//free up the gateway stuff?
-	gwShutDown();
+	if (hasActiveWorld())
+	{
+		gwShutDown(activeGameWorld());
+	}
 
-	if (!mapShutdown())
+	if (!mapShutdown(activeGameWorld()))
 	{
 		return false;
 	}
@@ -1717,9 +1729,9 @@ bool stageThreeInitialise()
 	}
 
 	effectResetUpdates();
-	initLighting(0, 0, mapWidth, mapHeight);
+	initLighting(0, 0, activeGameWorld().map.width, activeGameWorld().map.height);
 	pie_InitLighting();
-	getCurrentLightmapData().reset(mapWidth, mapHeight);
+	getCurrentLightmapData().reset(activeGameWorld().map.width, activeGameWorld().map.height);
 
 	if (fromSave)
 	{
@@ -1745,7 +1757,7 @@ bool stageThreeInitialise()
 		return false;
 	}
 
-	mapInit();
+	mapInit(activeGameWorld());
 	gridReset();
 
 	//if mission screen is up, close it.
@@ -1877,8 +1889,11 @@ bool stageThreeShutDown()
 bool campaignReset()
 {
 	debug(LOG_MAIN, "campaignReset");
-	gwShutDown();
-	mapShutdown();
+	if (hasActiveWorld())
+	{
+		gwShutDown(activeGameWorld());
+	}
+	mapShutdown(activeGameWorld());
 	shutdownTerrain();
 	// when the terrain textures are reloaded we need to reset the radar
 	// otherwise it will end up as a terrain texture somehow
@@ -1902,10 +1917,13 @@ bool saveGameReset()
 	initTransporters();
 
 	//free up the gateway stuff?
-	gwShutDown();
+	if (hasActiveWorld())
+	{
+		gwShutDown(activeGameWorld());
+	}
 	intResetScreen(true);
 
-	if (!mapShutdown())
+	if (!mapShutdown(activeGameWorld()))
 	{
 		return false;
 	}

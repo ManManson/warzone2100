@@ -25,6 +25,7 @@
  */
 
 #include "lib/framework/frame.h"
+#include "game_world.h"
 #include "lib/framework/math_ext.h"
 #include "lib/framework/fixedpoint.h"
 #include "lib/sound/audio.h"
@@ -463,7 +464,7 @@ static void actionAddVtolAttackRun(DROID *psDroid)
 	/* add waypoint behind target attack length away*/
 	Vector2i dest = psTarget->pos.xy() + delta * VTOL_ATTACK_LENGTH / dist;
 
-	if (!worldOnMap(dest))
+	if (!worldOnMap(activeGameWorld(), dest))
 	{
 		debug(LOG_NEVER, "*** actionAddVtolAttackRun: run off map! ***");
 	}
@@ -535,7 +536,7 @@ static void actionCalcPullBackPoint(BASE_OBJECT *psObj, BASE_OBJECT *psTarget, i
 	*py = psObj->pos.y + ydiff * PULL_BACK_DIST;
 
 	// make sure coordinates stay inside of the map
-	clip_world_offmap(px, py);
+	clip_world_offmap(activeGameWorld(), px, py);
 }
 
 // check whether a droid is in the neighboring tile of another droid
@@ -1497,7 +1498,7 @@ void actionUpdateDroid(DROID *psDroid)
 		{
 			// Determine if the droid can still build or help to build the ordered structure at the specified location
 			const STRUCTURE_STATS* const desiredStructure = order->psStats;
-			const STRUCTURE* const structureAtBuildPosition = getTileStructure(map_coord(psDroid->actionPos.x), map_coord(psDroid->actionPos.y));
+			const STRUCTURE* const structureAtBuildPosition = getTileStructure(activeGameWorld(), map_coord(psDroid->actionPos.x), map_coord(psDroid->actionPos.y));
 
 			if (nullptr != structureAtBuildPosition)
 			{
@@ -1588,10 +1589,10 @@ void actionUpdateDroid(DROID *psDroid)
 					debug(LOG_NEVER, "DACTION_MOVETOBUILD: setUpBuildModule");
 					setUpBuildModule(psDroid);
 				}
-				else if (TileHasStructure(worldTile(pos)))
+				else if (TileHasStructure(worldTile(activeGameWorld(), pos)))
 				{
 					// structure on the build location - see if it is the same type
-					STRUCTURE *const psStruct = getTileStructure(map_coord(pos.x), map_coord(pos.y));
+					STRUCTURE *const psStruct = getTileStructure(activeGameWorld(), map_coord(pos.x), map_coord(pos.y));
 					if (psStruct->pStructureType == order->psStats ||
 					    (order->psStats->type == REF_WALL && psStruct->pStructureType->type == REF_WALLCORNER))
 					{
@@ -1636,7 +1637,7 @@ void actionUpdateDroid(DROID *psDroid)
 			else if (order->type == DORDER_LINEBUILD || order->type == DORDER_BUILD)
 			{
 				// building a wall.
-				MAPTILE *const psTile = worldTile(psDroid->actionPos);
+				MAPTILE *const psTile = worldTile(activeGameWorld(), psDroid->actionPos);
 				syncDebug("Reached build target: wall");
 				if (order->psObj == nullptr
 				    && (TileHasStructure(psTile)
@@ -1645,7 +1646,7 @@ void actionUpdateDroid(DROID *psDroid)
 					if (TileHasStructure(psTile))
 					{
 						// structure on the build location - see if it is the same type
-						STRUCTURE *const psStruct = getTileStructure(map_coord(psDroid->actionPos.x), map_coord(psDroid->actionPos.y));
+						STRUCTURE *const psStruct = getTileStructure(activeGameWorld(), map_coord(psDroid->actionPos.x), map_coord(psDroid->actionPos.y));
 						ASSERT(psStruct, "TileHasStructure, but getTileStructure returned nullptr");
 #if defined(WZ_CC_GNU) && !defined(WZ_CC_INTEL) && !defined(WZ_CC_CLANG) && (7 <= __GNUC__)
 # pragma GCC diagnostic push
@@ -1682,7 +1683,7 @@ void actionUpdateDroid(DROID *psDroid)
 					}
 					else if (TileHasFeature(psTile))
 					{
-						FEATURE *feature = getTileFeature(map_coord(psDroid->actionPos.x), map_coord(psDroid->actionPos.y));
+						FEATURE *feature = getTileFeature(activeGameWorld(), map_coord(psDroid->actionPos.x), map_coord(psDroid->actionPos.y));
 						objTrace(psDroid->id, "DACTION_MOVETOBUILD: tile has feature %d", feature->psStats->subType);
 						if (feature->psStats->subType == FEAT_OIL_RESOURCE && order->psStats->type == REF_RESOURCE_EXTRACTOR)
 						{
@@ -1775,7 +1776,7 @@ void actionUpdateDroid(DROID *psDroid)
 		}
 		else
 		{
-			const STRUCTURE* structureAtPos = getTileStructure(map_coord(psDroid->actionPos.x), map_coord(psDroid->actionPos.y));
+			const STRUCTURE* structureAtPos = getTileStructure(activeGameWorld(), map_coord(psDroid->actionPos.x), map_coord(psDroid->actionPos.y));
 
 			if (structureAtPos == nullptr || psDroid->psActionTarget[0] == nullptr)
 			{
@@ -2760,12 +2761,12 @@ void moveToRearm(DROID *psDroid)
 // whether a tile is suitable for a vtol to land on
 static bool vtolLandingTile(SDWORD x, SDWORD y)
 {
-	if (x < 0 || x >= (SDWORD)mapWidth || y < 0 || y >= (SDWORD)mapHeight)
+	if (x < 0 || x >= (SDWORD)activeGameWorld().map.width || y < 0 || y >= (SDWORD)activeGameWorld().map.height)
 	{
 		return false;
 	}
 
-	const MAPTILE *psTile = mapTile(x, y);
+	const MAPTILE *psTile = mapTile(activeGameWorld(), x, y);
 	if (psTile->tileInfoBits & BITS_FPATHBLOCK ||
 	    TileIsOccupied(psTile) ||
 	    terrainType(psTile) == TER_CLIFFFACE ||
@@ -2887,9 +2888,9 @@ bool actionVTOLLandingPos(DROID const *psDroid, Vector2i *p)
 		}
 		if (psCurr != psDroid)
 		{
-			if (tileOnMap(t))
+			if (tileOnMap(activeGameWorld(), t))
 			{
-				mapTile(t)->tileInfoBits |= BITS_FPATHBLOCK;
+				mapTile(activeGameWorld(), t)->tileInfoBits |= BITS_FPATHBLOCK;
 			}
 		}
 	}
@@ -2917,9 +2918,9 @@ bool actionVTOLLandingPos(DROID const *psDroid, Vector2i *p)
 		{
 			t = map_coord(psCurr->sMove.destination);
 		}
-		if (tileOnMap(t))
+		if (tileOnMap(activeGameWorld(), t))
 		{
-			mapTile(t)->tileInfoBits &= ~BITS_FPATHBLOCK;
+			mapTile(activeGameWorld(), t)->tileInfoBits &= ~BITS_FPATHBLOCK;
 		}
 	}
 

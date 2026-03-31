@@ -550,7 +550,7 @@ static void gameStateUpdate()
 	processVisibility();
 
 	// Update the map.
-	mapUpdate();
+	mapUpdate(activeGameWorld());
 
 	//update the findpath system
 	fpathUpdate();

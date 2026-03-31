@@ -26,6 +26,7 @@ Alex McLean, Pumpkin Studios, EIDOS Interactive, 1997
 #include "lib/framework/frame.h"
 #include "lib/framework/math_ext.h"
 #include "map.h"
+#include "game_world.h"
 #include "edit3d.h"
 #include "display3d.h"
 #include "objects.h"
@@ -35,7 +36,7 @@ Alex McLean, Pumpkin Studios, EIDOS Interactive, 1997
 /*
 Definition of a tile to highlight - presently more than is required
 but means that we can highlight any individual tile in future. An
-x coordinate that is greater than mapWidth implies that the highlight
+x coordinate that is greater than activeGameWorld().map.width implies that the highlight
 is invalid (not currently being used)
 */
 
@@ -58,15 +59,15 @@ void raiseTile(int tile3dX, int tile3dY)
 {
 	int i, j;
 
-	if (tile3dX < 0 || tile3dX > mapWidth - 1 || tile3dY < 0 || tile3dY > mapHeight - 1)
+	if (tile3dX < 0 || tile3dX > activeGameWorld().map.width - 1 || tile3dY < 0 || tile3dY > activeGameWorld().map.height - 1)
 	{
 		return;
 	}
-	for (i = tile3dX; i <= MIN(mapWidth - 1, tile3dX + brushSize); i++)
+	for (i = tile3dX; i <= MIN(activeGameWorld().map.width - 1, tile3dX + brushSize); i++)
 	{
-		for (j = tile3dY; j <= MIN(mapHeight - 1, tile3dY + brushSize); j++)
+		for (j = tile3dY; j <= MIN(activeGameWorld().map.height - 1, tile3dY + brushSize); j++)
 		{
-			adjustTileHeight(mapTile(i, j), TILE_RAISE);
+			adjustTileHeight(mapTile(activeGameWorld(), i, j), TILE_RAISE);
 			markTileDirty(i, j);
 		}
 	}
@@ -77,15 +78,15 @@ void lowerTile(int tile3dX, int tile3dY)
 {
 	int i, j;
 
-	if (tile3dX < 0 || tile3dX > mapWidth - 1 || tile3dY < 0 || tile3dY > mapHeight - 1)
+	if (tile3dX < 0 || tile3dX > activeGameWorld().map.width - 1 || tile3dY < 0 || tile3dY > activeGameWorld().map.height - 1)
 	{
 		return;
 	}
-	for (i = tile3dX; i <= MIN(mapWidth - 1, tile3dX + brushSize); i++)
+	for (i = tile3dX; i <= MIN(activeGameWorld().map.width - 1, tile3dX + brushSize); i++)
 	{
-		for (j = tile3dY; j <= MIN(mapHeight - 1, tile3dY + brushSize); j++)
+		for (j = tile3dY; j <= MIN(activeGameWorld().map.height - 1, tile3dY + brushSize); j++)
 		{
-			adjustTileHeight(mapTile(i, j), TILE_LOWER);
+			adjustTileHeight(mapTile(activeGameWorld(), i, j), TILE_LOWER);
 			markTileDirty(i, j);
 		}
 	}
@@ -160,7 +161,7 @@ bool process3DBuilding()
 
 	/* Need to update the building locations if we're building */
 	int border = 5*TILE_UNITS/2;
-	Vector2i bv = {clip(mousePos.x, border, mapWidth*TILE_UNITS - border), clip(mousePos.y, border, mapHeight*TILE_UNITS - border)};
+	Vector2i bv = {clip(mousePos.x, border, activeGameWorld().map.width*TILE_UNITS - border), clip(mousePos.y, border, activeGameWorld().map.height*TILE_UNITS - border)};
 	Vector2i size = getStatsSize(sBuildDetails.psStats, getBuildingDirection());
 	Vector2i worldSize = world_coord(size);
 	bv = round_to_nearest_tile(bv - worldSize/2) + worldSize/2;

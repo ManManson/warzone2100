@@ -56,6 +56,7 @@
 
 #include "terrain.h"
 #include "map.h"
+#include "game_world.h"
 #include "texture.h"
 #include "display3d.h"
 #include "hci.h"
@@ -313,10 +314,10 @@ static void averagePos(Vector3i *center, Vector3i *a, Vector3i *b, Vector3i *c, 
 static bool isWater(int x, int y)
 {
 	bool result = false;
-	result = result || (tileOnMap(x  , y) && terrainType(mapTile(x  , y)) == TER_WATER);
-	result = result || (tileOnMap(x - 1, y) && terrainType(mapTile(x - 1, y)) == TER_WATER);
-	result = result || (tileOnMap(x  , y - 1) && terrainType(mapTile(x  , y - 1)) == TER_WATER);
-	result = result || (tileOnMap(x - 1, y - 1) && terrainType(mapTile(x - 1, y - 1)) == TER_WATER);
+	result = result || (tileOnMap(activeGameWorld(), x  , y) && terrainType(mapTile(activeGameWorld(), x  , y)) == TER_WATER);
+	result = result || (tileOnMap(activeGameWorld(), x - 1, y) && terrainType(mapTile(activeGameWorld(), x - 1, y)) == TER_WATER);
+	result = result || (tileOnMap(activeGameWorld(), x  , y - 1) && terrainType(mapTile(activeGameWorld(), x  , y - 1)) == TER_WATER);
+	result = result || (tileOnMap(activeGameWorld(), x - 1, y - 1) && terrainType(mapTile(activeGameWorld(), x - 1, y - 1)) == TER_WATER);
 	return result;
 }
 
@@ -324,10 +325,10 @@ static bool isWater(int x, int y)
 static bool isOnlyWater(int x, int y)
 {
 	bool result = true;
-	result = result && (tileOnMap(x  , y) && terrainType(mapTile(x  , y)) == TER_WATER);
-	result = result && (tileOnMap(x - 1, y) && terrainType(mapTile(x - 1, y)) == TER_WATER);
-	result = result && (tileOnMap(x  , y - 1) && terrainType(mapTile(x  , y - 1)) == TER_WATER);
-	result = result && (tileOnMap(x - 1, y - 1) && terrainType(mapTile(x - 1, y - 1)) == TER_WATER);
+	result = result && (tileOnMap(activeGameWorld(), x  , y) && terrainType(mapTile(activeGameWorld(), x  , y)) == TER_WATER);
+	result = result && (tileOnMap(activeGameWorld(), x - 1, y) && terrainType(mapTile(activeGameWorld(), x - 1, y)) == TER_WATER);
+	result = result && (tileOnMap(activeGameWorld(), x  , y - 1) && terrainType(mapTile(activeGameWorld(), x  , y - 1)) == TER_WATER);
+	result = result && (tileOnMap(activeGameWorld(), x - 1, y - 1) && terrainType(mapTile(activeGameWorld(), x - 1, y - 1)) == TER_WATER);
 	return result;
 }
 
@@ -347,7 +348,7 @@ static void getGridPos(Vector3i *result, int x, int y, bool center, bool water)
 	result->x = world_coord(x);
 	result->z = world_coord(-y);
 
-	if (x <= 0 || y <= 0 || x >= mapWidth || y >= mapHeight)
+	if (x <= 0 || y <= 0 || x >= activeGameWorld().map.width || y >= activeGameWorld().map.height)
 	{
 		result->y = 0;
 	}
@@ -355,15 +356,15 @@ static void getGridPos(Vector3i *result, int x, int y, bool center, bool water)
 	{
 		if (terrainShaderQuality != TerrainShaderQuality::CLASSIC)
 		{
-			result->y = map_TileHeight(x, y);
+			result->y = map_TileHeight(activeGameWorld(), x, y);
 			if (water)
 			{
-				result->y = map_WaterHeight(x, y);
+				result->y = map_WaterHeight(activeGameWorld(), x, y);
 			}
 		}
 		else
 		{
-			result->y = map_TileHeightSurface(x, y);
+			result->y = map_TileHeightSurface(activeGameWorld(), x, y);
 		}
 	}
 }
@@ -414,7 +415,7 @@ static void setSectorGeometry(int sx, int sy,
 			geometry[*geometrySize].pos = pos;
 			(*geometrySize)++;
 
-			float waterHeight = map_WaterHeight(x, y);
+			float waterHeight = map_WaterHeight(activeGameWorld(), x, y);
 			water[*waterSize] = glm::vec4(pos.x, (terrainShaderQuality != TerrainShaderQuality::CLASSIC) ? waterHeight : pos.y, pos.z, waterHeight - pos.y);
 			(*waterSize)++;
 
@@ -438,12 +439,12 @@ static void setSectorDecalVertex_SinglePass(int x, int y, gfx_api::TerrainDecalV
 	{
 		for (j = y * sectorSize; j < y * sectorSize + sectorSize; j++)
 		{
-			if (i < 0 || j < 0 || i >= mapWidth || j >= mapHeight)
+			if (i < 0 || j < 0 || i >= activeGameWorld().map.width || j >= activeGameWorld().map.height)
 			{
 				continue;
 			}
 
-			MAPTILE *tile = mapTile(i, j);
+			MAPTILE *tile = mapTile(activeGameWorld(), i, j);
 			center = getTileTexArrCoords(*uv, tile->texture);
 			int decalNo = static_cast<int>(TileNumber_tile(tile->texture));
 			bool skipDecalDraw = !TILE_HAS_DECAL(tile);
@@ -467,7 +468,7 @@ static void setSectorDecalVertex_SinglePass(int x, int y, gfx_api::TerrainDecalV
 				vs[k].decalUv = uv[dx][dy];
 				vs[k].normal = getGridNormal(i + dx, j + dy);
 				vs[k].decalNo = decalNo;
-				groundsBytes[k] = mapTile(i + dx, j + dy)->ground;
+				groundsBytes[k] = mapTile(activeGameWorld(), i + dx, j + dy)->ground;
 				vs[k].groundWeights.clear();
 				vs[k].groundWeights.setByte(k, 255);
 			}
@@ -977,8 +978,8 @@ bool initTerrain()
 
 	/////////////////////
 	// Create the sectors
-	xSectors = (mapWidth + sectorSize - 1) / sectorSize;
-	ySectors = (mapHeight + sectorSize - 1) / sectorSize;
+	xSectors = (activeGameWorld().map.width + sectorSize - 1) / sectorSize;
+	ySectors = (activeGameWorld().map.height + sectorSize - 1) / sectorSize;
 	sectors = std::unique_ptr<Sector[]> (new Sector[xSectors * ySectors]());
 
 	////////////////////
@@ -1017,7 +1018,7 @@ bool initTerrain()
 			{
 				for (j = 0; j < sectorSize; j++)
 				{
-					if (x * sectorSize + i >= mapWidth || y * sectorSize + j >= mapHeight)
+					if (x * sectorSize + i >= activeGameWorld().map.width || y * sectorSize + j >= activeGameWorld().map.height)
 					{
 						continue; // off map, so skip
 					}
@@ -1109,7 +1110,7 @@ bool initTerrain()
 
 
 	// and finally the decals
-	gfx_api::TerrainDecalVertex *terrainDecalData = (gfx_api::TerrainDecalVertex *)malloc(sizeof(gfx_api::TerrainDecalVertex) * mapWidth * mapHeight * 12);
+	gfx_api::TerrainDecalVertex *terrainDecalData = (gfx_api::TerrainDecalVertex *)malloc(sizeof(gfx_api::TerrainDecalVertex) * activeGameWorld().map.width * activeGameWorld().map.height * 12);
 	int terrainDecalSize = 0;
 
 	for (x = 0; x < xSectors; x++)
@@ -1145,13 +1146,13 @@ bool initTerrain()
 	lightmapWidth = 1;
 	lightmapHeight = 1;
 	// determine the smallest power-of-two size we can use for the lightmap
-	while (mapWidth > (lightmapWidth <<= 1)) {}
-	while (mapHeight > (lightmapHeight <<= 1)) {}
-	debug(LOG_TERRAIN, "the size of the map is %ix%i", mapWidth, mapHeight);
+	while (activeGameWorld().map.width > (lightmapWidth <<= 1)) {}
+	while (activeGameWorld().map.height > (lightmapHeight <<= 1)) {}
+	debug(LOG_TERRAIN, "the size of the map is %ix%i", activeGameWorld().map.width, activeGameWorld().map.height);
 	debug(LOG_TERRAIN, "lightmap texture size is %zu x %zu", lightmapWidth, lightmapHeight);
 
-	lightmapValues.paramsXLight = glm::vec4(1.0f / world_coord(mapWidth) *((float)mapWidth / (float)lightmapWidth), 0, 0, 0);
-	lightmapValues.paramsYLight = glm::vec4(0, 0, -1.0f / world_coord(mapHeight) *((float)mapHeight / (float)lightmapHeight), 0);
+	lightmapValues.paramsXLight = glm::vec4(1.0f / world_coord(activeGameWorld().map.width) *((float)activeGameWorld().map.width / (float)lightmapWidth), 0, 0, 0);
+	lightmapValues.paramsYLight = glm::vec4(0, 0, -1.0f / world_coord(activeGameWorld().map.height) *((float)activeGameWorld().map.height / (float)lightmapHeight), 0);
 
 	// shift the lightmap half a tile as lights are supposed to be placed at the center of a tile
 	lightmapValues.lightMatrix = glm::translate(glm::vec3(1.f / (float)lightmapWidth / 2, 1.f / (float)lightmapHeight / 2, 0.f));
@@ -1218,11 +1219,11 @@ static void updateLightMap(const LightMap& lightmap)
 {
 	size_t lightmapChannels = lightmapPixmap->channels(); // should always be 4 now...
 	unsigned char* lightMapWritePtr = lightmapPixmap->bmp_w();
-	for (int j = 0; j < mapHeight; ++j)
+	for (int j = 0; j < activeGameWorld().map.height; ++j)
 	{
-		for (int i = 0; i < mapWidth; ++i)
+		for (int i = 0; i < activeGameWorld().map.width; ++i)
 		{
-			MAPTILE *psTile = mapTile(i, j);
+			MAPTILE *psTile = mapTile(activeGameWorld(), i, j);
 			PIELIGHT colour = lightmap(i, j);
 			UBYTE level = static_cast<UBYTE>(psTile->level);
 
@@ -1842,7 +1843,7 @@ bool setTerrainShaderQuality(TerrainShaderQuality newValue, bool force, bool for
 		// always re-load the tile textures (these change between all modes)
 		auto priorNumGroundTypes = getNumGroundTypes();
 		reloadTileTextures();
-		mapReloadGroundTypes();
+		mapReloadGroundTypes(activeGameWorld());
 		if (priorValue != terrainShaderQuality
 			|| priorNumGroundTypes != getNumGroundTypes()
 			|| forceReloadTextures)

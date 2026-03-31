@@ -153,3 +153,34 @@ bool objectOnScreen(const BASE_OBJECT *object, SDWORD tolerance)
 	}
 	return false;
 }
+
+STRUCTURE *getTileStructure(GameWorld &world, UDWORD x, UDWORD y)
+{
+	BASE_OBJECT *psObj = mapTile(world, x, y)->psObject;
+	if (psObj && psObj->type == OBJ_STRUCTURE)
+	{
+		return (STRUCTURE *)psObj;
+	}
+	return nullptr;
+}
+
+FEATURE *getTileFeature(GameWorld &world, UDWORD x, UDWORD y)
+{
+	BASE_OBJECT *psObj = mapTile(world, x, y)->psObject;
+	if (psObj && psObj->type == OBJ_FEATURE)
+	{
+		return (FEATURE *)psObj;
+	}
+	return nullptr;
+}
+
+BASE_OBJECT *getTileOccupier(GameWorld &world, UDWORD x, UDWORD y)
+{
+	MAPTILE *psTile = mapTile(world, x, y);
+
+	if (TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(psTile))
+	{
+		return mapTile(world, x, y)->psObject;
+	}
+	return nullptr;
+}

@@ -39,6 +39,7 @@
 #include "fpath.h"
 #include "group.h"
 #include "map.h"
+#include "game_world.h"
 #include "loop.h"
 #include "component.h"
 #include "display3d.h"
@@ -58,6 +59,7 @@
 #include "wrappers.h"
 #include "power.h"
 #include "map.h"
+#include "game_world.h"
 #include "intimage.h"
 #include "mechanics.h"
 #include "lighting.h"
@@ -897,7 +899,7 @@ void processMouseClickInput()
 			}
 
 			if (item == MT_TERRAIN
-			    && terrainType(mapTile(mouseTileX, mouseTileY)) == TER_CLIFFFACE)
+			    && terrainType(mapTile(activeGameWorld(), mouseTileX, mouseTileY)) == TER_CLIFFFACE)
 			{
 				item = MT_BLOCKING;
 			}
@@ -1140,10 +1142,10 @@ void resetScroll()
 // Checks if coordinate is inside scroll limits, returns false if not.
 bool CheckInScrollLimits(const int &xPos, const int &yPos)
 {
-	int minX = world_coord(scrollMinX);
-	int maxX = world_coord(scrollMaxX - 1);
-	int minY = world_coord(scrollMinY);
-	int maxY = world_coord(scrollMaxY - 1);
+	int minX = world_coord(activeGameWorld().map.scroll.minX);
+	int maxX = world_coord(activeGameWorld().map.scroll.maxX - 1);
+	int minY = world_coord(activeGameWorld().map.scroll.minY);
+	int maxY = world_coord(activeGameWorld().map.scroll.maxY - 1);
 
 	if ((xPos < minX) || (xPos >= maxX) || (yPos < minY) || (yPos >= maxY))
 	{
@@ -1161,10 +1163,10 @@ bool CheckInScrollLimitsCamera(SDWORD *xPos, SDWORD *zPos)
 	bool EdgeHit = false;
 	SDWORD	minX, minY, maxX, maxY;
 
-	minX = world_coord(scrollMinX);
-	maxX = world_coord(scrollMaxX - 1);
-	minY = world_coord(scrollMinY);
-	maxY = world_coord(scrollMaxY - 1);
+	minX = world_coord(activeGameWorld().map.scroll.minX);
+	maxX = world_coord(activeGameWorld().map.scroll.maxX - 1);
+	minY = world_coord(activeGameWorld().map.scroll.minY);
+	maxY = world_coord(activeGameWorld().map.scroll.maxY - 1);
 
 	//scroll is limited to what can be seen for current campaign
 	if (*xPos < minX)
@@ -1321,7 +1323,7 @@ BASE_OBJECT *mouseTarget()
 	BASE_OBJECT *psReturn = nullptr;
 	int dispX, dispY, dispR;
 
-	if (mouseTileX < 0 || mouseTileY < 0 || mouseTileX > mapWidth - 1 || mouseTileY > mapHeight - 1)
+	if (mouseTileX < 0 || mouseTileY < 0 || mouseTileX > activeGameWorld().map.width - 1 || mouseTileY > activeGameWorld().map.height - 1)
 	{
 		return (nullptr);
 	}
@@ -1351,7 +1353,7 @@ BASE_OBJECT *mouseTarget()
 
 	/*	Not a droid, so maybe a structure or feature?
 		If still NULL after this then nothing */
-	psReturn = getTileOccupier(mouseTileX, mouseTileY);
+	psReturn = getTileOccupier(activeGameWorld(), mouseTileX, mouseTileY);
 
 	if (psReturn == nullptr)
 	{
@@ -1452,8 +1454,8 @@ bool deliveryReposValid()
 	Vector2i map = map_coord(flagPos.coords.xy());
 
 	//make sure we are not too near map edge
-	if (map.x < scrollMinX + TOO_NEAR_EDGE || map.x + 1 > scrollMaxX - TOO_NEAR_EDGE ||
-	    map.y < scrollMinY + TOO_NEAR_EDGE || map.y + 1 > scrollMaxY - TOO_NEAR_EDGE)
+	if (map.x < activeGameWorld().map.scroll.minX + TOO_NEAR_EDGE || map.x + 1 > activeGameWorld().map.scroll.maxX - TOO_NEAR_EDGE ||
+	    map.y < activeGameWorld().map.scroll.minY + TOO_NEAR_EDGE || map.y + 1 > activeGameWorld().map.scroll.maxY - TOO_NEAR_EDGE)
 	{
 		return false;
 	}
@@ -1497,10 +1499,10 @@ void processDeliveryRepos()
 		return;
 	}
 
-	int bX = clip<int>(mouseTileX, 2, mapWidth - 3);
-	int bY = clip<int>(mouseTileY, 2, mapHeight - 3);
+	int bX = clip<int>(mouseTileX, 2, activeGameWorld().map.width - 3);
+	int bY = clip<int>(mouseTileY, 2, activeGameWorld().map.height - 3);
 
-	flagPos.coords = Vector3i(world_coord(Vector2i(bX, bY)) + Vector2i(TILE_UNITS / 2, TILE_UNITS / 2), map_TileHeight(bX, bY) + 2 * ASSEMBLY_POINT_Z_PADDING);
+	flagPos.coords = Vector3i(world_coord(Vector2i(bX, bY)) + Vector2i(TILE_UNITS / 2, TILE_UNITS / 2), map_TileHeight(activeGameWorld(), bX, bY) + 2 * ASSEMBLY_POINT_Z_PADDING);
 }
 
 // Cancel repositioning of the delivery point without moving it.
@@ -1951,7 +1953,7 @@ static void dealWithLMBFeature(FEATURE *psFeature)
 				if ((droidType(psCurr) == DROID_CONSTRUCT ||
 				     droidType(psCurr) == DROID_CYBORG_CONSTRUCT) && (psCurr->selected))
 				{
-					if (fireOnLocation(psFeature->pos.x, psFeature->pos.y))
+					if (fireOnLocation(activeGameWorld(), psFeature->pos.x, psFeature->pos.y))
 					{
 						// Can't build because it's burning
 						AddDerrickBurningMessage();
@@ -2079,10 +2081,10 @@ void	dealWithLMB()
 	}
 
 	const DebugInputManager& dbgInputManager = gInputManager.debugManager();
-	if (dbgInputManager.debugMappingsAllowed() && tileOnMap(mouseTileX, mouseTileY))
+	if (dbgInputManager.debugMappingsAllowed() && tileOnMap(activeGameWorld(), mouseTileX, mouseTileY))
 	{
-		MAPTILE *psTile = mapTile(mouseTileX, mouseTileY);
-		uint8_t aux = auxTile(mouseTileX, mouseTileY, selectedPlayer);
+		MAPTILE *psTile = mapTile(activeGameWorld(), mouseTileX, mouseTileY);
+		uint8_t aux = auxTile(activeGameWorld(), mouseTileX, mouseTileY, selectedPlayer);
 
 		int flipVal = 0;
 		if (TileNumber_texture(psTile->texture) & TILE_XFLIP)
@@ -2370,7 +2372,7 @@ static MOUSE_TARGET	itemUnderMouse(BASE_OBJECT **ppObjectUnderMouse)
 
 	*ppObjectUnderMouse = nullptr;
 
-	if (mouseTileX < 0 || mouseTileY < 0 || mouseTileX > (int)(mapWidth - 1) || mouseTileY > (int)(mapHeight - 1))
+	if (mouseTileX < 0 || mouseTileY < 0 || mouseTileX > (int)(activeGameWorld().map.width - 1) || mouseTileY > (int)(activeGameWorld().map.height - 1))
 	{
 		retVal = MT_BLOCKING;
 		return retVal;
@@ -2463,7 +2465,7 @@ static MOUSE_TARGET	itemUnderMouse(BASE_OBJECT **ppObjectUnderMouse)
 
 	/*	Not a droid, so maybe a structure or feature?
 		If still NULL after this then nothing */
-	psNotDroid = getTileOccupier(mouseTileX, mouseTileY);
+	psNotDroid = getTileOccupier(activeGameWorld(), mouseTileX, mouseTileY);
 	if (psNotDroid == nullptr)
 	{
 		psNotDroid = getTileBlueprintStructure(mouseTileX, mouseTileY);

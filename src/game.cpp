@@ -51,6 +51,7 @@
 #include "fpath.h"
 #include "difficulty.h"
 #include "map.h"
+#include "game_world.h"
 #include "move.h"
 #include "droid.h"
 #include "order.h"
@@ -65,6 +66,7 @@
 #include "display.h"
 #include "display3d.h"
 #include "map.h"
+#include "game_world.h"
 #include "effects.h"
 #include "init.h"
 #include "mission.h"
@@ -2998,6 +3000,8 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 
 	if (saveGameOnMission && UserSaveGame)
 	{
+		missionResetSwapMissionMapSlotsParity();
+
 		//the scroll limits for the mission map have already been written
 		if (saveGameVersion >= VERSION_29)
 		{
@@ -3012,7 +3016,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		//load in the map file
 		aFileName[fileExten] = '\0';
 		strcat(aFileName, "mission.map");
-		if (!mapLoad(aFileName))
+		if (!mapLoad(activeGameWorld(), aFileName))
 		{
 			debug(LOG_ERROR, "Failed with: %s", aFileName);
 			return false;
@@ -3023,7 +3027,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		strcat(aFileName, "misvis.bjo");
 
 		// Load in the visibility data from the chosen file
-		if (!readVisibilityData(aFileName))
+		if (!readVisibilityData(activeGameWorld(), aFileName))
 		{
 			debug(LOG_ERROR, "Failed with: %s", aFileName);
 			goto error;
@@ -3123,7 +3127,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 	//if Campaign Expand then don't load in another map
 	if (gameType != GTYPE_SCENARIO_EXPAND)
 	{
-		psMapTiles = nullptr;
+		activeGameWorld().map.tiles = nullptr;
 		// load in the map file
 		if (!data)
 		{
@@ -3144,7 +3148,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 			syncDebug("crc(droids) = 0x%08x", data->crcSumDroids(0));
 			syncDebug("crc(features) = 0x%08x", data->crcSumFeatures(0));
 		}
-		if (!mapLoadFromWzMapData(mapData))
+		if (!mapLoadFromWzMapData(activeGameWorld(), mapData))
 		{
 			debug(LOG_ERROR, "Failed to process map data from path: %s", aFileName);
 			return false;
@@ -3367,7 +3371,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 			strcat(aFileName, "visstate.bjo");
 
 			// Load in the visibility data from the chosen file
-			if (!readVisibilityData(aFileName))
+			if (!readVisibilityData(activeGameWorld(), aFileName))
 			{
 				debug(LOG_ERROR, "Failed with: %s", aFileName);
 				goto error;
@@ -3530,7 +3534,7 @@ error:
 	freeAllStructs();
 	freeAllFeatures();
 	droidTemplateShutDown();
-	psMapTiles = nullptr;
+	activeGameWorld().map.tiles = nullptr;
 
 	/* Start the game clock */
 	gameTimeStart();
@@ -3690,9 +3694,9 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 	CurrentFileName[fileExtension] = '\0';
 	strcat(CurrentFileName, "visstate.bjo");
 	/*Write the data to the file*/
-	if (!writeVisibilityData(CurrentFileName))
+	if (!writeVisibilityData(activeGameWorld(), CurrentFileName))
 	{
-		debug(LOG_ERROR, "saveGame: writeVisibilityData(\"%s\") failed", CurrentFileName);
+		debug(LOG_ERROR, "saveGame: writeVisibilityData(..., \"%s\") failed", CurrentFileName);
 		goto error;
 	}
 
@@ -3800,9 +3804,9 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 		CurrentFileName[fileExtension] = '\0';
 		strcat(CurrentFileName, "misvis.bjo");
 		/* Write the data to the file */
-		if (!writeVisibilityData(CurrentFileName))
+		if (!writeVisibilityData(activeGameWorld(), CurrentFileName))
 		{
-			debug(LOG_ERROR, "saveGame: writeVisibilityData(\"%s\") failed", CurrentFileName);
+			debug(LOG_ERROR, "saveGame: writeVisibilityData(..., \"%s\") failed", CurrentFileName);
 			goto error;
 		}
 
@@ -3856,7 +3860,7 @@ static bool writeMapFile(const char *fileName)
 
 	/* Get the save data */
 	WzMap::MapData mapData;
-	bool status = mapSaveToWzMapData(mapData);
+	bool status = mapSaveToWzMapData(activeGameWorld(), mapData);
 	if (!status)
 	{
 		return false;
@@ -4835,8 +4839,8 @@ static bool writeMainFile(const std::string &fileName, SDWORD saveType)
 	save.setValue("campaignName", getCampaignName());
 	save.setValue("gameTime", gameTime);
 	save.setValue("missionTime", mission.startTime);
-	save.setVector2i("scrollMin", Vector2i(scrollMinX, scrollMinY));
-	save.setVector2i("scrollMax", Vector2i(scrollMaxX, scrollMaxY));
+	save.setVector2i("scrollMin", Vector2i(activeGameWorld().map.scroll.minX, activeGameWorld().map.scroll.minY));
+	save.setVector2i("scrollMax", Vector2i(activeGameWorld().map.scroll.maxX, activeGameWorld().map.scroll.maxY));
 	save.setValue("saveType", saveType);
 	ASSERT_OR_RETURN(false, strlen(aLevelName) < MAX_LEVEL_SIZE, "Unable to save level name - too long (max %d) - %s", (int)MAX_LEVEL_SIZE, aLevelName);
 	save.setValue("levelName", aLevelName);
@@ -5011,10 +5015,10 @@ static bool writeGameFile(const char *fileName, SDWORD saveType)
 	saveGame.missionTime = mission.startTime;
 
 	//put in the scroll data
-	saveGame.ScrollMinX = scrollMinX;
-	saveGame.ScrollMinY = scrollMinY;
-	saveGame.ScrollMaxX = scrollMaxX;
-	saveGame.ScrollMaxY = scrollMaxY;
+	saveGame.ScrollMinX = activeGameWorld().map.scroll.minX;
+	saveGame.ScrollMinY = activeGameWorld().map.scroll.minY;
+	saveGame.ScrollMaxX = activeGameWorld().map.scroll.maxX;
+	saveGame.ScrollMaxY = activeGameWorld().map.scroll.maxY;
 
 	saveGame.GameType = saveType;
 
@@ -5725,8 +5729,8 @@ static bool loadSaveDroid(const char *pFileName, PerPlayerDroidLists& ppsCurrent
 		// If droid is on a mission, calling with the saved position might cause an assertion. Or something like that.
 		if (!onMission)
 		{
-			pos.x = clip(pos.x, world_coord(1), world_coord(mapWidth - 1));
-			pos.y = clip(pos.y, world_coord(1), world_coord(mapHeight - 1));
+			pos.x = clip(pos.x, world_coord(1), world_coord(activeGameWorld().map.width - 1));
+			pos.y = clip(pos.y, world_coord(1), world_coord(activeGameWorld().map.height - 1));
 		}
 
 		/* Create the Droid */
@@ -6240,7 +6244,7 @@ bool loadSaveStructure(char *pFileData, UDWORD filesize)
 		//for modules - need to check the base structure exists
 		if (IsStatExpansionModule(psStats))
 		{
-			psStructure = getTileStructure(map_coord(psSaveStructure->x), map_coord(psSaveStructure->y));
+			psStructure = getTileStructure(activeGameWorld(), map_coord(psSaveStructure->x), map_coord(psSaveStructure->y));
 			if (psStructure == nullptr)
 			{
 				debug(LOG_ERROR, "No owning structure for module - %s for player - %d", getSaveStructNameV19((SAVE_STRUCTURE_V17 *)psSaveStructure), psSaveStructure->player);
@@ -6250,13 +6254,13 @@ bool loadSaveStructure(char *pFileData, UDWORD filesize)
 		}
 
 		//check not trying to build too near the edge
-		if (map_coord(psSaveStructure->x) < TOO_NEAR_EDGE || map_coord(psSaveStructure->x) > mapWidth - TOO_NEAR_EDGE)
+		if (map_coord(psSaveStructure->x) < TOO_NEAR_EDGE || map_coord(psSaveStructure->x) > activeGameWorld().map.width - TOO_NEAR_EDGE)
 		{
 			debug(LOG_ERROR, "Structure %s, x coord too near the edge of the map. id - %d", getSaveStructNameV19((SAVE_STRUCTURE_V17 *)psSaveStructure), psSaveStructure->id);
 			//ignore this
 			continue;
 		}
-		if (map_coord(psSaveStructure->y) < TOO_NEAR_EDGE || map_coord(psSaveStructure->y) > mapHeight - TOO_NEAR_EDGE)
+		if (map_coord(psSaveStructure->y) < TOO_NEAR_EDGE || map_coord(psSaveStructure->y) > activeGameWorld().map.height - TOO_NEAR_EDGE)
 		{
 			debug(LOG_ERROR, "Structure %s, y coord too near the edge of the map. id - %d", getSaveStructNameV19((SAVE_STRUCTURE_V17 *)psSaveStructure), psSaveStructure->id);
 			//ignore this
@@ -6331,7 +6335,7 @@ static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDW
 		//for modules - need to check the base structure exists
 		if (IsStatExpansionModule(psStats))
 		{
-			STRUCTURE *psStructure = getTileStructure(map_coord(structure.position.x), map_coord(structure.position.y));
+			STRUCTURE *psStructure = getTileStructure(activeGameWorld(), map_coord(structure.position.x), map_coord(structure.position.y));
 			if (psStructure == nullptr)
 			{
 				debug(LOG_ERROR, "No owning structure for module - %s for player - %d", structure.name.c_str(), structure.player);
@@ -6339,8 +6343,8 @@ static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDW
 			}
 		}
 		//check not trying to build too near the edge
-		if (map_coord(structure.position.x) < TOO_NEAR_EDGE || map_coord(structure.position.x) > mapWidth - TOO_NEAR_EDGE
-		 || map_coord(structure.position.y) < TOO_NEAR_EDGE || map_coord(structure.position.y) > mapHeight - TOO_NEAR_EDGE)
+		if (map_coord(structure.position.x) < TOO_NEAR_EDGE || map_coord(structure.position.x) > activeGameWorld().map.width - TOO_NEAR_EDGE
+		 || map_coord(structure.position.y) < TOO_NEAR_EDGE || map_coord(structure.position.y) > activeGameWorld().map.height - TOO_NEAR_EDGE)
 		{
 			debug(LOG_ERROR, "Structure %s, coord too near the edge of the map", structure.name.c_str());
 			continue; // skip it
@@ -6467,7 +6471,7 @@ static bool loadSaveStructure2(const char *pFileName)
 		//for modules - need to check the base structure exists
 		if (IsStatExpansionModule(psStats))
 		{
-			STRUCTURE *psTileStructure = getTileStructure(map_coord(pos.x), map_coord(pos.y));
+			STRUCTURE *psTileStructure = getTileStructure(activeGameWorld(), map_coord(pos.x), map_coord(pos.y));
 			if (psTileStructure == nullptr)
 			{
 				debug(LOG_ERROR, "No owning structure for module - %s for player - %d", name.toUtf8().c_str(), player);
@@ -6476,8 +6480,8 @@ static bool loadSaveStructure2(const char *pFileName)
 			}
 		}
 		//check not trying to build too near the edge
-		if (map_coord(pos.x) < TOO_NEAR_EDGE || map_coord(pos.x) > mapWidth - TOO_NEAR_EDGE
-		    || map_coord(pos.y) < TOO_NEAR_EDGE || map_coord(pos.y) > mapHeight - TOO_NEAR_EDGE)
+		if (map_coord(pos.x) < TOO_NEAR_EDGE || map_coord(pos.x) > activeGameWorld().map.width - TOO_NEAR_EDGE
+		    || map_coord(pos.y) < TOO_NEAR_EDGE || map_coord(pos.y) > activeGameWorld().map.height - TOO_NEAR_EDGE)
 		{
 			debug(LOG_ERROR, "Structure %s (%s), coord too near the edge of the map", name.toUtf8().c_str(), list[i].toUtf8().c_str());
 			ini.endGroup();
@@ -7870,7 +7874,7 @@ bool loadSaveMessage(const char* pFileName, LEVEL_TYPE levelType)
 						{
 							psMessage->pViewData = psViewData;
 							// Check the z value is at least the height of the terrain
-							const int terrainHeight = map_Height(((VIEW_PROXIMITY*)psViewData->pData)->x, ((VIEW_PROXIMITY*)psViewData->pData)->y);
+							const int terrainHeight = map_Height(activeGameWorld(), ((VIEW_PROXIMITY*)psViewData->pData)->x, ((VIEW_PROXIMITY*)psViewData->pData)->y);
 							if (((VIEW_PROXIMITY*)psViewData->pData)->z < terrainHeight)
 							{
 								((VIEW_PROXIMITY*)psViewData->pData)->z = terrainHeight;
@@ -8211,39 +8215,39 @@ static void setMapScroll()
 	//if loading in a pre version5 then scroll values will not have been set up so set to max poss
 	if (width == 0 && height == 0)
 	{
-		scrollMinX = 0;
-		scrollMaxX = mapWidth;
-		scrollMinY = 0;
-		scrollMaxY = mapHeight;
+		activeGameWorld().map.scroll.minX = 0;
+		activeGameWorld().map.scroll.maxX = activeGameWorld().map.width;
+		activeGameWorld().map.scroll.minY = 0;
+		activeGameWorld().map.scroll.maxY = activeGameWorld().map.height;
 		return;
 	}
-	scrollMinX = startX;
-	scrollMinY = startY;
-	scrollMaxX = startX + width;
-	scrollMaxY = startY + height;
+	activeGameWorld().map.scroll.minX = startX;
+	activeGameWorld().map.scroll.minY = startY;
+	activeGameWorld().map.scroll.maxX = startX + width;
+	activeGameWorld().map.scroll.maxY = startY + height;
 	//check not going beyond width/height of map
-	if (scrollMaxX > (SDWORD)mapWidth)
+	if (activeGameWorld().map.scroll.maxX > (SDWORD)activeGameWorld().map.width)
 	{
-		scrollMaxX = mapWidth;
+		activeGameWorld().map.scroll.maxX = activeGameWorld().map.width;
 		debug(LOG_NEVER, "scrollMaxX was too big - It has been set to map width");
 	}
-	if (scrollMaxY > (SDWORD)mapHeight)
+	if (activeGameWorld().map.scroll.maxY > (SDWORD)activeGameWorld().map.height)
 	{
-		scrollMaxY = mapHeight;
+		activeGameWorld().map.scroll.maxY = activeGameWorld().map.height;
 		debug(LOG_NEVER, "scrollMaxY was too big - It has been set to map height");
 	}
 	// check for invalid minimum values (fixes some broken maps)
-	if (scrollMinX >= scrollMaxX)
+	if (activeGameWorld().map.scroll.minX >= activeGameWorld().map.scroll.maxX)
 	{
-		ASSERT(false, "scrollMinX was >= scrollMaxX - min has been set to 0, max has been set to mapWidth");
-		scrollMinX = 0;
-		scrollMaxX = mapWidth;
+		ASSERT(false, "scrollMinX was >= scrollMaxX - min has been set to 0, max has been set to map width");
+		activeGameWorld().map.scroll.minX = 0;
+		activeGameWorld().map.scroll.maxX = activeGameWorld().map.width;
 	}
-	if (scrollMinY >= scrollMaxY)
+	if (activeGameWorld().map.scroll.minY >= activeGameWorld().map.scroll.maxY)
 	{
-		ASSERT(false, "scrollMinY was >= scrollMaxY - min has been set to 0, max has been set to mapHeight");
-		scrollMinY = 0;
-		scrollMaxY = mapHeight;
+		ASSERT(false, "scrollMinY was >= scrollMaxY - min has been set to 0, max has been set to map height");
+		activeGameWorld().map.scroll.minY = 0;
+		activeGameWorld().map.scroll.maxY = activeGameWorld().map.height;
 	}
 }
 

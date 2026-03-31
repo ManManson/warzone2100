@@ -86,6 +86,9 @@ uint32_t generateSynchronisedObjectId();
 /* add the droid to the Droid Lists */
 void addDroid(DROID *psDroidToAdd, PerPlayerDroidLists& pList);
 
+/** After swapMissionPointers in CampaignDual; refreshes BASE_OBJECT::owningWorld for all swapped lists. */
+void objmemRefreshOwningWorldsForCampaignLists();
+
 /*destroy a droid */
 void killDroid(DROID *psDel);
 
