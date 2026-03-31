@@ -259,6 +259,13 @@ static void doWaveTerrain(BASE_OBJECT *psObj)
 		return;
 	}
 
+	GameWorld *const world = psObj->owningWorld;
+	ASSERT(world != nullptr, "doWaveTerrain: no owningWorld");
+	if (!world->map.width || !world->map.height)
+	{
+		return;
+	}
+
 	const int sx = psObj->pos.x;
 	const int sy = psObj->pos.y;
 	const int sz = psObj->pos.z + ((psObj->sDisplay.imd != nullptr) ? MAX(MIN_VIS_HEIGHT, psObj->sDisplay.imd->max.y) : MIN_VIS_HEIGHT);
@@ -284,12 +291,12 @@ static void doWaveTerrain(BASE_OBJECT *psObj)
 	{
 		const int mapX = map_coord(sx) + tiles[i].dx;
 		const int mapY = map_coord(sy) + tiles[i].dy;
-		if (mapX < 0 || mapX >= activeGameWorld().map.width || mapY < 0 || mapY >= activeGameWorld().map.height)
+		if (mapX < 0 || mapX >= world->map.width || mapY < 0 || mapY >= world->map.height)
 		{
 			continue;
 		}
 
-		MAPTILE *psTile = mapTile(activeGameWorld(), mapX, mapY);
+		MAPTILE *psTile = mapTile(*world, mapX, mapY);
 		int tileHeight = std::max(psTile->height, psTile->waterLevel);  // If we can see the water surface, then let us see water-covered tiles too.
 		int perspectiveHeight = (tileHeight - sz) * tiles[i].invRadius;
 		int perspectiveHeightLeeway = (tileHeight - sz + MIN_VIS_HEIGHT) * tiles[i].invRadius;
@@ -392,41 +399,47 @@ static bool rayLOSCallback(Vector2i pos, int32_t dist, void *data)
 /* Remove tile visibility from object */
 void visRemoveVisibility(BASE_OBJECT *psObj)
 {
-	if (activeGameWorld().map.width && activeGameWorld().map.height)
+	if (psObj->watchedTiles.empty())
 	{
-		for (TILEPOS pos : psObj->watchedTiles)
-		{
-			// FIXME: the mapTile might have been swapped out, see swapMissionPointers()
-			MAPTILE *psTile = mapTile(activeGameWorld(), pos.x, pos.y);
+		psObj->flags.set(OBJECT_FLAG_JAMMED_TILES, false);
+		return;
+	}
 
-			ASSERT(pos.type < 2, "Invalid visibility type %d", (int)pos.type);
-			uint16_t *visionType = (pos.type == 0) ? psTile->sensors : psTile->watchers;
-			if (visionType[psObj->player] == 0 && game.type == LEVEL_TYPE::CAMPAIGN)	// hack
-			{
-				continue;
-			}
-			ASSERT(visionType[psObj->player] > 0, "No %s on watched tile (%d, %d)", pos.type ? "radar" : "vision", (int)pos.x, (int)pos.y);
-			visionType[psObj->player]--;
-			if (psObj->flags.test(OBJECT_FLAG_JAMMED_TILES))  // we are a jammer object — we cannot check objJammerPower(psObj) > 0 directly here, we may be in the BASE_OBJECT destructor).
-			{
-				// No jammers in campaign, no need for special hack
-				ASSERT(psTile->jammers[psObj->player] > 0, "Not jamming watched tile (%d, %d)", (int)pos.x, (int)pos.y);
-				psTile->jammers[psObj->player]--;
-				if (psTile->jammers[psObj->player] == 0)
-				{
-					psTile->jammerBits &= ~(1 << psObj->player);
-				}
-			}
-			updateTileVis(psTile, psObj->player);
+	GameWorld *const world = psObj->owningWorld;
+	ASSERT(world != nullptr, "visRemoveVisibility: watched tiles but no owningWorld");
+	if (!world->map.width || !world->map.height)
+	{
+		psObj->watchedTiles.clear();
+		psObj->flags.set(OBJECT_FLAG_JAMMED_TILES, false);
+		return;
+	}
+
+	for (TILEPOS pos : psObj->watchedTiles)
+	{
+		MAPTILE *psTile = mapTile(*world, pos.x, pos.y);
+
+		ASSERT(pos.type < 2, "Invalid visibility type %d", (int)pos.type);
+		uint16_t *visionType = (pos.type == 0) ? psTile->sensors : psTile->watchers;
+		if (visionType[psObj->player] == 0 && game.type == LEVEL_TYPE::CAMPAIGN)	// hack
+		{
+			continue;
 		}
+		ASSERT(visionType[psObj->player] > 0, "No %s on watched tile (%d, %d)", pos.type ? "radar" : "vision", (int)pos.x, (int)pos.y);
+		visionType[psObj->player]--;
+		if (psObj->flags.test(OBJECT_FLAG_JAMMED_TILES))  // we are a jammer object — we cannot check objJammerPower(psObj) > 0 directly here, we may be in the BASE_OBJECT destructor).
+		{
+			// No jammers in campaign, no need for special hack
+			ASSERT(psTile->jammers[psObj->player] > 0, "Not jamming watched tile (%d, %d)", (int)pos.x, (int)pos.y);
+			psTile->jammers[psObj->player]--;
+			if (psTile->jammers[psObj->player] == 0)
+			{
+				psTile->jammerBits &= ~(1 << psObj->player);
+			}
+		}
+		updateTileVis(psTile, psObj->player);
 	}
 	psObj->watchedTiles.clear();
 	psObj->flags.set(OBJECT_FLAG_JAMMED_TILES, false);
-}
-
-void visRemoveVisibilityOffWorld(BASE_OBJECT *psObj)
-{
-	psObj->watchedTiles.clear();
 }
 
 /* Check which tiles can be seen by an object */
@@ -446,6 +459,12 @@ void visTilesUpdate(BASE_OBJECT *psObj)
 			// unbuilt structures and walls do not confer visibility.
 			return;
 		}
+	}
+
+	ASSERT(psObj->owningWorld != nullptr, "visTilesUpdate: owningWorld required");
+	if (!psObj->owningWorld->map.width || !psObj->owningWorld->map.height)
+	{
+		return;
 	}
 
 	// Do the whole circle in ∞ steps. No more pretty moiré patterns.

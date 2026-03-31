@@ -1072,6 +1072,12 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd)
 
 	resetObjectAnimationState(psDroidToAdd);
 
+	// Remove map visibility while owningWorld still reflects the list we are removing from (removeDroid clears it).
+	if (!isDead(psDroidToAdd))
+	{
+		visRemoveVisibility((BASE_OBJECT *)psDroidToAdd);
+	}
+
 	if (onMission)
 	{
 		// removing from droid mission list
@@ -1092,14 +1098,6 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd)
 	else
 	{
 		debug(LOG_ERROR, "droid %d not found, so nothing added to transporter!", psDroidToAdd->id);
-	}
-	if (onMission)
-	{
-		visRemoveVisibilityOffWorld((BASE_OBJECT *)psDroidToAdd);
-	}
-	else
-	{
-		visRemoveVisibility((BASE_OBJECT *)psDroidToAdd);
 	}
 	fpathRemoveDroidData(psDroidToAdd->id);
 

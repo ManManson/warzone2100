@@ -511,6 +511,18 @@ static void assignOwningWorldForDroid(DROID *d, PerPlayerDroidLists &pList)
 	}
 }
 
+void assignOwningWorldForPendingGlobalDroid(DROID *d)
+{
+	ASSERT_OR_RETURN(, d != nullptr, "null droid");
+	d->owningWorld = worldForGlobalSimLists();
+}
+
+void assignOwningWorldForPendingGlobalStructure(STRUCTURE *s)
+{
+	ASSERT_OR_RETURN(, s != nullptr, "null structure");
+	s->owningWorld = worldForGlobalSimLists();
+}
+
 void objmemRefreshOwningWorldsForCampaignLists()
 {
 	GameSessionWorlds &gsw = GameSessionWorlds::instance();

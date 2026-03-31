@@ -1936,6 +1936,7 @@ DROID *reallyBuildDroid(const DROID_TEMPLATE *pTemplate, Position pos, UDWORD pl
 		{
 			updateDroidOrientation(&droid);
 		}
+		assignOwningWorldForPendingGlobalDroid(&droid);
 		visTilesUpdate(&droid);
 	}
 

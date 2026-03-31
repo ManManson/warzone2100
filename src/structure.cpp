@@ -1726,6 +1726,7 @@ STRUCTURE *buildStructureDir(STRUCTURE_STATS *pStructureType, UDWORD x, UDWORD y
 		}
 
 		// Reveal any tiles that can be seen by the structure
+		assignOwningWorldForPendingGlobalStructure(psBuilding);
 		visTilesUpdate(psBuilding);
 
 		/*if we're coming from a SAVEGAME and we're on an Expand_Limbo mission,

@@ -89,6 +89,10 @@ void addDroid(DROID *psDroidToAdd, PerPlayerDroidLists& pList);
 /** After swapMissionPointers in CampaignDual; refreshes BASE_OBJECT::owningWorld for all swapped lists. */
 void objmemRefreshOwningWorldsForCampaignLists();
 
+/** Set owningWorld before visTilesUpdate when the object is not yet in global sim lists (e.g. reallyBuildDroid, structure placement). Matches addDroid(…, apsDroidLists) / addStructure. */
+void assignOwningWorldForPendingGlobalDroid(DROID *d);
+void assignOwningWorldForPendingGlobalStructure(STRUCTURE *s);
+
 /*destroy a droid */
 void killDroid(DROID *psDel);
 
