@@ -41,8 +41,8 @@ bool loadFeatureStats(WzConfig &ini);
 void featureStatsShutDown();
 
 /* Create a feature on the map */
-FEATURE *buildFeature(FEATURE_STATS *psStats, UDWORD x, UDWORD y, bool FromSave);
-FEATURE *buildFeature(FEATURE_STATS *psStats, UDWORD x, UDWORD y, bool FromSave, uint32_t id);
+FEATURE *buildFeature(GameWorld& world, FEATURE_STATS *psStats, UDWORD x, UDWORD y, bool FromSave);
+FEATURE *buildFeature(GameWorld& world, FEATURE_STATS *psStats, UDWORD x, UDWORD y, bool FromSave, uint32_t id);
 
 /* Update routine for features */
 void featureUpdate(FEATURE *psFeat);

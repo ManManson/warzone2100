@@ -1608,9 +1608,9 @@ bool stageTwoShutDown()
 
 	cdAudio_Stop();
 
-	freeAllStructs();
-	freeAllDroids();
-	freeAllFeatures();
+	freeAllStructs(activeGameWorld()); // FIXME!!!!: audit this
+	freeAllDroids(activeGameWorld()); // FIXME!!!!: audit this
+	freeAllFeatures(activeGameWorld()); // FIXME!!!!: audit this
 	freeAllFlagPositions();
 
 	if (!messageShutdown())
@@ -1909,9 +1909,9 @@ bool saveGameReset()
 
 	cdAudio_Stop();
 
-	freeAllStructs();
-	freeAllDroids();
-	freeAllFeatures();
+	freeAllStructs(activeGameWorld()); // FIXME!!!!: audit this
+	freeAllDroids(activeGameWorld()); // FIXME!!!!: audit this
+	freeAllFeatures(activeGameWorld()); // FIXME!!!!: audit this
 	freeAllFlagPositions();
 	initMission();
 	initTransporters();

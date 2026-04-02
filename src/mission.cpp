@@ -48,6 +48,7 @@
 #include "challenge.h"
 #include "projectile.h"
 #include "power.h"
+#include "src/gamesessionworlds.h"
 #include "structure.h"
 #include "message.h"
 #include "research.h"
@@ -151,9 +152,6 @@ static UBYTE   missionCountDown;
 //flag to indicate whether the coded mission countdown is played
 static UBYTE   bPlayCountDown;
 
-// Odd number of swapMissionPointers() calls inverts which slot holds home vs mission map/objects.
-static bool    g_swapMissionMapSlotsInverted = false;
-
 //FUNCTIONS**************
 static void addLandingLights(UDWORD x, UDWORD y);
 static void resetHomeStructureObjects();
@@ -171,7 +169,6 @@ static void endMissionOffKeepLimbo();
 static void endMissionExpandLimbo();
 
 static void saveMissionData();
-static void ensureCanonicalMissionMapSlotsBeforeRestore();
 static void restoreMissionData();
 static void saveCampaignData();
 static void missionResetDroids();
@@ -201,7 +198,7 @@ static void resetHomeStructureObjects()
 {
 	for (unsigned int i = 0; i < MAX_PLAYERS; ++i)
 	{
-		for (STRUCTURE *psStruct : apsStructLists[i])
+		for (STRUCTURE *psStruct : missionParkedHomeWorld().objects.structures[i])
 		{
 			if (!psStruct->pFunctionality || !psStruct->pStructureType)
 			{
@@ -316,9 +313,7 @@ void initMission()
 	//start as not cheating!
 	mission.cheatTime = 0;
 
-	g_swapMissionMapSlotsInverted = false;
-
-	// Session: parked campaign home lives in primary; bind active for activeGameWorld() (see GAME_WORLD_REFACTORING_V2_IMPL §4.6).
+	// Session: parked campaign home lives in primary; bind active for activeGameWorld().
 	GameSessionWorlds &gsw = GameSessionWorlds::instance();
 	ASSERT(gsw.primary != nullptr, "initMission: primary must exist after missionParkedHomeWorld() use");
 	gsw.setMode(WorldSessionMode::Solo);
@@ -344,32 +339,16 @@ bool missionShutDown()
 		//clear out the audio
 		audio_StopAll();
 
-		ensureCanonicalMissionMapSlotsBeforeRestore();
-
-		freeAllDroids();
-		freeAllStructs();
-		freeAllFeatures();
+		freeAllDroids(activeGameWorld()); // FIXME!!!!: audit this
+		freeAllStructs(activeGameWorld()); // FIXME!!!!: audit this
+		freeAllFeatures(activeGameWorld()); // FIXME!!!!: audit this
 		freeAllFlagPositions();
 		releaseAllProxDisp();
 		gwShutDown(activeGameWorld());
 
-		for (int inc = 0; inc < MAX_PLAYERS; inc++)
-		{
-			apsDroidLists[inc] = std::move(missionParkedHomeWorld().objects.droids[inc]);
-			missionParkedHomeWorld().objects.droids[inc].clear();
-			apsStructLists[inc] = std::move(missionParkedHomeWorld().objects.structures[inc]);
-			missionParkedHomeWorld().objects.structures[inc].clear();
-			apsFeatureLists[inc] = std::move(missionParkedHomeWorld().objects.features[inc]);
-			missionParkedHomeWorld().objects.features[inc].clear();
-			apsFlagPosLists[inc] = std::move(missionParkedHomeWorld().objects.flags[inc]);
-			missionParkedHomeWorld().objects.flags[inc].clear();
-			apsExtractorLists[inc] = std::move(missionParkedHomeWorld().objects.extractors[inc]);
-			missionParkedHomeWorld().objects.extractors[inc].clear();
-		}
-		apsSensorList[0] = std::move(missionParkedHomeWorld().objects.sensors[0]);
-		apsOilList[0] = std::move(missionParkedHomeWorld().objects.oils[0]);
-		missionParkedHomeWorld().objects.sensors[0].clear();
-		missionParkedHomeWorld().objects.oils[0].clear();
+		// Home objects stayed in missionParkedHomeWorld() (primary) during the mission; active was
+		// offworld with the mission map. Mission lists are freed above — do not move primary into
+		// active (that would strand home in offworld before bindActiveWorld(primary)).
 
 		ensureOffworldWorld();
 		GameWorld &parked = missionParkedHomeWorld();
@@ -655,7 +634,7 @@ void missionFlyTransportersIn(SDWORD iPlayer, bool bTrackTransporter)
 				if (droidRemove(psTransporter, missionParkedHomeWorld().objects.droids))
 				{
 					// Do not want to add it unless managed to remove it from the previous list
-					addDroid(psTransporter, apsDroidLists);
+					addDroid(psTransporter, apsDroidLists());
 				}
 
 				/* set start position */
@@ -701,7 +680,8 @@ void missionFlyTransportersIn(SDWORD iPlayer, bool bTrackTransporter)
 	});
 }
 
-/* Saves the necessary data when moving from a home base Mission to an OffWorld mission */
+/* Saves the necessary data when moving from a home base Mission to an OffWorld mission.
+ * Prepares offworld world by clearing it and setting the active world to offworld. */
 static void saveMissionData()
 {
 	bool bRepairExists = false;
@@ -714,14 +694,16 @@ static void saveMissionData()
 	//clear out the audio
 	audio_StopAll();
 
+	GameWorld &homeWorld = missionParkedHomeWorld();
+
 	//set any structures currently being built to completed for the selected player
-	mutating_list_iterate(apsStructLists[selectedPlayer], [&bRepairExists, &bRearmPadExists](STRUCTURE* psStruct)
+	mutating_list_iterate(homeWorld.objects.structures[selectedPlayer], [&bRepairExists, &bRearmPadExists, &homeWorld](STRUCTURE* psStruct)
 	{
 		STRUCTURE* psStructBeingBuilt;
 		if (psStruct->status == SS_BEING_BUILT)
 		{
 			//find a droid working on it
-			for (const DROID* psDroid : apsDroidLists[selectedPlayer])
+			for (const DROID* psDroid : homeWorld.objects.droids[selectedPlayer])
 			{
 				if ((psStructBeingBuilt = (STRUCTURE*)orderStateObj(psDroid, DORDER_BUILD))
 					&& psStructBeingBuilt == psStruct)
@@ -751,7 +733,7 @@ static void saveMissionData()
 	//repair and rearm all droids back at home base if have a repair facility or rearming pad
 	if (bRepairExists || bRearmPadExists)
 	{
-		for (DROID* psDroid : apsDroidLists[selectedPlayer])
+		for (DROID* psDroid : homeWorld.objects.droids[selectedPlayer])
 		{
 			bool vtolAndPadsExist = (psDroid->isVtol() && bRearmPadExists);
 			if ((bRepairExists || vtolAndPadsExist) && psDroid->isDamaged())
@@ -766,7 +748,7 @@ static void saveMissionData()
 	}
 
 	//clear droid orders for all droids except constructors still building
-	for (DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (DROID* psDroid : homeWorld.objects.droids[selectedPlayer])
 	{
 		STRUCTURE* psStructBeingBuilt;
 		if ((psStructBeingBuilt = (STRUCTURE *)orderStateObj(psDroid, DORDER_BUILD)))
@@ -790,20 +772,12 @@ static void saveMissionData()
 	GameSessionWorlds &gsw = GameSessionWorlds::instance();
 	gsw.setMode(WorldSessionMode::CampaignDual);
 	gsw.setActiveToOffworld();
+	// Home snapshot already lives in primary.objects while active was primary; do not assign
+	// primary from aps after switching to offworld (that would copy empty offworld over home).
+
 	// save the selectedPlayer's LZ
 	mission.homeLZ_X = getLandingX(selectedPlayer);
 	mission.homeLZ_Y = getLandingY(selectedPlayer);
-
-	for (unsigned int inc = 0; inc < MAX_PLAYERS; ++inc)
-	{
-		missionParkedHomeWorld().objects.structures[inc] = apsStructLists[inc];
-		missionParkedHomeWorld().objects.droids[inc] = apsDroidLists[inc];
-		missionParkedHomeWorld().objects.features[inc] = apsFeatureLists[inc];
-		missionParkedHomeWorld().objects.flags[inc] = apsFlagPosLists[inc];
-		missionParkedHomeWorld().objects.extractors[inc] = apsExtractorLists[inc];
-	}
-	missionParkedHomeWorld().objects.sensors[0] = apsSensorList[0];
-	missionParkedHomeWorld().objects.oils[0] = apsOilList[0];
 
 	mission.playerX = playerPos.p.x;
 	mission.playerY = playerPos.p.z;
@@ -827,46 +801,18 @@ static void saveMissionData()
 	i.e. We shoudn't have called SwapMissionPointers()
 
 */
-bool missionMapSlotsInvertedForWorldBinding()
-{
-	return g_swapMissionMapSlotsInverted;
-}
-
-void missionResetSwapMissionMapSlotsParity()
-{
-	g_swapMissionMapSlotsInverted = false;
-}
-
-static void ensureCanonicalMissionMapSlotsBeforeRestore()
-{
-	GameSessionWorlds &gsw = GameSessionWorlds::instance();
-	if (gsw.mode != WorldSessionMode::CampaignDual)
-	{
-		return;
-	}
-	if (!g_swapMissionMapSlotsInverted)
-	{
-		return;
-	}
-	swapMissionPointers();
-}
-
 static void restoreMissionData()
 {
-	UDWORD		inc;
-
 	debug(LOG_SAVE, "called");
-
-	ensureCanonicalMissionMapSlotsBeforeRestore();
 
 	//clear out the audio
 	audio_StopAll();
 
 	//clear all the lists
 	proj_FreeAllProjectiles();
-	freeAllDroids();
-	freeAllStructs();
-	freeAllFeatures();
+	freeAllDroids(activeGameWorld()); // FIXME!!!!: audit this
+	freeAllStructs(activeGameWorld()); // FIXME!!!!: audit this
+	freeAllFeatures(activeGameWorld()); // FIXME!!!!: audit this
 	freeAllFlagPositions();
 	gwShutDown(activeGameWorld());
 	if (game.type != LEVEL_TYPE::CAMPAIGN)
@@ -874,32 +820,10 @@ static void restoreMissionData()
 		ASSERT(false, "game type isn't campaign, but we are in a campaign game!");
 		game.type = LEVEL_TYPE::CAMPAIGN;	// fix the issue, since it is obviously a bug
 	}
-	//restore the game pointers
-	for (inc = 0; inc < MAX_PLAYERS; inc++)
-	{
-		apsDroidLists[inc] = std::move(missionParkedHomeWorld().objects.droids[inc]);
-		missionParkedHomeWorld().objects.droids[inc].clear();
-		for (DROID* psObj : apsDroidLists[inc])
-		{
-			psObj->died = false;	//make sure the died flag is not set
-		}
+	// Home stayed in primary during the mission; mission was on active (offworld). Mission lists
+	// were freed above — bind active to primary; do not move primary into offworld (same as
+	// missionShutDown offworld branch).
 
-		apsStructLists[inc] = std::move(missionParkedHomeWorld().objects.structures[inc]);
-		missionParkedHomeWorld().objects.structures[inc].clear();
-
-		apsFeatureLists[inc] = std::move(missionParkedHomeWorld().objects.features[inc]);
-		missionParkedHomeWorld().objects.features[inc].clear();
-
-		apsFlagPosLists[inc] = std::move(missionParkedHomeWorld().objects.flags[inc]);
-		missionParkedHomeWorld().objects.flags[inc].clear();
-
-		apsExtractorLists[inc] = std::move(missionParkedHomeWorld().objects.extractors[inc]);
-		missionParkedHomeWorld().objects.extractors[inc].clear();
-	}
-	apsSensorList[0] = std::move(missionParkedHomeWorld().objects.sensors[0]);
-	apsOilList[0] = std::move(missionParkedHomeWorld().objects.oils[0]);
-	missionParkedHomeWorld().objects.sensors[0].clear();
-	apsOilList[0].clear();
 	//swap mission data over
 	ensureOffworldWorld();
 	GameWorld &parked = missionParkedHomeWorld();
@@ -911,11 +835,19 @@ static void restoreMissionData()
 	GameSessionWorlds::instance().setMode(WorldSessionMode::Solo);
 	bindActiveWorld(parked);
 
+	for (unsigned int inc = 0; inc < MAX_PLAYERS; inc++)
+	{
+		for (DROID* psObj : apsDroidLists()[inc])
+		{
+			psObj->died = false;	// make sure the died flag is not set
+		}
+	}
+
 	//reset the current structure lists
 	setCurrentStructQuantity(false);
 
 	initFactoryNumFlag();
-	resetFactoryNumFlag();
+	resetFactoryNumFlag(activeGameWorld());
 
 	offWorldKeepLists = false;
 
@@ -936,19 +868,23 @@ void saveMissionLimboData()
 	// there might be some from the previous camapign
 	processPreviousCampDroids();
 
-	// move droids properly - does all the clean up code
-	mutating_list_iterate(apsDroidLists[selectedPlayer], [](DROID* psDroid)
+	// When Solo, aps*() and missionParkedHomeWorld().objects alias the same storage; the move
+	// would be a no-op but the following clear() would destroy all droids.
+	if (&apsDroidLists() != &missionParkedHomeWorld().objects.droids)
 	{
-		if (droidRemove(psDroid, apsDroidLists))
+		mutating_list_iterate(apsDroidLists()[selectedPlayer], [](DROID* psDroid)
 		{
-			addDroid(psDroid, missionParkedHomeWorld().objects.droids);
-		}
-		return IterationResult::CONTINUE_ITERATION;
-	});
-	apsDroidLists[selectedPlayer].clear();
+			if (droidRemove(psDroid, apsDroidLists()))
+			{
+				addDroid(psDroid, missionParkedHomeWorld().objects.droids);
+			}
+			return IterationResult::CONTINUE_ITERATION;
+		});
+		apsDroidLists()[selectedPlayer].clear();
+	}
 
 	// any selectedPlayer's factories/research need to be put on holdProduction/holdresearch
-	for (STRUCTURE* psStruct : apsStructLists[selectedPlayer])
+	for (STRUCTURE* psStruct : apsStructLists()[selectedPlayer])
 	{
 		if (!psStruct)
 		{
@@ -980,7 +916,7 @@ void placeLimboDroids()
 
 		if (droidRemove(psDroid, apsLimboDroids))
 		{
-			addDroid(psDroid, apsDroidLists);
+			addDroid(psDroid, apsDroidLists());
 			//KILL OFF TRANSPORTER - should never be one but....
 			if (psDroid->isTransporter())
 			{
@@ -990,7 +926,7 @@ void placeLimboDroids()
 			//set up location for each of the droids
 			droidX = map_coord(getLandingX(LIMBO_LANDING));
 			droidY = map_coord(getLandingY(LIMBO_LANDING));
-			pickRes = pickHalfATile(&droidX, &droidY, LOOK_FOR_EMPTY_TILE);
+			pickRes = pickHalfATile(activeGameWorld(), &droidX, &droidY, LOOK_FOR_EMPTY_TILE);
 			if (pickRes == NO_FREE_TILE)
 			{
 				ASSERT(false, "placeLimboUnits: Unable to find a free location");
@@ -1032,7 +968,7 @@ void restoreMissionLimboData()
 		//remove out of stored list and add to current Droid list
 		if (droidRemove(psDroid, missionParkedHomeWorld().objects.droids))
 		{
-			addDroid(psDroid, apsDroidLists);
+			addDroid(psDroid, apsDroidLists());
 			//reset droid orders
 			orderDroid(psDroid, DORDER_STOP, ModeImmediate);
 			//the location of the droid should be valid!
@@ -1058,7 +994,7 @@ void saveCampaignData()
 	if (getDroidsToSafetyFlag())
 	{
 		// Move any Transporters into the mission list
-		mutating_list_iterate(apsDroidLists[selectedPlayer], [](DROID* psDroid)
+		mutating_list_iterate(apsDroidLists()[selectedPlayer], [](DROID* psDroid)
 		{
 			if (psDroid->isTransporter())
 			{
@@ -1082,7 +1018,7 @@ void saveCampaignData()
 					return IterationResult::CONTINUE_ITERATION;
 				});
 				// Remove the transporter from the current list
-				if (droidRemove(psDroid, apsDroidLists))
+				if (droidRemove(psDroid, apsDroidLists()))
 				{
 					//cam change add droid
 					psDroid->pos.x = INVALID_XY;
@@ -1096,8 +1032,11 @@ void saveCampaignData()
 	else
 	{
 		// Reserve the droids for selected player for start of next campaign
-		missionParkedHomeWorld().objects.droids[selectedPlayer] = std::move(apsDroidLists[selectedPlayer]);
-		apsDroidLists[selectedPlayer].clear();
+		if (&apsDroidLists() != &missionParkedHomeWorld().objects.droids)
+		{
+			missionParkedHomeWorld().objects.droids[selectedPlayer] = std::move(apsDroidLists()[selectedPlayer]);
+			apsDroidLists()[selectedPlayer].clear();
+		}
 		for (DROID* psDroid : missionParkedHomeWorld().objects.droids[selectedPlayer])
 		{
 			//cam change add droid
@@ -1148,7 +1087,7 @@ void saveCampaignData()
 	//clear all other droids
 	for (int inc = 0; inc < MAX_PLAYERS; inc++)
 	{
-		mutating_list_iterate(apsDroidLists[inc], [](DROID* d)
+		mutating_list_iterate(apsDroidLists()[inc], [](DROID* d)
 		{
 			vanishDroid(d);
 			return IterationResult::CONTINUE_ITERATION;
@@ -1159,8 +1098,8 @@ void saveCampaignData()
 	audio_StopAll();
 
 	//clear all other memory
-	freeAllStructs();
-	freeAllFeatures();
+	freeAllStructs(activeGameWorld()); // FIXME!!!!: audit this
+	freeAllFeatures(activeGameWorld()); // FIXME!!!!: audit this
 }
 
 
@@ -1170,6 +1109,7 @@ bool startMissionOffClear(const GameLoadDetails& gameToLoad)
 	debug(LOG_SAVE, "called for %s", gameToLoad.filePath.c_str());
 
 	saveMissionData();
+	// Now offworld world is active
 
 	//load in the new game clearing the lists
 	if (!loadGame(gameToLoad, !KEEPOBJECTS, !FREEMEM))
@@ -1190,6 +1130,7 @@ bool startMissionOffKeep(const GameLoadDetails& gameToLoad)
 {
 	debug(LOG_SAVE, "called for %s", gameToLoad.filePath.c_str());
 	saveMissionData();
+	// Now offworld world is active
 
 	//load in the new game clearing the lists
 	if (!loadGame(gameToLoad, !KEEPOBJECTS, !FREEMEM))
@@ -1292,7 +1233,7 @@ static void clearCampaignUnits()
 {
 	if (selectedPlayer >= MAX_PLAYERS) { return; }
 
-	for (DROID *psDroid : apsDroidLists[selectedPlayer])
+	for (DROID *psDroid : apsDroidLists()[selectedPlayer])
 	{
 		orderDroid(psDroid, DORDER_STOP, ModeImmediate);
 		setDroidBase(psDroid, nullptr);
@@ -1305,9 +1246,12 @@ static void clearCampaignUnits()
 static void processMission()
 {
 	ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer %" PRIu32 " exceeds MAX_PLAYERS", selectedPlayer);
+	ASSERT(&activeGameWorld() == &offworldWorld(), "activeGameWorld() != offworldWorld()");
+
+	GameWorld& curWorld = offworldWorld();
 
 	//and the rest on the mission map  - for now?
-	mutating_list_iterate(apsDroidLists[selectedPlayer], [](DROID* psDroid)
+	mutating_list_iterate(curWorld.objects.droids[selectedPlayer], [&curWorld](DROID* psDroid)
 	{
 		UDWORD			droidX, droidY;
 		PICKTILE		pickRes;
@@ -1316,25 +1260,24 @@ static void processMission()
 		// clean up visibility
 		visRemoveVisibility((BASE_OBJECT*)psDroid);
 		//remove out of stored list and add to current Droid list
-		if (droidRemove(psDroid, apsDroidLists))
+		if (droidRemove(psDroid, curWorld.objects.droids))
 		{
 			int	x, y;
 
-			addDroid(psDroid, missionParkedHomeWorld().objects.droids);
+			GameWorld& homeWorld = missionParkedHomeWorld();
+
+			addDroid(psDroid, homeWorld.objects.droids);
 			droidX = getHomeLandingX();
 			droidY = getHomeLandingY();
-			// Swap the droid and map pointers
-			swapMissionPointers();
 
-			pickRes = pickHalfATile(&droidX, &droidY, LOOK_FOR_EMPTY_TILE);
+			pickRes = pickHalfATile(homeWorld, &droidX, &droidY, LOOK_FOR_EMPTY_TILE);
 			ASSERT(pickRes != NO_FREE_TILE, "processMission: Unable to find a free location");
 			x = (UWORD)world_coord(droidX);
 			y = (UWORD)world_coord(droidY);
 			droidSetPosition(psDroid, x, y);
-			ASSERT(worldOnMap(activeGameWorld(), psDroid->pos.x, psDroid->pos.y), "the droid is not on the map");
+			ASSERT(worldOnMap(homeWorld, psDroid->pos.x, psDroid->pos.y), "the droid is not on the map");
 			updateDroidOrientation(psDroid);
-			// Swap the droid and map pointers back again
-			swapMissionPointers();
+
 			psDroid->selected = false;
 			// This is mainly for VTOLs
 			setDroidBase(psDroid, nullptr);
@@ -1354,7 +1297,7 @@ void processMissionLimbo()
 	ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer %" PRIu32 " exceeds MAX_PLAYERS", selectedPlayer);
 
 	//all droids (for selectedPlayer only) are placed into the limbo list
-	mutating_list_iterate(apsDroidLists[selectedPlayer], [&numDroidsAddedToLimboList](DROID* psDroid)
+	mutating_list_iterate(apsDroidLists()[selectedPlayer], [&numDroidsAddedToLimboList](DROID* psDroid)
 	{
 		//KILL OFF TRANSPORTER - should never be one but....
 		if (psDroid->isTransporter())
@@ -1370,7 +1313,7 @@ void processMissionLimbo()
 			else
 			{
 				// Remove out of stored list and add to current Droid list
-				if (droidRemove(psDroid, apsDroidLists))
+				if (droidRemove(psDroid, apsDroidLists()))
 				{
 					// Limbo list invalidate XY
 					psDroid->pos.x = INVALID_XY;
@@ -1385,31 +1328,6 @@ void processMissionLimbo()
 		}
 		return IterationResult::CONTINUE_ITERATION;
 	});
-}
-
-/*switch the pointers for the map and droid lists so that droid placement
- and orientation can occur on the map they will appear on*/
-// NOTE: This is one huge hack for campaign games!
-// Pay special attention on what is getting swapped!
-void swapMissionPointers()
-{
-	debug(LOG_SAVE, "called");
-
-	ensureOffworldWorld();
-	g_swapMissionMapSlotsInverted = !g_swapMissionMapSlotsInverted;
-	std::swap(missionParkedHomeWorld().map, offworldWorld().map);
-	for (unsigned inc = 0; inc < MAX_PLAYERS; inc++)
-	{
-		std::swap(apsDroidLists[inc],     missionParkedHomeWorld().objects.droids[inc]);
-		std::swap(apsStructLists[inc],    missionParkedHomeWorld().objects.structures[inc]);
-		std::swap(apsFeatureLists[inc],   missionParkedHomeWorld().objects.features[inc]);
-		std::swap(apsFlagPosLists[inc],   missionParkedHomeWorld().objects.flags[inc]);
-		std::swap(apsExtractorLists[inc], missionParkedHomeWorld().objects.extractors[inc]);
-	}
-	std::swap(apsSensorList[0], missionParkedHomeWorld().objects.sensors[0]);
-	std::swap(apsOilList[0],    missionParkedHomeWorld().objects.oils[0]);
-
-	objmemRefreshOwningWorldsForCampaignLists();
 }
 
 void endMission()
@@ -1605,7 +1523,7 @@ static void missionResetDroids()
 
 	for (unsigned int player = 0; player < MAX_PLAYERS; player++)
 	{
-		mutating_list_iterate(apsDroidLists[player], [](DROID* d)
+		mutating_list_iterate(apsDroidLists()[player], [](DROID* d)
 		{
 			// Reset order - unless constructor droid that is mid-build
 			if ((d->droidType == DROID_CONSTRUCT
@@ -1637,7 +1555,7 @@ static void missionResetDroids()
 		});
 	}
 
-	mutating_list_iterate(apsDroidLists[selectedPlayer], [](DROID* psDroid)
+	mutating_list_iterate(apsDroidLists()[selectedPlayer], [](DROID* psDroid)
 	{
 		bool	placed = false;
 
@@ -1668,7 +1586,7 @@ static void missionResetDroids()
 					x = map_coord(psStruct->pos.x);
 					y = map_coord(psStruct->pos.y);
 				}
-				pickRes = pickHalfATile(&x, &y, LOOK_FOR_EMPTY_TILE);
+				pickRes = pickHalfATile(activeGameWorld(), &x, &y, LOOK_FOR_EMPTY_TILE);
 				if (pickRes == NO_FREE_TILE)
 				{
 					ASSERT(false, "missionResetUnits: Unable to find a free location");
@@ -1684,13 +1602,13 @@ static void missionResetDroids()
 			}
 			else // if couldn't find the factory - try to place near HQ instead
 			{
-				for (const STRUCTURE* psStructure : apsStructLists[psDroid->player])
+				for (const STRUCTURE* psStructure : apsStructLists()[psDroid->player])
 				{
 					if (psStructure->pStructureType->type == REF_HQ)
 					{
 						UDWORD		x = map_coord(psStructure->pos.x);
 						UDWORD		y = map_coord(psStructure->pos.y);
-						PICKTILE	pickRes = pickHalfATile(&x, &y, LOOK_FOR_EMPTY_TILE);
+						PICKTILE	pickRes = pickHalfATile(activeGameWorld(), &x, &y, LOOK_FOR_EMPTY_TILE);
 
 						if (pickRes == NO_FREE_TILE)
 						{
@@ -1754,7 +1672,7 @@ void unloadTransporter(DROID *psTransporter, UDWORD x, UDWORD y)
 	DROID_GROUP	*psGroup;
 
 	ASSERT_OR_RETURN(, psTransporter != nullptr, "Invalid transporter");
-	ppCurrentList = &apsDroidLists;
+	ppCurrentList = &apsDroidLists();
 
 	disembarkedDroids.clear();
 
@@ -1772,7 +1690,7 @@ void unloadTransporter(DROID *psTransporter, UDWORD x, UDWORD y)
 			//starting point...based around the value passed in
 			droidX = map_coord(x);
 			droidY = map_coord(y);
-			if (!pickATileGen(&droidX, &droidY, LOOK_FOR_EMPTY_TILE, zonedPAT))
+			if (!pickATileGen(activeGameWorld(), &droidX, &droidY, LOOK_FOR_EMPTY_TILE, zonedPAT))
 			{
 				if (!bMultiPlayer)
 				{
@@ -1881,7 +1799,7 @@ void missionMoveTransporterOffWorld(DROID *psTransporter)
 		/* trigger script callback */
 		triggerEvent(TRIGGER_TRANSPORTER_EXIT, psTransporter);
 
-		if (droidRemove(psTransporter, apsDroidLists))
+		if (droidRemove(psTransporter, apsDroidLists()))
 		{
 			addDroid(psTransporter, missionParkedHomeWorld().objects.droids);
 		}
@@ -2616,7 +2534,7 @@ DROID *buildMissionDroid(DROID_TEMPLATE *psTempl, UDWORD x, UDWORD y, UDWORD pla
 {
 	DROID		*psNewDroid;
 
-	psNewDroid = buildDroid(psTempl, world_coord(x), world_coord(y), player, true, nullptr);
+	psNewDroid = buildDroid(missionParkedHomeWorld(), psTempl, world_coord(x), world_coord(y), player, true, nullptr);
 	if (!psNewDroid)
 	{
 		return nullptr;
@@ -2985,25 +2903,22 @@ void missionDestroyObjects()
 		{
 			// AI player, clear out old data
 
-			mutating_list_iterate(apsDroidLists[Player], [](DROID* d)
+			mutating_list_iterate(apsDroidLists()[Player], [](DROID* d)
 			{
 				removeDroidBase(d);
 				return IterationResult::CONTINUE_ITERATION;
 			});
 
-			//clear out the mission lists as well to make sure no Transporters exist
-			apsDroidLists[Player] = std::move(missionParkedHomeWorld().objects.droids[Player]);
-
-			mutating_list_iterate(apsDroidLists[Player], [](DROID* psDroid)
+			// Parked-home AI droids (primary) — destroy in place; killDroid must use their list.
+			mutating_list_iterate(missionParkedHomeWorld().objects.droids[Player], [](DROID* psDroid)
 			{
 				//make sure its died flag is not set since we've swapped the apsDroidList pointers over
 				psDroid->died = false;
-				removeDroidBase(psDroid);
+				removeDroidBaseInList(psDroid, missionParkedHomeWorld().objects.droids);
 				return IterationResult::CONTINUE_ITERATION;
 			});
-			missionParkedHomeWorld().objects.droids[Player].clear();
 
-			mutating_list_iterate(apsStructLists[Player], [](STRUCTURE* s)
+			mutating_list_iterate(apsStructLists()[Player], [](STRUCTURE* s)
 			{
 				removeStruct(s, true);
 				return IterationResult::CONTINUE_ITERATION;
@@ -3015,7 +2930,7 @@ void missionDestroyObjects()
 	ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer %" PRIu32 " exceeds MAX_PLAYERS", selectedPlayer);
 	Player = selectedPlayer;
 
-	for (DROID* psDroid : apsDroidLists[Player])
+	for (DROID* psDroid : apsDroidLists()[Player])
 	{
 		if (psDroid->psBaseStruct && psDroid->psBaseStruct->died)
 		{
@@ -3042,7 +2957,7 @@ void missionDestroyObjects()
 		}
 	}
 
-	for (STRUCTURE* psStruct : apsStructLists[Player])
+	for (STRUCTURE* psStruct : apsStructLists()[Player])
 	{
 		for (i = 0; i < MAX_WEAPONS; i++)
 		{
@@ -3076,7 +2991,7 @@ void processPreviousCampDroids()
 			// KILL OFF TRANSPORTER
 			if (droidRemove(psDroid, missionParkedHomeWorld().objects.droids))
 			{
-				addDroid(psDroid, apsDroidLists);
+				addDroid(psDroid, apsDroidLists());
 				vanishDroid(psDroid);
 			}
 			return IterationResult::CONTINUE_ITERATION;
@@ -3112,7 +3027,7 @@ bool getPlayCountDown()
 bool missionDroidsRemaining(UDWORD player)
 {
 	ASSERT_OR_RETURN(false, player < MAX_PLAYERS, "invalid player: %" PRIu32 "", player);
-	for (const DROID *psDroid : apsDroidLists[player])
+	for (const DROID *psDroid : apsDroidLists()[player])
 	{
 		if (!psDroid->isTransporter())
 		{
@@ -3149,7 +3064,7 @@ void moveDroidsToSafety(DROID *psTransporter)
 	}
 
 	//move the transporter into the mission list also
-	if (droidRemove(psTransporter, apsDroidLists))
+	if (droidRemove(psTransporter, apsDroidLists()))
 	{
 		addDroid(psTransporter, missionParkedHomeWorld().objects.droids);
 	}
@@ -3181,7 +3096,7 @@ static DROID *find_transporter()
 		return nullptr;
 	}
 
-	for (DROID* droid : apsDroidLists[selectedPlayer])
+	for (DROID* droid : apsDroidLists()[selectedPlayer])
 	{
 		if (droid->isTransporter())
 		{
@@ -3236,7 +3151,7 @@ void emptyTransporters(bool bOffWorld)
 	ASSERT_OR_RETURN(, selectedPlayer < MAX_PLAYERS, "selectedPlayer %" PRIu32 " >= MAX_PLAYERS", selectedPlayer);
 
 	//see if there are any Transporters in the world
-	mutating_list_iterate(apsDroidLists[selectedPlayer], [bOffWorld](DROID* psTransporter)
+	mutating_list_iterate(apsDroidLists()[selectedPlayer], [bOffWorld](DROID* psTransporter)
 	{
 		if (psTransporter->isTransporter())
 		{
@@ -3256,7 +3171,7 @@ void emptyTransporters(bool bOffWorld)
 						//take it out of the Transporter group
 						psTransporter->psGroup->remove(psDroid);
 						//add it back into current droid lists
-						addDroid(psDroid, apsDroidLists);
+						addDroid(psDroid, apsDroidLists());
 
 						return IterationResult::CONTINUE_ITERATION;
 					});

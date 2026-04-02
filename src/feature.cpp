@@ -176,14 +176,14 @@ int32_t featureDamage(FEATURE *psFeature, unsigned damage, WEAPON_CLASS weaponCl
 	}
 }
 
-FEATURE *buildFeature(FEATURE_STATS *psStats, UDWORD x, UDWORD y, bool FromSave)
+FEATURE *buildFeature(GameWorld& world, FEATURE_STATS *psStats, UDWORD x, UDWORD y, bool FromSave)
 {
 	const auto id = generateSynchronisedObjectId();
-	return buildFeature(psStats, x, y, FromSave, id);
+	return buildFeature(world, psStats, x, y, FromSave, id);
 }
 
 /* Get pitch and roll from direction and tile data */
-static void updateFeatureOrientation(FEATURE *psFeature)
+static void updateFeatureOrientation(GameWorld& world, FEATURE *psFeature)
 {
 	int32_t hx0, hx1, hy0, hy1;
 	int newPitch, deltaPitch; //, pitchLimit;
@@ -195,10 +195,10 @@ static void updateFeatureOrientation(FEATURE *psFeature)
 	//    hy0
 	// hx0 * hx1      (* = feature)
 	//    hy1
-	hx1 = map_Height(activeGameWorld(), psFeature->pos.x + d, psFeature->pos.y);
-	hx0 = map_Height(activeGameWorld(), MAX(0, psFeature->pos.x - d), psFeature->pos.y);
-	hy1 = map_Height(activeGameWorld(), psFeature->pos.x, psFeature->pos.y + d);
-	hy0 = map_Height(activeGameWorld(), psFeature->pos.x, MAX(0, psFeature->pos.y - d));
+	hx1 = map_Height(world, psFeature->pos.x + d, psFeature->pos.y);
+	hx0 = map_Height(world, MAX(0, psFeature->pos.x - d), psFeature->pos.y);
+	hy1 = map_Height(world, psFeature->pos.x, psFeature->pos.y + d);
+	hy0 = map_Height(world, psFeature->pos.x, MAX(0, psFeature->pos.y - d));
 
 	//update height in case in the bottom of a trough
 	psFeature->pos.z = MAX(psFeature->pos.z, (hx0 + hx1) / 2);
@@ -233,14 +233,14 @@ static void updateFeatureOrientation(FEATURE *psFeature)
 }
 
 /* Create a feature on the map */
-FEATURE *buildFeature(FEATURE_STATS *psStats, UDWORD x, UDWORD y, bool FromSave, uint32_t id)
+FEATURE *buildFeature(GameWorld& world, FEATURE_STATS *psStats, UDWORD x, UDWORD y, bool FromSave, uint32_t id)
 {
 	//try and create the Feature, obtain stable address.
 	FEATURE& feature = GlobalFeatureContainer().emplace(id, psStats);
 	FEATURE* psFeature = &feature;
 
 	//add the feature to the list - this enables it to be drawn whilst being built
-	addFeature(psFeature);
+	addFeature(world, psFeature);
 
 	// snap the coords to a tile
 	if (!FromSave)
@@ -269,7 +269,7 @@ FEATURE *buildFeature(FEATURE_STATS *psStats, UDWORD x, UDWORD y, bool FromSave,
 	{
 		for (int width = 0; width <= b.size.x; ++width)
 		{
-			int h = map_TileHeight(activeGameWorld(), b.map.x + width, b.map.y + breadth);
+			int h = map_TileHeight(world, b.map.x + width, b.map.y + breadth);
 			foundationMin = std::min(foundationMin, h);
 			foundationMax = std::max(foundationMax, h);
 		}
@@ -305,11 +305,11 @@ FEATURE *buildFeature(FEATURE_STATS *psStats, UDWORD x, UDWORD y, bool FromSave,
 	{
 		for (int width = 0; width < b.size.x; ++width)
 		{
-			MAPTILE *psTile = mapTile(activeGameWorld(), b.map.x + width, b.map.y + breadth);
+			MAPTILE *psTile = mapTile(world, b.map.x + width, b.map.y + breadth);
 
 			//check not outside of map - for load save game
-			ASSERT_OR_RETURN(nullptr, b.map.x + width < activeGameWorld().map.width, "x coord bigger than map width - %s, id = %d", getStatsName(psFeature->psStats), psFeature->id);
-			ASSERT_OR_RETURN(nullptr, b.map.y + breadth < activeGameWorld().map.height, "y coord bigger than map height - %s, id = %d", getStatsName(psFeature->psStats), psFeature->id);
+			ASSERT_OR_RETURN(nullptr, b.map.x + width < world.map.width, "x coord bigger than map width - %s, id = %d", getStatsName(psFeature->psStats), psFeature->id);
+			ASSERT_OR_RETURN(nullptr, b.map.y + breadth < world.map.height, "y coord bigger than map height - %s, id = %d", getStatsName(psFeature->psStats), psFeature->id);
 
 			if (width != psStats->baseWidth && breadth != psStats->baseBreadth)
 			{
@@ -329,12 +329,12 @@ FEATURE *buildFeature(FEATURE_STATS *psStats, UDWORD x, UDWORD y, bool FromSave,
 				// if it's a tall feature then flag it in the map.
 				if (psFeature->sDisplay.imd->max.y > TALLOBJECT_YMAX)
 				{
-					auxSetBlocking(activeGameWorld(), b.map.x + width, b.map.y + breadth, AIR_BLOCKED);
+					auxSetBlocking(world, b.map.x + width, b.map.y + breadth, AIR_BLOCKED);
 				}
 
 				if (psStats->subType != FEAT_GEN_ARTE && psStats->subType != FEAT_OIL_DRUM)
 				{
-					auxSetBlocking(activeGameWorld(), b.map.x + width, b.map.y + breadth, FEATURE_BLOCKED);
+					auxSetBlocking(world, b.map.x + width, b.map.y + breadth, FEATURE_BLOCKED);
 				}
 			}
 
@@ -344,8 +344,8 @@ FEATURE *buildFeature(FEATURE_STATS *psStats, UDWORD x, UDWORD y, bool FromSave,
 			}
 		}
 	}
-	psFeature->pos.z = map_TileHeight(activeGameWorld(), psFeature->pos.x, psFeature->pos.y);//jps 18july97
-	updateFeatureOrientation(psFeature);
+	psFeature->pos.z = map_TileHeight(world, psFeature->pos.x, psFeature->pos.y);//jps 18july97
+	updateFeatureOrientation(world, psFeature);
 
 	return psFeature;
 }
@@ -409,20 +409,22 @@ bool removeFeature(FEATURE *psDel)
 	ASSERT_OR_RETURN(false, psDel != nullptr, "Invalid feature pointer");
 	ASSERT_OR_RETURN(false, !psDel->died, "Feature already dead");
 
+	GameWorld& world = *psDel->owningWorld;
+
 	//remove from the map data
 	StructureBounds b = getStructureBounds(psDel);
 	for (int breadth = 0; breadth < b.size.y; ++breadth)
 	{
 		for (int width = 0; width < b.size.x; ++width)
 		{
-			if (tileOnMap(activeGameWorld(), b.map.x + width, b.map.y + breadth))
+			if (tileOnMap(world, b.map.x + width, b.map.y + breadth))
 			{
-				MAPTILE *psTile = mapTile(activeGameWorld(), b.map.x + width, b.map.y + breadth);
+				MAPTILE *psTile = mapTile(world, b.map.x + width, b.map.y + breadth);
 
 				if (psTile->psObject == psDel)
 				{
 					psTile->psObject = nullptr;
-					auxClearBlocking(activeGameWorld(), b.map.x + width, b.map.y + breadth, FEATURE_BLOCKED | AIR_BLOCKED);
+					auxClearBlocking(world, b.map.x + width, b.map.y + breadth, FEATURE_BLOCKED | AIR_BLOCKED);
 				}
 			}
 		}
@@ -432,7 +434,7 @@ bool removeFeature(FEATURE *psDel)
 	{
 		pos.x = psDel->pos.x;
 		pos.z = psDel->pos.y;
-		pos.y = map_Height(activeGameWorld(), pos.x, pos.z) + 30;
+		pos.y = map_Height(world, pos.x, pos.z) + 30;
 		addEffect(&pos, EFFECT_EXPLOSION, EXPLOSION_TYPE_DISCOVERY, false, nullptr, 0, gameTime - deltaGameTime + 1);
 		if (psDel->psStats->subType == FEAT_GEN_ARTE)
 		{

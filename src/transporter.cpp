@@ -938,7 +938,7 @@ void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode)
 			//pick a tile because save games won't remember where the droid was when it was loaded
 			droidPos = map_coord(Vector2i(getLandingX(0), getLandingY(0)));
 		}
-		if (!pickATileGen(&droidPos, LOOK_FOR_EMPTY_TILE, zonedPAT))
+		if (!pickATileGen(activeGameWorld(), &droidPos, LOOK_FOR_EMPTY_TILE, zonedPAT))
 		{
 			ASSERT(false, "Unable to find a valid location");
 		}
@@ -949,7 +949,7 @@ void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode)
 	// remove it from the transporter group
 	psDroid->psGroup->remove(psDroid);
 
-	//add it back into apsDroidLists
+	//add it back into apsDroidLists()
 	if (onMission)
 	{
 		addDroid(psDroid, missionParkedHomeWorld().objects.droids);
@@ -957,7 +957,7 @@ void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode)
 	else
 	{
 		// add the droid back onto the droid list
-		addDroid(psDroid, apsDroidLists);
+		addDroid(psDroid, apsDroidLists());
 	}
 
 	if (psDroid->pos.x != INVALID_XY)
@@ -1039,7 +1039,7 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd)
 		if (bMultiPlayer)
 		{
 			// search for the nearest transporter if the current one is already full
-			for (auto psOtherDroid : apsDroidLists[psTransporter->player])
+			for (auto psOtherDroid : apsDroidLists()[psTransporter->player])
 			{
 				if (psOtherDroid->isTransporter() &&
 					checkTransporterSpace(psOtherDroid, psDroidToAdd) &&
@@ -1086,7 +1086,7 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd)
 	else
 	{
 		// removing from droid list
-		bDroidRemoved = droidRemove(psDroidToAdd, apsDroidLists);
+		bDroidRemoved = droidRemove(psDroidToAdd, apsDroidLists());
 	}
 
 	if (bDroidRemoved)
@@ -1158,7 +1158,7 @@ DroidList* transInterfaceDroidList()
 	}
 	else
 	{
-		return &apsDroidLists[selectedPlayer];
+		return &apsDroidLists()[selectedPlayer];
 	}
 }
 

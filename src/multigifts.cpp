@@ -298,7 +298,7 @@ static void sendGiftDroids(uint8_t from, uint8_t to)
 	uint8_t      giftType = DROID_GIFT;
 	uint8_t      totalToSend = 0;
 
-	if (apsDroidLists[from].empty())
+	if (apsDroidLists()[from].empty())
 	{
 		return;
 	}
@@ -309,8 +309,8 @@ static void sendGiftDroids(uint8_t from, uint8_t to)
 	 * over their droid limit.
 	 */
 
-	for (psD = apsDroidLists[from].begin();
-	     psD != apsDroidLists[from].end() && (getNumDroids(to) + totalToSend < getMaxDroids(to)) && totalToSend != UINT8_MAX;
+	for (psD = apsDroidLists()[from].begin();
+	     psD != apsDroidLists()[from].end() && (getNumDroids(to) + totalToSend < getMaxDroids(to)) && totalToSend != UINT8_MAX;
 	     ++psD)
 	{
 		if ((*psD)->selected)
@@ -328,7 +328,7 @@ static void sendGiftDroids(uint8_t from, uint8_t to)
 	 * does its own net calls.
 	 */
 
-	for (psD = apsDroidLists[from].begin(); psD != apsDroidLists[from].end() && totalToSend != 0; ++psD)
+	for (psD = apsDroidLists()[from].begin(); psD != apsDroidLists()[from].end() && totalToSend != 0; ++psD)
 	{
 		if ((*psD)->selected)
 		{
@@ -504,7 +504,7 @@ void breakAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio)
 
 	// Make sure p1's structures are no longer considered "our buildings" to their former allies
 	// For unit pathing
-	for (const STRUCTURE* psStructure : apsStructLists[p1])
+	for (const STRUCTURE* psStructure : apsStructLists()[p1])
 	{
 		StructureBounds b = getStructureBounds(psStructure);
 
@@ -518,7 +518,7 @@ void breakAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio)
 		}
 	}
 	// Do the same for p2's stuff
-	for (const STRUCTURE* psStructure : apsStructLists[p2])
+	for (const STRUCTURE* psStructure : apsStructLists()[p2])
 	{
 		StructureBounds b = getStructureBounds(psStructure);
 
@@ -573,7 +573,7 @@ void formAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio, bool allow
 	}
 
 	// Clear out any attacking orders
-	for (DROID* psDroid : apsDroidLists[p1])	// from -> to
+	for (DROID* psDroid : apsDroidLists()[p1])	// from -> to
 	{
 		if (psDroid->order.type == DORDER_ATTACK
 		    && psDroid->order.psObj
@@ -582,7 +582,7 @@ void formAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio, bool allow
 			orderDroid(psDroid, DORDER_STOP, ModeImmediate);
 		}
 	}
-	for (DROID* psDroid : apsDroidLists[p2])	// to -> from
+	for (DROID* psDroid : apsDroidLists()[p2])	// to -> from
 	{
 		if (psDroid->order.type == DORDER_ATTACK
 		    && psDroid->order.psObj
@@ -593,7 +593,7 @@ void formAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio, bool allow
 	}
 
 	// Properly mark all of p1's structures as allied buildings for unit pathing
-	for (const STRUCTURE* psStructure : apsStructLists[p1])
+	for (const STRUCTURE* psStructure : apsStructLists()[p1])
 	{
 		StructureBounds b = getStructureBounds(psStructure);
 
@@ -615,7 +615,7 @@ void formAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio, bool allow
 		}
 	}
 	// Do the same for p2's stuff
-	for (const STRUCTURE* psStructure : apsStructLists[p2])
+	for (const STRUCTURE* psStructure : apsStructLists()[p2])
 	{
 		StructureBounds b = getStructureBounds(psStructure);
 
@@ -740,13 +740,13 @@ void  technologyGiveAway(const STRUCTURE *pS)
 	}
 
 	uint32_t x = map_coord(pS->pos.x), y = map_coord(pS->pos.y);
-	if (!pickATileGen(&x, &y, LOOK_FOR_EMPTY_TILE, zonedPAT))
+	if (!pickATileGen(activeGameWorld(), &x, &y, LOOK_FOR_EMPTY_TILE, zonedPAT))
 	{
 		syncDebug("Did not find location for oil drum.");
 		debug(LOG_FEATURE, "Unable to find a free location.");
 		return;
 	}
-	FEATURE *pF = buildFeature(&asFeatureStats[featureIndex], world_coord(x), world_coord(y), false);
+	FEATURE *pF = buildFeature(activeGameWorld(), &asFeatureStats[featureIndex], world_coord(x), world_coord(y), false);
 	if (pF)
 	{
 		pF->player = pS->player;
@@ -801,7 +801,7 @@ void recvMultiPlayerFeature(NETQUEUE queue)
 		if (asFeatureStats[i].ref == ref)
 		{
 			// Create a feature of the specified type at the given location
-			buildFeature(&asFeatureStats[i], x, y, false, id);
+			buildFeature(activeGameWorld(), &asFeatureStats[i], x, y, false, id);
 			break;
 		}
 	}

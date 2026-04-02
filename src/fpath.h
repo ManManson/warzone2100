@@ -96,13 +96,13 @@ bool fpathIsEquivalentBlocking(PROPULSION_TYPE propulsion1, int player1, FPATH_M
  *
  *  @return true if the given tile is blocking for this droid
  */
-bool fpathBlockingTile(SDWORD x, SDWORD y, PROPULSION_TYPE propulsion);
-bool fpathDroidBlockingTile(DROID *psDroid, int x, int y, FPATH_MOVETYPE moveType);
-bool fpathBaseBlockingTile(SDWORD x, SDWORD y, PROPULSION_TYPE propulsion, int player, FPATH_MOVETYPE moveType);
+bool fpathBlockingTile(const GameWorld& world, SDWORD x, SDWORD y, PROPULSION_TYPE propulsion);
+bool fpathDroidBlockingTile(const GameWorld& world, DROID *psDroid, int x, int y, FPATH_MOVETYPE moveType);
+bool fpathBaseBlockingTile(const GameWorld& world, SDWORD x, SDWORD y, PROPULSION_TYPE propulsion, int player, FPATH_MOVETYPE moveType);
 
-static inline bool fpathBlockingTile(Vector2i tile, PROPULSION_TYPE propulsion)
+static inline bool fpathBlockingTile(const GameWorld& world, Vector2i tile, PROPULSION_TYPE propulsion)
 {
-	return fpathBlockingTile(tile.x, tile.y, propulsion);
+	return fpathBlockingTile(world, tile.x, tile.y, propulsion);
 }
 
 /** Set a direct path to position.

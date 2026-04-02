@@ -57,7 +57,7 @@ void gridReset()
 	// Put all existing objects into the point tree.
 	for (unsigned player = 0; player < MAX_PLAYERS; player++)
 	{
-		for (BASE_OBJECT* psObj : apsDroidLists[player])
+		for (BASE_OBJECT* psObj : apsDroidLists()[player])
 		{
 			if (!psObj->died)
 			{
@@ -68,7 +68,7 @@ void gridReset()
 				}
 			}
 		}
-		for (BASE_OBJECT* psObj : apsStructLists[player])
+		for (BASE_OBJECT* psObj : apsStructLists()[player])
 		{
 			if (!psObj->died)
 			{
@@ -79,7 +79,7 @@ void gridReset()
 				}
 			}
 		}
-		for (BASE_OBJECT* psObj : apsFeatureLists[player])
+		for (BASE_OBJECT* psObj : apsFeatureLists()[player])
 		{
 			if (!psObj->died)
 			{

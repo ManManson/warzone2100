@@ -23,6 +23,14 @@ void GameSessionWorlds::setActiveToOffworld()
 	active = offworld.get();
 }
 
+void GameSessionWorlds::flipActiveWorld()
+{
+	ASSERT(mode == WorldSessionMode::CampaignDual, "flipActiveWorld: not dual");
+	ASSERT(primary != nullptr, "flipActiveWorld: no primary");
+	ASSERT(offworld != nullptr, "flipActiveWorld: no offworld");
+	active = active == primary.get() ? offworld.get() : primary.get(); // toggle between primary and offworld
+}
+
 void GameSessionWorlds::reset()
 {
 	primary.reset();
@@ -41,6 +49,16 @@ GameWorld &activeGameWorld()
 const GameWorld &activeGameWorldConst()
 {
 	return activeGameWorld();
+}
+
+WorldObjectState &activeObjects()
+{
+	return activeGameWorld().objects;
+}
+
+const WorldObjectState &activeObjectsConst()
+{
+	return activeGameWorldConst().objects;
 }
 
 void bindActiveWorld(GameWorld &world)

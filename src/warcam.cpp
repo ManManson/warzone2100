@@ -183,7 +183,7 @@ static void processLeaderSelection()
 	switch (leaderClass)
 	{
 	case	LEADER_LEFT:
-		for (DROID* psDroid : apsDroidLists[selectedPlayer])
+		for (DROID* psDroid : apsDroidLists()[selectedPlayer])
 		{
 			/* Is it even on the sscreen? */
 			if (DrawnInLastFrame(psDroid->sDisplay.frameNumber) && psDroid->selected && psDroid != trackingCamera.target)
@@ -202,7 +202,7 @@ static void processLeaderSelection()
 		}
 		break;
 	case	LEADER_RIGHT:
-		for (DROID* psDroid : apsDroidLists[selectedPlayer])
+		for (DROID* psDroid : apsDroidLists()[selectedPlayer])
 		{
 			/* Is it even on the sscreen? */
 			if (DrawnInLastFrame(psDroid->sDisplay.frameNumber) && psDroid->selected && psDroid != trackingCamera.target)
@@ -221,7 +221,7 @@ static void processLeaderSelection()
 		}
 		break;
 	case	LEADER_UP:
-		for (DROID* psDroid : apsDroidLists[selectedPlayer])
+		for (DROID* psDroid : apsDroidLists()[selectedPlayer])
 		{
 			/* Is it even on the sscreen? */
 			if (DrawnInLastFrame(psDroid->sDisplay.frameNumber) && psDroid->selected && psDroid != trackingCamera.target)
@@ -240,7 +240,7 @@ static void processLeaderSelection()
 		}
 		break;
 	case	LEADER_DOWN:
-		for (DROID* psDroid : apsDroidLists[selectedPlayer])
+		for (DROID* psDroid : apsDroidLists()[selectedPlayer])
 		{
 			/* Is it even on the sscreen? */
 			if (DrawnInLastFrame(psDroid->sDisplay.frameNumber) && psDroid->selected && psDroid != trackingCamera.target)
@@ -384,7 +384,7 @@ DROID *camFindDroidTarget()
 		return nullptr;
 	}
 
-	for (DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (DROID* psDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (psDroid->selected)
 		{
@@ -453,7 +453,7 @@ static uint16_t getAverageTrackAngle(unsigned groupNumber, bool bCheckOnScreen)
 	}
 
 	/* Got thru' all droids */
-	for (const DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (const DROID* psDroid : apsDroidLists()[selectedPlayer])
 	{
 		/* Is he worth selecting? */
 		if (groupNumber == GROUP_SELECTED ? psDroid->selected : psDroid->group == groupNumber)
@@ -482,7 +482,7 @@ static void getTrackingConcerns(SDWORD *x, SDWORD *y, SDWORD *z, UDWORD groupNum
 		return;
 	}
 
-	for (const DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (const DROID* psDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (groupNumber == GROUP_SELECTED ? psDroid->selected : psDroid->group == groupNumber)
 		{
@@ -725,7 +725,7 @@ static void updateCameraRotationAcceleration(UBYTE update)
 			uint16_t pitch;
 			unsigned group = trackingCamera.target->selected ? GROUP_SELECTED : trackingCamera.target->group;
 			getTrackingConcerns(&xPos, &yPos, &zPos, GROUP_SELECTED, true);  // FIXME Should this be group instead of GROUP_SELECTED?
-			getBestPitchToEdgeOfGrid(xPos, zPos, DEG(180) - getAverageTrackAngle(group, true), &pitch);
+			getBestPitchToEdgeOfGrid(activeGameWorld(), xPos, zPos, DEG(180) - getAverageTrackAngle(group, true), &pitch);
 			pitch = MAX(angleDelta(pitch), DEG(14));
 			xConcern = -pitch;
 		}

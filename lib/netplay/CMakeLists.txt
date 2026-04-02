@@ -108,7 +108,7 @@ set_property(TARGET netplay PROPERTY FOLDER "lib")
 include(WZTargetConfiguration)
 WZ_TARGET_CONFIGURATION(netplay)
 target_link_libraries(netplay
-	PRIVATE framework re2::re2 nlohmann_json plum-static Threads::Threads ZLIB::ZLIB fmt::fmt
+	PRIVATE framework wzmaplib re2::re2 nlohmann_json plum-static Threads::Threads ZLIB::ZLIB fmt::fmt
 	PUBLIC tl::expected)
 
 if(WZ_USE_IMPORTED_MINIUPNPC)

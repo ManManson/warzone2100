@@ -37,6 +37,7 @@
 #include "console.h"
 #include "multirecv.h"
 #include "objmem.h"
+#include "object_lists_types.h"
 #include <vector>
 #include <string>
 #include <chrono>
@@ -399,7 +400,7 @@ void resetReadyStatus(bool bSendOptions, bool ignoreReadyReset = false);
 bool shouldSkipReadyResetOnPlayerJoinLeaveEvent();
 
 STRUCTURE *findResearchingFacilityByResearchIndex(const PerPlayerStructureLists& pList, unsigned player, unsigned index);
-STRUCTURE *findResearchingFacilityByResearchIndex(unsigned player, unsigned index); // checks apsStructLists
+STRUCTURE *findResearchingFacilityByResearchIndex(unsigned player, unsigned index); // checks apsStructLists()
 
 void sendSyncRequest(int32_t req_id, int32_t x, int32_t y, const BASE_OBJECT *psObj, const BASE_OBJECT *psObj2);
 

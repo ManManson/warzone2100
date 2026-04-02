@@ -2303,16 +2303,16 @@ void mapFloodFillContinents(GameWorld &world)
 		{
 			MAPTILE *psTile = mapTile(world, x, y);
 
-			if (psTile->limitedContinent == 0 && !fpathBlockingTile(x, y, PROPULSION_TYPE_WHEELED))
+			if (psTile->limitedContinent == 0 && !fpathBlockingTile(world, x, y, PROPULSION_TYPE_WHEELED))
 			{
 				mapFloodFill(world, x, y, 1 + limitedContinents++, WATER_BLOCKED | FEATURE_BLOCKED, &MAPTILE::limitedContinent);
 			}
-			else if (psTile->limitedContinent == 0 && !fpathBlockingTile(x, y, PROPULSION_TYPE_PROPELLOR))
+			else if (psTile->limitedContinent == 0 && !fpathBlockingTile(world, x, y, PROPULSION_TYPE_PROPELLOR))
 			{
 				mapFloodFill(world, x, y, 1 + limitedContinents++, LAND_BLOCKED | FEATURE_BLOCKED, &MAPTILE::limitedContinent);
 			}
 
-			if (psTile->hoverContinent == 0 && !fpathBlockingTile(x, y, PROPULSION_TYPE_HOVER))
+			if (psTile->hoverContinent == 0 && !fpathBlockingTile(world, x, y, PROPULSION_TYPE_HOVER))
 			{
 				mapFloodFill(world, x, y, 1 + hoverContinents++, FEATURE_BLOCKED, &MAPTILE::hoverContinent);
 			}
@@ -2482,7 +2482,7 @@ static void threatUpdate(GameWorld &world, int player)
 			continue;
 		}
 
-		for (DROID* psDroid : apsDroidLists[i])
+		for (DROID* psDroid : apsDroidLists()[i])
 		{
 			UBYTE mode = 0;
 
@@ -2505,7 +2505,7 @@ static void threatUpdate(GameWorld &world, int player)
 			}
 		}
 
-		for (STRUCTURE* psStruct : apsStructLists[i])
+		for (STRUCTURE* psStruct : apsStructLists()[i])
 		{
 			UBYTE mode = 0;
 

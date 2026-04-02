@@ -748,7 +748,7 @@ void deleteTemplateFromProduction(DROID_TEMPLATE *psTemplate, unsigned player, Q
 		switch (i)
 		{
 		case 0:
-			psList = &apsStructLists[player];
+			psList = &apsStructLists()[player];
 			break;
 		case 1:
 			psList = &missionParkedHomeWorld().objects.structures[player];

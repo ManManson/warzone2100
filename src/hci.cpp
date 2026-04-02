@@ -1079,7 +1079,7 @@ static FLAG_POSITION *intFindSelectedDelivPoint()
 {
 	ASSERT_OR_RETURN(nullptr, selectedPlayer < MAX_PLAYERS, "Not supported selectedPlayer: %" PRIu32 "", selectedPlayer);
 
-	for (const auto& psFlag : apsFlagPosLists[selectedPlayer])
+	for (const auto& psFlag : apsFlagPosLists()[selectedPlayer])
 	{
 		if (psFlag->selected && psFlag->type == POS_DELIVERY)
 		{
@@ -1792,11 +1792,11 @@ INT_RETVAL intRunWidgets()
 					else if (psPositionStats->hasType(STAT_TEMPLATE))
 					{
 						std::string msg;
-						DROID *psDroid = buildDroid((DROID_TEMPLATE *)psPositionStats, pos.x, pos.y, selectedPlayer, false, nullptr);
+						DROID *psDroid = buildDroid(activeGameWorld(), (DROID_TEMPLATE *)psPositionStats, pos.x, pos.y, selectedPlayer, false, nullptr);
 						cancelDeliveryRepos();
 						if (psDroid)
 						{
-							addDroid(psDroid, apsDroidLists);
+							addDroid(psDroid, apsDroidLists());
 
 							// Send a text message to all players, notifying them of
 							// the fact that we're cheating ourselves a new droid.
@@ -2728,7 +2728,7 @@ StructureList *interfaceStructList()
 	}
 	else
 	{
-		return &apsStructLists[selectedPlayer];
+		return &apsStructLists()[selectedPlayer];
 	}
 }
 
@@ -2958,7 +2958,7 @@ static SDWORD intNumSelectedDroids(UDWORD droidType)
 	}
 
 	num = 0;
-	for (const DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (const DROID* psDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (psDroid->selected && psDroid->droidType == droidType)
 		{

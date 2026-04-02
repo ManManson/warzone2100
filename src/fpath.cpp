@@ -319,21 +319,21 @@ static uint8_t prop2bits(PROPULSION_TYPE propulsion)
 }
 
 // Check if the map tile at a location blocks a droid
-bool fpathBaseBlockingTile(SDWORD x, SDWORD y, PROPULSION_TYPE propulsion, int mapIndex, FPATH_MOVETYPE moveType)
+bool fpathBaseBlockingTile(const GameWorld& world, SDWORD x, SDWORD y, PROPULSION_TYPE propulsion, int mapIndex, FPATH_MOVETYPE moveType)
 {
 	/* All tiles outside of the map and on map border are blocking. */
-	if (x < 1 || y < 1 || x > activeGameWorld().map.width - 1 || y > activeGameWorld().map.height - 1)
+	if (x < 1 || y < 1 || x > world.map.width - 1 || y > world.map.height - 1)
 	{
 		return true;
 	}
 
 	/* Check scroll limits (used in campaign to partition the map. */
-	if (propulsion != PROPULSION_TYPE_LIFT && (x < activeGameWorld().map.scroll.minX + 1 || y < activeGameWorld().map.scroll.minY + 1 || x >= activeGameWorld().map.scroll.maxX - 1 || y >= activeGameWorld().map.scroll.maxY - 1))
+	if (propulsion != PROPULSION_TYPE_LIFT && (x < world.map.scroll.minX + 1 || y < world.map.scroll.minY + 1 || x >= world.map.scroll.maxX - 1 || y >= world.map.scroll.maxY - 1))
 	{
 		// coords off map - auto blocking tile
 		return true;
 	}
-	unsigned aux = auxTile(activeGameWorld(), x, y, mapIndex);
+	unsigned aux = auxTile(world, x, y, mapIndex);
 
 	int auxMask = 0;
 	switch (moveType)
@@ -350,26 +350,26 @@ bool fpathBaseBlockingTile(SDWORD x, SDWORD y, PROPULSION_TYPE propulsion, int m
 	}
 
 	// the MAX hack below is because blockTile() range does not include player-specific versions...
-	return (blockTile(activeGameWorld(), x, y, MAX(0, mapIndex - MAX_PLAYERS)) & unitbits) != 0;  // finally check if move is blocked by propulsion related factors
+	return (blockTile(world, x, y, MAX(0, mapIndex - MAX_PLAYERS)) & unitbits) != 0;  // finally check if move is blocked by propulsion related factors
 }
 
-bool fpathDroidBlockingTile(DROID *psDroid, int x, int y, FPATH_MOVETYPE moveType)
+bool fpathDroidBlockingTile(const GameWorld& world, DROID *psDroid, int x, int y, FPATH_MOVETYPE moveType)
 {
-	return fpathBaseBlockingTile(x, y, psDroid->getPropulsionStats()->propulsionType, psDroid->player, moveType);
+	return fpathBaseBlockingTile(world, x, y, psDroid->getPropulsionStats()->propulsionType, psDroid->player, moveType);
 }
 
 // Check if the map tile at a location blocks a droid
-bool fpathBlockingTile(SDWORD x, SDWORD y, PROPULSION_TYPE propulsion)
+bool fpathBlockingTile(const GameWorld& world, SDWORD x, SDWORD y, PROPULSION_TYPE propulsion)
 {
-	return fpathBaseBlockingTile(x, y, propulsion, 0, FMT_BLOCK);  // with FMT_BLOCK, it is irrelevant which player is passed in
+	return fpathBaseBlockingTile(world, x, y, propulsion, 0, FMT_BLOCK);  // with FMT_BLOCK, it is irrelevant which player is passed in
 }
 
 
 // Returns the closest non-blocking tile to pos, or returns pos if no non-blocking tiles are present within a 2 tile distance.
-static Position findNonblockingPosition(Position pos, PROPULSION_TYPE propulsion, int player = 0, FPATH_MOVETYPE moveType = FMT_BLOCK)
+static Position findNonblockingPosition(const GameWorld& world, Position pos, PROPULSION_TYPE propulsion, int player = 0, FPATH_MOVETYPE moveType = FMT_BLOCK)
 {
 	Vector2i centreTile = map_coord(pos.xy());
-	if (!fpathBaseBlockingTile(centreTile.x, centreTile.y, propulsion, player, moveType))
+	if (!fpathBaseBlockingTile(world, centreTile.x, centreTile.y, propulsion, player, moveType))
 	{
 		return pos;  // Fast case, pos is not on a blocking tile.
 	}
@@ -382,7 +382,7 @@ static Position findNonblockingPosition(Position pos, PROPULSION_TYPE propulsion
 			Vector2i tile = centreTile + Vector2i(x, y);
 			Vector2i diff = world_coord(tile) + Vector2i(TILE_UNITS / 2, TILE_UNITS / 2) - pos.xy();
 			int distSq = dot(diff, diff);
-			if (distSq < bestDistSq && !fpathBaseBlockingTile(tile.x, tile.y, propulsion, player, moveType))
+			if (distSq < bestDistSq && !fpathBaseBlockingTile(world, tile.x, tile.y, propulsion, player, moveType))
 			{
 				bestTile = tile;
 				bestDistSq = distSq;
@@ -560,10 +560,10 @@ FPATH_RETVAL fpathDroidRoute(DROID *psDroid, SDWORD tX, SDWORD tY, FPATH_MOVETYP
 	Position endPos = Position(tX, tY, 0);
 	StructureBounds dstStructure = getStructureBounds(worldTile(activeGameWorld(), endPos.xy())->psObject);
 	const auto droidPropulsionType = psDroid->getPropulsionStats()->propulsionType;
-	startPos = findNonblockingPosition(startPos, droidPropulsionType, psDroid->player, moveType);
+	startPos = findNonblockingPosition(*psDroid->owningWorld, startPos, droidPropulsionType, psDroid->player, moveType);
 	if (!dstStructure.valid())  // If there's a structure over the destination, ignore it, otherwise pathfind from somewhere around the obstruction.
 	{
-		endPos   = findNonblockingPosition(endPos, droidPropulsionType, psDroid->player, moveType);
+		endPos   = findNonblockingPosition(*psDroid->owningWorld, endPos, droidPropulsionType, psDroid->player, moveType);
 	}
 	objTrace(psDroid->id, "Want to go to (%d, %d) -> (%d, %d), going (%d, %d) -> (%d, %d)", map_coord(psDroid->pos.x), map_coord(psDroid->pos.y), map_coord(tX), map_coord(tY), map_coord(startPos.x), map_coord(startPos.y), map_coord(endPos.x), map_coord(endPos.y));
 	switch (psDroid->order.type)
@@ -760,8 +760,8 @@ bool fpathCheck(Position orig, Position dest, PROPULSION_TYPE propulsion)
 		return false;
 	}
 
-	MAPTILE *origTile = worldTile(activeGameWorld(), findNonblockingPosition(orig, propulsion).xy());
-	MAPTILE *destTile = worldTile(activeGameWorld(), findNonblockingPosition(dest, propulsion).xy());
+	MAPTILE *origTile = worldTile(activeGameWorld(), findNonblockingPosition(activeGameWorld(), orig, propulsion).xy());
+	MAPTILE *destTile = worldTile(activeGameWorld(), findNonblockingPosition(activeGameWorld(), dest, propulsion).xy());
 
 	ASSERT_OR_RETURN(false, propulsion != PROPULSION_TYPE_NUM, "Bad propulsion type");
 	ASSERT_OR_RETURN(false, origTile != nullptr && destTile != nullptr, "Bad tile parameter");

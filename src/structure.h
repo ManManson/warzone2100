@@ -105,9 +105,9 @@ uint32_t structureBuildPointsToCompletion(const STRUCTURE & structure);
 float structureCompletionProgress(const STRUCTURE & structure);
 
 //builds a specified structure at a given location
-STRUCTURE *buildStructure(STRUCTURE_STATS *pStructureType, UDWORD x, UDWORD y, UDWORD player, bool FromSave);
-STRUCTURE *buildStructureDir(STRUCTURE_STATS *pStructureType, UDWORD x, UDWORD y, uint16_t direction, UDWORD player, bool FromSave, uint32_t id);
-STRUCTURE *buildStructureDir(STRUCTURE_STATS *pStructureType, UDWORD x, UDWORD y, uint16_t direction, UDWORD player, bool FromSave);
+STRUCTURE *buildStructure(GameWorld& world, STRUCTURE_STATS *pStructureType, UDWORD x, UDWORD y, UDWORD player, bool FromSave);
+STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, UDWORD x, UDWORD y, uint16_t direction, UDWORD player, bool FromSave, uint32_t id);
+STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, UDWORD x, UDWORD y, uint16_t direction, UDWORD player, bool FromSave);
 /// Create a blueprint structure, with just enough information to render it
 /// IMPORTANT: Do not save the reference to this instance anywhere, since it's
 /// not heap-allocated and thus doesn't have a stable address!
@@ -143,13 +143,13 @@ void setCurrentStructQuantity(bool displayError);
 /* get a stat inc based on the name */
 int32_t getStructStatFromName(const WzString &name);
 /*sets the point new droids go to - x/y in world coords for a Factory*/
-void setAssemblyPoint(FLAG_POSITION *psAssemblyPoint, UDWORD x, UDWORD y, UDWORD player, bool bCheck);
+void setAssemblyPoint(GameWorld& world, FLAG_POSITION *psAssemblyPoint, UDWORD x, UDWORD y, UDWORD player, bool bCheck);
 
 /*initialises the flag before a new data set is loaded up*/
 void initFactoryNumFlag();
 
 //called at start of missions
-void resetFactoryNumFlag();
+void resetFactoryNumFlag(GameWorld& world);
 
 /* get demolish stat */
 STRUCTURE_STATS *structGetDemolishStat();
@@ -254,7 +254,7 @@ void factoryProdAdjust(STRUCTURE *psStructure, DROID_TEMPLATE *psTemplate, bool 
 ProductionRunEntry getProduction(STRUCTURE *psStructure, DROID_TEMPLATE *psTemplate);
 
 //check that delivery points haven't been put down in invalid location
-void checkDeliveryPoints(UDWORD version);
+void checkDeliveryPoints(GameWorld& world, UDWORD version);
 
 //adjust the loop quantity for this factory
 void factoryLoopAdjust(STRUCTURE *psStruct, bool add);

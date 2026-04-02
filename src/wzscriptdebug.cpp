@@ -913,7 +913,7 @@ static bool debugReloadSelectedObjectDisplayModels()
 		return false;
 	}
 
-	for (const DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (const DROID* psDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (psDroid->selected)
 		{
@@ -1027,7 +1027,7 @@ static bool debugReloadSelectedObjectDisplayModels()
 		}
 	};
 
-	for (const STRUCTURE* psStructure : apsStructLists[selectedPlayer])
+	for (const STRUCTURE* psStructure : apsStructLists()[selectedPlayer])
 	{
 		if (psStructure->selected)
 		{

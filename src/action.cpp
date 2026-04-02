@@ -94,6 +94,8 @@ static_assert(MAX_SULK_TIME > MIN_SULK_TIME, "MAX_SULK_TIME must be > MIN_SULK_T
  *
  * @brief pointer to a 'tile search function', used by spiralSearch()
  *
+ * @param world the game world
+ *
  * @param x,y  are the coordinates that should be inspected.
  *
  * @param data a pointer to state data, allows the search function to retain
@@ -103,7 +105,7 @@ static_assert(MAX_SULK_TIME > MIN_SULK_TIME, "MAX_SULK_TIME must be > MIN_SULK_T
  * @return true when the search has finished, false when the search should
  *         continue.
  */
-typedef bool (*tileMatchFunction)(int x, int y, void *matchState);
+typedef bool (*tileMatchFunction)(GameWorld& world, int x, int y, void *matchState);
 
 const char *getDroidActionName(DROID_ACTION action)
 {
@@ -610,7 +612,7 @@ static bool actionRemoveDroidsFromBuildPos(unsigned player, Vector2i pos, uint16
 			{
 				Vector2i dest = world_coord(b.map + Vector2i(x, y)) + Vector2i(TILE_UNITS, TILE_UNITS) / 2;
 				unsigned dist = iHypot(droid->pos.xy() - dest);
-				if (dist < bestDist && !fpathBlockingTile(map_coord(dest.x), map_coord(dest.y), droid->getPropulsionStats()->propulsionType))
+				if (dist < bestDist && !fpathBlockingTile(activeGameWorld(), map_coord(dest.x), map_coord(dest.y), droid->getPropulsionStats()->propulsionType))
 				{
 					bestDest = dest;
 					bestDist = dist;
@@ -809,7 +811,7 @@ void actionUpdateDroid(DROID *psDroid)
 				{
 					ASSERT_OR_RETURN(, false, "Unable to remove transporter from mission list");
 				}
-				addDroid(psDroid, apsDroidLists);
+				addDroid(psDroid, apsDroidLists());
 				//set the x/y up since they were set to INVALID_XY when moved offWorld
 				missionGetTransporterExit(selectedPlayer, &droidX, &droidY);
 				psDroid->pos.x = droidX;
@@ -2759,14 +2761,14 @@ void moveToRearm(DROID *psDroid)
 
 
 // whether a tile is suitable for a vtol to land on
-static bool vtolLandingTile(SDWORD x, SDWORD y)
+static bool vtolLandingTile(GameWorld& world, SDWORD x, SDWORD y)
 {
-	if (x < 0 || x >= (SDWORD)activeGameWorld().map.width || y < 0 || y >= (SDWORD)activeGameWorld().map.height)
+	if (x < 0 || x >= (SDWORD)world.map.width || y < 0 || y >= (SDWORD)world.map.height)
 	{
 		return false;
 	}
 
-	const MAPTILE *psTile = mapTile(activeGameWorld(), x, y);
+	const MAPTILE *psTile = mapTile(world, x, y);
 	if (psTile->tileInfoBits & BITS_FPATHBLOCK ||
 	    TileIsOccupied(psTile) ||
 	    terrainType(psTile) == TER_CLIFFFACE ||
@@ -2791,10 +2793,10 @@ static bool vtolLandingTile(SDWORD x, SDWORD y)
  * \return true if finished because the searchFunction requested termination,
  *         false if the radius limit was reached
  */
-static bool spiralSearch(int startX, int startY, int max_radius, tileMatchFunction match, void *matchState)
+static bool spiralSearch(GameWorld& world, int startX, int startY, int max_radius, tileMatchFunction match, void *matchState)
 {
 	// test center tile
-	if (match(startX, startY, matchState))
+	if (match(world, startX, startY, matchState))
 	{
 		return true;
 	}
@@ -2828,10 +2830,10 @@ static bool spiralSearch(int startX, int startY, int max_radius, tileMatchFuncti
 				}
 
 				// call search function for each of the 4 quadrants of the circle
-				if (match(startX + dx, startY + dy, matchState)
-				    || match(startX - dx, startY - dy, matchState)
-				    || match(startX + dy, startY - dx, matchState)
-				    || match(startX - dy, startY + dx, matchState))
+				if (match(world, startX + dx, startY + dy, matchState)
+				    || match(world, startX - dx, startY - dy, matchState)
+				    || match(world, startX + dy, startY - dx, matchState)
+				    || match(world, startX - dy, startY + dx, matchState))
 				{
 					return true;
 				}
@@ -2850,11 +2852,11 @@ static bool spiralSearch(int startX, int startY, int max_radius, tileMatchFuncti
  *
  * @return true if coordinates are a valid landing tile, false if not.
  */
-static bool vtolLandingTileSearchFunction(int x, int y, void *matchState)
+static bool vtolLandingTileSearchFunction(GameWorld& world, int x, int y, void *matchState)
 {
 	Vector2i *const xyCoords = (Vector2i *)matchState;
 
-	if (vtolLandingTile(x, y))
+	if (vtolLandingTile(world, x, y))
 	{
 		xyCoords->x = x;
 		xyCoords->y = y;
@@ -2870,12 +2872,14 @@ bool actionVTOLLandingPos(DROID const *psDroid, Vector2i *p)
 {
 	CHECK_DROID(psDroid);
 
+	GameWorld& world = *psDroid->owningWorld;
+
 	/* Initial box dimensions and set iteration count to zero */
 	int startX = map_coord(p->x);
 	int startY = map_coord(p->y);
 
 	// set blocking flags for all the other droids
-	for (const DROID *psCurr : apsDroidLists[psDroid->player])
+	for (const DROID *psCurr : world.objects.droids[psDroid->player])
 	{
 		Vector2i t(0, 0);
 		if (DROID_STOPPED(psCurr))
@@ -2888,16 +2892,16 @@ bool actionVTOLLandingPos(DROID const *psDroid, Vector2i *p)
 		}
 		if (psCurr != psDroid)
 		{
-			if (tileOnMap(activeGameWorld(), t))
+			if (tileOnMap(world, t))
 			{
-				mapTile(activeGameWorld(), t)->tileInfoBits |= BITS_FPATHBLOCK;
+				mapTile(world, t)->tileInfoBits |= BITS_FPATHBLOCK;
 			}
 		}
 	}
 
 	// search for landing tile; will stop when found or radius exceeded
 	Vector2i xyCoords(0, 0);
-	const bool foundTile = spiralSearch(startX, startY, vtolLandingRadius,
+	const bool foundTile = spiralSearch(world, startX, startY, vtolLandingRadius,
 	                                    vtolLandingTileSearchFunction, &xyCoords);
 	if (foundTile)
 	{
@@ -2907,7 +2911,7 @@ bool actionVTOLLandingPos(DROID const *psDroid, Vector2i *p)
 	}
 
 	// clear blocking flags for all the other droids
-	for (const DROID *psCurr : apsDroidLists[psDroid->player])
+	for (const DROID *psCurr : world.objects.droids[psDroid->player])
 	{
 		Vector2i t(0, 0);
 		if (DROID_STOPPED(psCurr))
@@ -2918,9 +2922,9 @@ bool actionVTOLLandingPos(DROID const *psDroid, Vector2i *p)
 		{
 			t = map_coord(psCurr->sMove.destination);
 		}
-		if (tileOnMap(activeGameWorld(), t))
+		if (tileOnMap(world, t))
 		{
-			mapTile(activeGameWorld(), t)->tileInfoBits &= ~BITS_FPATHBLOCK;
+			mapTile(world, t)->tileInfoBits &= ~BITS_FPATHBLOCK;
 		}
 	}
 

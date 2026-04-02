@@ -259,7 +259,7 @@ StructureList* powerStructList(int player)
 	}
 	else
 	{
-		return &apsStructLists[player];
+		return &apsStructLists()[player];
 	}
 }
 

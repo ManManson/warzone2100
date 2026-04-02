@@ -416,7 +416,7 @@ static bool localPlayerHasSelection()
 		return false;
 	}
 
-	for (const DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (const DROID* psDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (psDroid->selected)
 		{
@@ -424,7 +424,7 @@ static bool localPlayerHasSelection()
 		}
 	}
 
-	for (const STRUCTURE* psStruct : apsStructLists[selectedPlayer])
+	for (const STRUCTURE* psStruct : apsStructLists()[selectedPlayer])
 	{
 		if (psStruct->selected)
 		{
@@ -798,7 +798,7 @@ void processMouseClickInput()
 			else if (selection == SC_DROID_REPAIR)
 			{
 				// We can't repair ourselves, so change it to a blocking cursor
-				for (const DROID *psCurr : apsDroidLists[selectedPlayer])
+				for (const DROID *psCurr : apsDroidLists()[selectedPlayer])
 				{
 					if (psCurr->selected)
 					{
@@ -1331,7 +1331,7 @@ BASE_OBJECT *mouseTarget()
 	/* First have a look through the droid lists */
 	for (int i = 0; i < MAX_PLAYERS; i++)
 	{
-		for (DROID *psDroid : apsDroidLists[i])
+		for (DROID *psDroid : apsDroidLists()[i])
 		{
 			dispX = psDroid->sDisplay.screenX;
 			dispY = psDroid->sDisplay.screenY;
@@ -1381,7 +1381,7 @@ void startDeliveryPosition(FLAG_POSITION *psFlag)
 	ASSERT_OR_RETURN(, selectedPlayer < MAX_PLAYERS, "Invalid player (selectedPlayer: %" PRIu32 ")", selectedPlayer);
 
 	//clear the selected delivery point
-	for (auto& psFlagPos : apsFlagPosLists[selectedPlayer])
+	for (auto& psFlagPos : apsFlagPosLists()[selectedPlayer])
 	{
 		psFlagPos->selected = false;
 	}
@@ -1422,17 +1422,17 @@ void finishDeliveryPosition()
 			if (psStruct->isFactory() && psStruct->pFunctionality
 				&& psStruct->pFunctionality->factory.psAssemblyPoint)
 			{
-				setAssemblyPoint(psStruct->pFunctionality->factory.psAssemblyPoint,
+				setAssemblyPoint(activeGameWorld(), psStruct->pFunctionality->factory.psAssemblyPoint,
 								 flagPos.coords.x, flagPos.coords.y, selectedPlayer, true);
 			}
 			else if (psStruct->pStructureType && psStruct->pStructureType->type == REF_REPAIR_FACILITY && psStruct->pFunctionality != nullptr)
 			{
-				setAssemblyPoint(psStruct->pFunctionality->repairFacility.psDeliveryPoint,
+				setAssemblyPoint(activeGameWorld(), psStruct->pFunctionality->repairFacility.psDeliveryPoint,
 								 flagPos.coords.x, flagPos.coords.y, selectedPlayer, true);
 			}
 		}
 		//deselect once moved
-		for (auto& psFlag : apsFlagPosLists[selectedPlayer])
+		for (auto& psFlag : apsFlagPosLists()[selectedPlayer])
 		{
 			psFlag->selected = false;
 		}
@@ -1461,7 +1461,7 @@ bool deliveryReposValid()
 	}
 
 	// cant place on top of a delivery point...
-	for (const auto& psFlag : apsFlagPosLists[selectedPlayer])
+	for (const auto& psFlag : apsFlagPosLists()[selectedPlayer])
 	{
 		Vector2i flagTile = map_coord(psFlag->coords.xy());
 		if (flagTile == map)
@@ -1470,7 +1470,7 @@ bool deliveryReposValid()
 		}
 	}
 
-	if (fpathBlockingTile(map.x, map.y, PROPULSION_TYPE_WHEELED))
+	if (fpathBlockingTile(activeGameWorld(), map.x, map.y, PROPULSION_TYPE_WHEELED))
 	{
 		return false;
 	}
@@ -1732,7 +1732,7 @@ static void dealWithLMBDroid(DROID *psDroid, SELECTION_TYPE selection)
 	else if (psDroid->droidType == DROID_SENSOR)
 	{
 		bSensorAssigned = false;
-		for (DROID* psCurr : apsDroidLists[selectedPlayer])
+		for (DROID* psCurr : apsDroidLists()[selectedPlayer])
 		{
 			//must be indirect weapon droid or VTOL weapon droid
 			if ((psCurr->droidType == DROID_WEAPON) &&
@@ -1860,7 +1860,7 @@ static void dealWithLMBStructure(STRUCTURE *psStructure, SELECTION_TYPE selectio
 			if (selection == SC_INVALID)
 			{
 				/* Clear old building selection(s) - should only be one */
-				for (STRUCTURE* psCurr : apsStructLists[selectedPlayer])
+				for (STRUCTURE* psCurr : apsStructLists()[selectedPlayer])
 				{
 					psCurr->selected = false;
 				}
@@ -1885,7 +1885,7 @@ static void dealWithLMBStructure(STRUCTURE *psStructure, SELECTION_TYPE selectio
 	         selection == SC_INVALID && ownStruct)
 	{
 		/* Clear old building selection(s) - should only be one */
-		for (STRUCTURE* psCurr : apsStructLists[selectedPlayer])
+		for (STRUCTURE* psCurr : apsStructLists()[selectedPlayer])
 		{
 			psCurr->selected = false;
 		}
@@ -1948,7 +1948,7 @@ static void dealWithLMBFeature(FEATURE *psFeature)
 		    (apStructTypeLists[selectedPlayer][i] == AVAILABLE))	// don't go any further if no derrick stat found.
 		{
 			// for each droid
-			for (DROID* psCurr : apsDroidLists[selectedPlayer])
+			for (DROID* psCurr : apsDroidLists()[selectedPlayer])
 			{
 				if ((droidType(psCurr) == DROID_CONSTRUCT ||
 				     droidType(psCurr) == DROID_CYBORG_CONSTRUCT) && (psCurr->selected))
@@ -2170,7 +2170,7 @@ static FLAG_POSITION *findMouseDeliveryPoint()
 		return nullptr;
 	}
 
-	for (const auto& psPoint : apsFlagPosLists[selectedPlayer])
+	for (const auto& psPoint : apsFlagPosLists()[selectedPlayer])
 	{
 		if (psPoint->type != POS_DELIVERY) {
 			continue;
@@ -2384,7 +2384,7 @@ static MOUSE_TARGET	itemUnderMouse(BASE_OBJECT **ppObjectUnderMouse)
 	/* First have a look through the droid lists */
 	for (i = 0; i < MAX_PLAYERS; i++)
 	{
-		for (DROID* psDroid : apsDroidLists[i])
+		for (DROID* psDroid : apsDroidLists()[i])
 		{
 			dispX = psDroid->sDisplay.screenX;
 			dispY = psDroid->sDisplay.screenY;
@@ -2603,7 +2603,7 @@ static SELECTION_TYPE	establishSelection(UDWORD _selectedPlayer)
 		return SC_INVALID;
 	}
 
-	for (DROID *psDroid : apsDroidLists[_selectedPlayer])
+	for (DROID *psDroid : apsDroidLists()[_selectedPlayer])
 	{
 		// This works, uses the DroidSelectionWeights[] table to priorities the different
 		// droid types and find the dominant selection.
@@ -2693,7 +2693,7 @@ bool	repairDroidSelected(UDWORD player)
 {
 	ASSERT_OR_RETURN(false, player < MAX_PLAYERS, "Invalid player (%" PRIu32 ")", player);
 
-	for (const DROID* psCurr : apsDroidLists[player])
+	for (const DROID* psCurr : apsDroidLists()[player])
 	{
 		if (psCurr->selected && (
 		        psCurr->droidType == DROID_REPAIR ||
@@ -2712,7 +2712,7 @@ bool	vtolDroidSelected(UDWORD player)
 {
 	ASSERT_OR_RETURN(false, player < MAX_PLAYERS, "player: %" PRIu32 "", player);
 
-	for (DROID* psCurr : apsDroidLists[player])
+	for (DROID* psCurr : apsDroidLists()[player])
 	{
 		if (psCurr->selected && psCurr->isVtol())
 		{
@@ -2731,7 +2731,7 @@ bool	anyDroidSelected(UDWORD player)
 {
 	ASSERT_OR_RETURN(false, player < MAX_PLAYERS, "Invalid player (%" PRIu32 ")", player);
 
-	for (const DROID* psCurr : apsDroidLists[player])
+	for (const DROID* psCurr : apsDroidLists()[player])
 	{
 		if (psCurr->selected)
 		{
@@ -2748,7 +2748,7 @@ bool cyborgDroidSelected(UDWORD player)
 {
 	ASSERT_OR_RETURN(false, player < MAX_PLAYERS, "Invalid player (%" PRIu32 ")", player);
 
-	for (const DROID* psCurr : apsDroidLists[player])
+	for (const DROID* psCurr : apsDroidLists()[player])
 	{
 		if (psCurr->selected && psCurr->isCyborg())
 		{
@@ -2770,17 +2770,17 @@ void clearSelection()
 		return;
 	}
 
-	for (DROID* psCurrDroid : apsDroidLists[selectedPlayer])
+	for (DROID* psCurrDroid : apsDroidLists()[selectedPlayer])
 	{
 		psCurrDroid->selected = false;
 	}
-	for (STRUCTURE* psStruct : apsStructLists[selectedPlayer])
+	for (STRUCTURE* psStruct : apsStructLists()[selectedPlayer])
 	{
 		psStruct->selected = false;
 	}
 	bLasSatStruct = false;
 	//clear the Deliv Point if one
-	for (auto& psFlag : apsFlagPosLists[selectedPlayer])
+	for (auto& psFlag : apsFlagPosLists()[selectedPlayer])
 	{
 		psFlag->selected = false;
 	}

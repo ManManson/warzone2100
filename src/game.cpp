@@ -60,6 +60,7 @@
 #include "power.h"
 #include "projectile.h"
 #include "loadsave.h"
+#include "src/gamesessionworlds.h"
 #include "text.h"
 #include "message.h"
 #include "hci.h"
@@ -2255,7 +2256,7 @@ static bool loadSaveDroidPointers(const WzString &pFileName, PerPlayerDroidLists
 static bool writeDroidFile(const char *pFileName, const PerPlayerDroidLists& ppsCurrentDroidLists);
 
 static bool loadSaveStructure(char *pFileData, UDWORD filesize);
-static bool loadSaveStructure2(const char *pFileName);
+static bool loadSaveStructure2(const char *pFileName, GameWorld& world);
 static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDWORD>& fixedMapIdToGeneratedId, std::array<std::unordered_map<UDWORD, UDWORD>, MAX_PLAYER_SLOTS>& moduleToBuilding);
 static bool loadSaveStructurePointers(const WzString& filename, PerPlayerStructureLists *ppList);
 static bool writeStructFile(const char *pFileName);
@@ -2265,7 +2266,7 @@ static bool writeTemplateFile(const char *pFileName);
 
 static bool loadSaveFeature(char *pFileData, UDWORD filesize);
 static bool writeFeatureFile(const char *pFileName);
-static bool loadSaveFeature2(const char *pFileName);
+static bool loadSaveFeature2(const char *pFileName, GameWorld& world);
 static bool loadWzMapFeature(WzMap::Map &wzMap, std::unordered_map<UDWORD, UDWORD>& fixedMapIdToGeneratedId);
 
 static bool writeTerrainTypeMapFile(char *pFileName);
@@ -2415,7 +2416,7 @@ static void sanityUpdate()
 {
 	for (int player = 0; player < game.maxPlayers; player++)
 	{
-		for (DROID *psDroid : apsDroidLists[player])
+		for (DROID *psDroid : apsDroidLists()[player])
 		{
 			orderCheckList(psDroid);
 			actionSanity(psDroid);
@@ -2677,6 +2678,16 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 	/* Stop the game clock */
 	gameTimeStop();
 
+	// Expand extends the home map in place (keepObjects). If session state is still CampaignDual
+	// with active bound to offworld, aps*() targets empty lists while player droids live in primary.
+	if (keepObjects && !UserSaveGame && gameType == GTYPE_SCENARIO_EXPAND)
+	{
+		(void)missionParkedHomeWorld(); // ensure primary exists before setActiveToPrimary
+		GameSessionWorlds &gswExpand = GameSessionWorlds::instance();
+		gswExpand.setMode(WorldSessionMode::Solo);
+		gswExpand.setActiveToPrimary();
+	}
+
 	if ((gameType == GTYPE_SAVE_START) ||
 	    (gameType == GTYPE_SAVE_MIDMISSION))
 	{
@@ -2690,9 +2701,9 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		//clear out the audio
 		audio_StopAll();
 
-		freeAllDroids();
-		freeAllStructs();
-		freeAllFeatures();
+		freeAllDroids(activeGameWorld()); // FIXME!!!!: audit this
+		freeAllStructs(activeGameWorld()); // FIXME!!!!: audit this
+		freeAllFeatures(activeGameWorld()); // FIXME!!!!: audit this
 
 		//clear all the messages?
 		releaseAllProxDisp();
@@ -2703,16 +2714,16 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		//initialise the lists
 		for (player = 0; player < MAX_PLAYERS; player++)
 		{
-			apsDroidLists[player].clear();
-			apsStructLists[player].clear();
-			apsFeatureLists[player].clear();
-			apsFlagPosLists[player].clear();
+			apsDroidLists()[player].clear();
+			apsStructLists()[player].clear();
+			apsFeatureLists()[player].clear();
+			apsFlagPosLists()[player].clear();
 			//clear all the messages?
 			apsProxDisp[player].clear();
-			apsSensorList[0].clear();
-			apsExtractorLists[player].clear();
+			apsSensorList()[0].clear();
+			apsExtractorLists()[player].clear();
 		}
-		apsOilList[0].clear();
+		apsOilList()[0].clear();
 		initFactoryNumFlag();
 	}
 
@@ -2930,7 +2941,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 			if (pl != selectedPlayer)
 			{
 				/* Structures */
-				for (STRUCTURE *psStr : apsStructLists[pl])
+				for (STRUCTURE *psStr : apsStructLists()[pl])
 				{
 					if (selectedPlayer < MAX_PLAYERS && aiCheckAlliances(psStr->player, selectedPlayer))
 					{
@@ -2939,7 +2950,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 				}
 
 				/* Droids */
-				for (DROID *psDroid : apsDroidLists[pl])
+				for (DROID *psDroid : apsDroidLists()[pl])
 				{
 					if (selectedPlayer < MAX_PLAYERS && aiCheckAlliances(psDroid->player, selectedPlayer))
 					{
@@ -2977,7 +2988,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		aFileName[fileExten] = '\0';
 		strcat(aFileName, "limits.json");
 
-		//load the data into apsStructLists
+		//load the data into apsStructLists()
 		if (!loadSaveLimits(aFileName))
 		{
 			debug(LOG_ERROR, "failed to load %s", aFileName);
@@ -3000,7 +3011,10 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 
 	if (saveGameOnMission && UserSaveGame)
 	{
-		missionResetSwapMissionMapSlotsParity();
+		ensureOffworldWorld();
+		GameSessionWorlds &gswMissionLoad = GameSessionWorlds::instance();
+		gswMissionLoad.setMode(WorldSessionMode::CampaignDual);
+		gswMissionLoad.setActiveToOffworld();
 
 		//the scroll limits for the mission map have already been written
 		if (saveGameVersion >= VERSION_29)
@@ -3011,7 +3025,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 			missionScrollMaxY = (UWORD)missionParkedHomeWorld().map.scroll.maxY;
 		}
 
-		//load the map and the droids then swap pointers
+		//load the map and the droids into the offworld (active) GameWorld — no list/map swap
 
 		//load in the map file
 		aFileName[fileExten] = '\0';
@@ -3038,8 +3052,8 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		aFileName[fileExten] = '\0';
 		strcat(aFileName, "mfeature.json");
 
-		//load the data into apsFeatureLists
-		if (!loadSaveFeature2(aFileName))
+		//load the data into apsFeatureLists()
+		if (!loadSaveFeature2(aFileName, activeGameWorld()))
 		{
 			aFileName[fileExten] = '\0';
 			strcat(aFileName, "mfeat.bjo");
@@ -3062,7 +3076,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		strcat(aFileName, "mstruct.json");
 
 		//load in the mission structures
-		if (!loadSaveStructure2(aFileName))
+		if (!loadSaveStructure2(aFileName, activeGameWorld()))
 		{
 			aFileName[fileExten] = '\0';
 			strcat(aFileName, "mstruct.bjo");
@@ -3073,7 +3087,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 				debug(LOG_ERROR, "Failed with: %s", aFileName);
 				goto error;
 			}
-			//load the data into apsStructLists
+			//load the data into apsStructLists()
 			if (!loadSaveStructure(pFileData, fileSize))
 			{
 				debug(LOG_ERROR, "Failed with: %s", aFileName);
@@ -3082,15 +3096,15 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		}
 		else
 		{
-			structMap[aFileName] = &missionParkedHomeWorld().objects.structures;	// we swap pointers below
+			structMap[aFileName] = &offworldWorld().objects.structures;
 		}
 
 		// load in the mission droids, if any
 		aFileName[fileExten] = '\0';
 		strcat(aFileName, "mdroid.json");
-		if (loadSaveDroid(aFileName, apsDroidLists))
+		if (loadSaveDroid(aFileName, apsDroidLists()))
 		{
-			droidMap[aFileName] = &missionParkedHomeWorld().objects.droids; // need to swap here to read correct list later
+			droidMap[aFileName] = &offworldWorld().objects.droids;
 		}
 
 		/* after we've loaded in the units we need to redo the orientation because
@@ -3099,7 +3113,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		 */
 		for (player = 0; player < MAX_PLAYERS; ++player)
 		{
-			for (DROID* psCurr : apsDroidLists[player])
+			for (DROID* psCurr : apsDroidLists()[player])
 			{
 				if (psCurr->droidType != DROID_PERSON
 				    // && psCurr->droidType != DROID_CYBORG
@@ -3112,32 +3126,44 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 			}
 		}
 
-		swapMissionPointers();
-
-		//once the mission map has been loaded reset the mission scroll limits
+		//once the mission map has been loaded reset the mission scroll limits on the mission world
 		if (saveGameVersion >= VERSION_29)
 		{
-			missionParkedHomeWorld().map.scroll.minX = missionScrollMinX;
-			missionParkedHomeWorld().map.scroll.minY = missionScrollMinY;
-			missionParkedHomeWorld().map.scroll.maxX = missionScrollMaxX;
-			missionParkedHomeWorld().map.scroll.maxY = missionScrollMaxY;
+			offworldWorld().map.scroll.minX = missionScrollMinX;
+			offworldWorld().map.scroll.minY = missionScrollMinY;
+			offworldWorld().map.scroll.maxX = missionScrollMaxX;
+			offworldWorld().map.scroll.maxY = missionScrollMaxY;
 		}
 	}
 
 	//if Campaign Expand then don't load in another map
 	if (gameType != GTYPE_SCENARIO_EXPAND)
 	{
+		const bool missionUserSaveLoad = saveGameOnMission && UserSaveGame;
+		if (missionUserSaveLoad)
+		{
+			// Load level package map into primary; mission map/objects stay in offworld until we rebind active below.
+			GameSessionWorlds::instance().setActiveToPrimary();
+		}
 		activeGameWorld().map.tiles = nullptr;
 		// load in the map file
 		if (!data)
 		{
 			debug(LOG_ERROR, "Failed to load map from path: %s", aFileName);
+			if (missionUserSaveLoad)
+			{
+				GameSessionWorlds::instance().setActiveToOffworld();
+			}
 			return false;
 		}
 		auto mapData = data->mapData();
 		if (!mapData)
 		{
 			debug(LOG_ERROR, "Failed to load map data from path: %s", aFileName);
+			if (missionUserSaveLoad)
+			{
+				GameSessionWorlds::instance().setActiveToOffworld();
+			}
 			return false;
 		}
 		if (data->wasScriptGenerated())
@@ -3151,7 +3177,15 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		if (!mapLoadFromWzMapData(activeGameWorld(), mapData))
 		{
 			debug(LOG_ERROR, "Failed to process map data from path: %s", aFileName);
+			if (missionUserSaveLoad)
+			{
+				GameSessionWorlds::instance().setActiveToOffworld();
+			}
 			return false;
+		}
+		if (missionUserSaveLoad)
+		{
+			GameSessionWorlds::instance().setActiveToOffworld();
 		}
 	}
 
@@ -3195,7 +3229,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		aFileName[fileExten] = '\0';
 		strcat(aFileName, "droid.json");
 
-		//load the data into apsDroidLists
+		//load the data into apsDroidLists()
 		if (!UserSaveGame)
 		{
 			ASSERT(data != nullptr, "Expecting WzMap::Map instance");
@@ -3213,10 +3247,10 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		}
 		else
 		{
-			if (loadSaveDroid(aFileName, apsDroidLists))
+			if (loadSaveDroid(aFileName, apsDroidLists()))
 			{
 				debug(LOG_SAVE, "Loaded new style droids");
-				droidMap[aFileName] = &apsDroidLists;	// load pointers later
+				droidMap[aFileName] = &apsDroidLists();	// load pointers later
 			}
 		}
 	}
@@ -3226,13 +3260,15 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		aFileName[fileExten] = '\0';
 		strcat(aFileName, "droid.json");
 
-		//load the data into apsDroidLists
-		if (!loadSaveDroid(aFileName, apsDroidLists))
+		auto& homeParkedDroids = missionParkedHomeWorld().objects.droids;
+
+		//load the data into home parked droids
+		if (!loadSaveDroid(aFileName, homeParkedDroids))
 		{
 			debug(LOG_ERROR, "failed to load %s", aFileName);
 			goto error;
 		}
-		droidMap[aFileName] = &apsDroidLists;	// load pointers later
+		droidMap[aFileName] = &homeParkedDroids;	// load pointers later
 
 		/* after we've loaded in the units we need to redo the orientation because
 		 * the direction may have been saved - we need to do it outside of the loop
@@ -3240,7 +3276,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		 */
 		for (player = 0; player < MAX_PLAYERS; ++player)
 		{
-			for (DROID* psCurr : apsDroidLists[player])
+			for (DROID* psCurr : homeParkedDroids[player])
 			{
 				if (psCurr->droidType != DROID_PERSON
 				    && !psCurr->isCyborg()
@@ -3251,7 +3287,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 				}
 			}
 		}
-		if (!saveGameOnMission)
+		if (!saveGameOnMission) // FIXME: WHAT THE HECK? loading mdroid.json into parked home droids!?
 		{
 			//load in the mission droids
 			aFileName[fileExten] = '\0';
@@ -3291,7 +3327,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 	{
 		aFileName[fileExten] = '\0';
 		strcat(aFileName, "feature.json");
-		if (!loadSaveFeature2(aFileName))
+		if (!loadSaveFeature2(aFileName, missionParkedHomeWorld()))
 		{
 			debug(LOG_ERROR, "Failed with: %s", aFileName);
 			goto error;
@@ -3317,17 +3353,17 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		}
 		if (game.type != LEVEL_TYPE::CAMPAIGN)
 		{
-			resetFactoryNumFlag();	//reset flags into the masks
+			resetFactoryNumFlag(missionParkedHomeWorld());	//reset flags into the masks
 		}
 	}
 	else
 	{
-		if (!loadSaveStructure2(aFileName))
+		if (!loadSaveStructure2(aFileName, missionParkedHomeWorld()))
 		{
 			debug(LOG_ERROR, "Failed with: %s", aFileName);
 			goto error;
 		}
-		structMap[aFileName] = &apsStructLists;
+		structMap[aFileName] = &apsStructLists();
 	}
 
 	//if user save game then load up the current level for structs and components
@@ -3425,7 +3461,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 	}
 
 	//check that delivery points haven't been put down in invalid location
-	checkDeliveryPoints(saveGameVersion);
+	checkDeliveryPoints(activeGameWorld(), saveGameVersion); // FIXME!!!!!!! Audit the use of activeGameWorld()
 
 	//turn power on for rest of game
 	powerCalculated = true;
@@ -3450,7 +3486,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 
 	if (UserSaveGame)
 	{
-		loadFixupResearchPendingStates();
+		loadFixupResearchPendingStates(); // FIXME!!!!!!!!: Very suspicious function
 	}
 
 	// Load labels
@@ -3530,9 +3566,9 @@ error:
 	      keepObjects ? "true" : "false", freeMem ? "true" : "false", UserSaveGame ? "true" : "false");
 
 	/* Clear all the objects off the map and free up the map memory */
-	freeAllDroids();
-	freeAllStructs();
-	freeAllFeatures();
+	freeAllDroids(activeGameWorld()); // FIXME!!!!: audit this
+	freeAllStructs(activeGameWorld()); // FIXME!!!!: audit this
+	freeAllFeatures(activeGameWorld()); // FIXME!!!!: audit this
 	droidTemplateShutDown();
 	activeGameWorld().map.tiles = nullptr;
 
@@ -3596,7 +3632,7 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 	CurrentFileName[fileExtension] = '\0';
 	strcat(CurrentFileName, "droid.json");
 	/*Write the current droid lists to the file*/
-	if (!writeDroidFile(CurrentFileName, apsDroidLists))
+	if (!writeDroidFile(CurrentFileName, apsDroidLists()))
 	{
 		debug(LOG_ERROR, "writeDroidFile(\"%s\") failed", CurrentFileName);
 		goto error;
@@ -3786,8 +3822,7 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 
 	if (saveGameOnMission)
 	{
-		//mission save swap the mission pointers and save the changes
-		swapMissionPointers();
+		//mission save: mission map/objects live in offworld while active is offworld (no slot exchange)
 		//now save the map and droids
 
 		//save the map file
@@ -3829,9 +3864,6 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 			debug(LOG_ERROR, "saveGame: writeFeatureFile(\"%s\") failed", CurrentFileName);
 			goto error;
 		}
-
-		//mission save swap back so we can restart the game
-		swapMissionPointers();
 	}
 
 	// strip the last filename
@@ -5304,7 +5336,7 @@ static bool loadWzMapDroidInit(WzMap::Map &wzMap, std::unordered_map<UDWORD, UDW
 				debug(LOG_ERROR, "Found duplicate hard-coded object ID in map data: %" PRIu32 "", droid.id.value());
 			}
 		}
-		psDroid = reallyBuildDroid(psTemplate, Position(droid.position.x, droid.position.y, 0), player, false, {droid.direction, 0, 0}, newID);
+		psDroid = reallyBuildDroid(activeGameWorld(), psTemplate, Position(droid.position.x, droid.position.y, 0), player, false, {droid.direction, 0, 0}, newID);
 		turnOffMultiMsg(false);
 		if (psDroid == nullptr)
 		{
@@ -5320,7 +5352,7 @@ static bool loadWzMapDroidInit(WzMap::Map &wzMap, std::unordered_map<UDWORD, UDW
 			scriptSetStartPos(psDroid->player, psDroid->pos.x, psDroid->pos.y);	// set map start position, FIXME - save properly elsewhere!
 		}
 
-		addDroid(psDroid, apsDroidLists);
+		addDroid(psDroid, apsDroidLists());
 	}
 	if (NumberOfSkippedDroids)
 	{
@@ -5737,11 +5769,11 @@ static bool loadSaveDroid(const char *pFileName, PerPlayerDroidLists& ppsCurrent
 		turnOffMultiMsg(true);
 		if (id > 0)
 		{
-			psDroid = reallyBuildDroid(psTemplate, pos, player, onMission, rot, id);
+			psDroid = reallyBuildDroid(activeGameWorld(), psTemplate, pos, player, onMission, rot, id);
 		} else
 		{
 			// will generate a new id
-			psDroid = reallyBuildDroid(psTemplate, pos, player, onMission, rot);
+			psDroid = reallyBuildDroid(activeGameWorld(), psTemplate, pos, player, onMission, rot);
 		}
 		ASSERT_OR_RETURN(false, psDroid != nullptr, "Failed to build unit %s", sortedList[i].second.toUtf8().c_str());
 		turnOffMultiMsg(false);
@@ -6267,7 +6299,7 @@ bool loadSaveStructure(char *pFileData, UDWORD filesize)
 			continue;
 		}
 
-		psStructure = buildStructureDir(psStats, psSaveStructure->x, psSaveStructure->y, DEG(psSaveStructure->direction), psSaveStructure->player, true);
+		psStructure = buildStructureDir(activeGameWorld(), psStats, psSaveStructure->x, psSaveStructure->y, DEG(psSaveStructure->direction), psSaveStructure->player, true);
 		ASSERT(psStructure, "Unable to create structure");
 		if (!psStructure)
 		{
@@ -6372,7 +6404,7 @@ static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDW
 				debug(LOG_ERROR, "Found duplicate hard-coded object ID in map data: %" PRIu32 "", structure.id.value());
 			}
 		}
-		psStructure = buildStructureDir(psStats, structure.position.x, structure.position.y, structure.direction, player, true, newID);
+		psStructure = buildStructureDir(activeGameWorld(), psStats, structure.position.x, structure.position.y, structure.direction, player, true, newID);
 		if (psStructure == nullptr)
 		{
 			debug(LOG_ERROR, "Structure %s couldn't be built (probably on top of another structure).", structure.name.c_str());
@@ -6404,7 +6436,7 @@ static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDW
 			}
 			for (int i = 0; i < structure.modules; ++i)
 			{
-				buildStructure(moduleStat, structure.position.x, structure.position.y, player, true);
+				buildStructure(activeGameWorld(), moduleStat, structure.position.x, structure.position.y, player, true);
 			}
 		}
 		buildingComplete(psStructure);
@@ -6429,7 +6461,7 @@ static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDW
 
 // -----------------------------------------------------------------------------------------
 /* code for versions after version 20 of a save structure */
-static bool loadSaveStructure2(const char *pFileName)
+static bool loadSaveStructure2(const char *pFileName, GameWorld& world)
 {
 	if (!PHYSFS_exists(pFileName))
 	{
@@ -6471,7 +6503,7 @@ static bool loadSaveStructure2(const char *pFileName)
 		//for modules - need to check the base structure exists
 		if (IsStatExpansionModule(psStats))
 		{
-			STRUCTURE *psTileStructure = getTileStructure(activeGameWorld(), map_coord(pos.x), map_coord(pos.y));
+			STRUCTURE *psTileStructure = getTileStructure(world, map_coord(pos.x), map_coord(pos.y));
 			if (psTileStructure == nullptr)
 			{
 				debug(LOG_ERROR, "No owning structure for module - %s for player - %d", name.toUtf8().c_str(), player);
@@ -6480,8 +6512,8 @@ static bool loadSaveStructure2(const char *pFileName)
 			}
 		}
 		//check not trying to build too near the edge
-		if (map_coord(pos.x) < TOO_NEAR_EDGE || map_coord(pos.x) > activeGameWorld().map.width - TOO_NEAR_EDGE
-		    || map_coord(pos.y) < TOO_NEAR_EDGE || map_coord(pos.y) > activeGameWorld().map.height - TOO_NEAR_EDGE)
+		if (map_coord(pos.x) < TOO_NEAR_EDGE || map_coord(pos.x) > world.map.width - TOO_NEAR_EDGE
+		    || map_coord(pos.y) < TOO_NEAR_EDGE || map_coord(pos.y) > world.map.height - TOO_NEAR_EDGE)
 		{
 			debug(LOG_ERROR, "Structure %s (%s), coord too near the edge of the map", name.toUtf8().c_str(), list[i].toUtf8().c_str());
 			ini.endGroup();
@@ -6492,7 +6524,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			id = generateSynchronisedObjectId();
 		}
 		debug(LOG_NEVER, "trying to build structure %i;%i;%s;%i;%i", id, player, psStats->name.toUtf8().c_str(), map_coord(pos.y), map_coord(pos.y));
-		psStructure = buildStructureDir(psStats, pos.x, pos.y, rot.direction, player, true, id);
+		psStructure = buildStructureDir(world, psStats, pos.x, pos.y, rot.direction, player, true, id);
 		ASSERT(psStructure, "Unable to create structure");
 		if (!psStructure)
 		{
@@ -6530,7 +6562,7 @@ static bool loadSaveStructure2(const char *pFileName)
 				//build the appropriate number of modules
 				for (int moduleIdx = 0; moduleIdx < capacity; moduleIdx++)
 				{
-					buildStructure(psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
+					buildStructure(world, psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
 
 				}
 			}
@@ -6542,7 +6574,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			if (ini.contains("Factory/assemblyPoint/pos"))
 			{
 				Position point = ini.vector3i("Factory/assemblyPoint/pos");
-				setAssemblyPoint(psFactory->psAssemblyPoint, point.x, point.y, player, false);
+				setAssemblyPoint(world, psFactory->psAssemblyPoint, point.x, point.y, player, false);
 				psFactory->psAssemblyPoint->selected = ini.value("Factory/assemblyPoint/selected", false).toBool();
 			}
 			if (ini.contains("Factory/assemblyPoint/number"))
@@ -6583,7 +6615,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			if (capacity)
 			{
 				psModule = getModuleStat(psStructure);
-				buildStructure(psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
+				buildStructure(world, psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
 			}
 			//clear subject
 			psResearch->psSubject = nullptr;
@@ -6608,7 +6640,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			if (capacity)
 			{
 				psModule = getModuleStat(psStructure);
-				buildStructure(psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
+				buildStructure(world, psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
 			}
 			break;
 		case REF_RESOURCE_EXTRACTOR:
@@ -6618,7 +6650,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			if (ini.contains("Repair/deliveryPoint/pos"))
 			{
 				Position point = ini.vector3i("Repair/deliveryPoint/pos");
-				setAssemblyPoint(psRepair->psDeliveryPoint, point.x, point.y, player, false);
+				setAssemblyPoint(world, psRepair->psDeliveryPoint, point.x, point.y, player, false);
 				psRepair->psDeliveryPoint->selected = ini.value("Repair/deliveryPoint/selected", false).toBool();
 			}
 			break;
@@ -6670,7 +6702,7 @@ static bool loadSaveStructure2(const char *pFileName)
 		}
 		ini.endGroup();
 	}
-	resetFactoryNumFlag();	//reset flags into the masks
+	resetFactoryNumFlag(world);	//reset flags into the masks
 
 	return true;
 }
@@ -6721,7 +6753,7 @@ bool writeStructFile(const char *pFileName)
 
 	for (int player = 0; player < MAX_PLAYERS; player++)
 	{
-		for (const STRUCTURE *psCurr : apsStructLists[player])
+		for (const STRUCTURE *psCurr : apsStructLists()[player])
 		{
 			if (!psCurr->pStructureType)
 			{
@@ -7067,7 +7099,7 @@ bool loadSaveFeature(char *pFileData, UDWORD filesize)
 			continue;
 		}
 		//create the Feature
-		pFeature = buildFeature(psStats, psSaveFeature->x, psSaveFeature->y, true, psSaveFeature->id);
+		pFeature = buildFeature(activeGameWorld(), psStats, psSaveFeature->x, psSaveFeature->y, true, psSaveFeature->id);
 		if (!pFeature)
 		{
 			debug(LOG_ERROR, "Unable to create feature %s", psSaveFeature->name);
@@ -7124,7 +7156,7 @@ static bool loadWzMapFeature(WzMap::Map &wzMap, std::unordered_map<UDWORD, UDWOR
 				debug(LOG_ERROR, "Found duplicate hard-coded object ID in map data: %" PRIu32 "", feature.id.value());
 			}
 		}
-		pFeature = buildFeature(&*psStats, feature.position.x, feature.position.y, true, newID);
+		pFeature = buildFeature(activeGameWorld(), &*psStats, feature.position.x, feature.position.y, true, newID);
 		if (!pFeature)
 		{
 			debug(LOG_ERROR, "Unable to create feature %s", feature.name.c_str());
@@ -7142,7 +7174,7 @@ static bool loadWzMapFeature(WzMap::Map &wzMap, std::unordered_map<UDWORD, UDWOR
 	return true;
 }
 
-bool loadSaveFeature2(const char *pFileName)
+bool loadSaveFeature2(const char *pFileName, GameWorld& world)
 {
 	if (!PHYSFS_exists(pFileName))
 	{
@@ -7184,11 +7216,11 @@ bool loadSaveFeature2(const char *pFileName)
 		int id = ini.value("id", -1).toInt();
 		if (id > 0)
 		{
-			pFeature = buildFeature(psStats, pos.x, pos.y, true, id);
+			pFeature = buildFeature(world, psStats, pos.x, pos.y, true, id);
 		}
 		else
 		{
-			pFeature = buildFeature(psStats, pos.x, pos.y, true);
+			pFeature = buildFeature(world, psStats, pos.x, pos.y, true);
 		}
 		if (!pFeature)
 		{
@@ -7222,7 +7254,7 @@ bool writeFeatureFile(const char *pFileName)
 	WzConfig ini(WzString::fromUtf8(pFileName), WzConfig::ReadAndWrite);
 	int counter = 0;
 
-	for (const FEATURE *psCurr : apsFeatureLists[0])
+	for (const FEATURE *psCurr : apsFeatureLists()[0])
 	{
 		ini.beginGroup("feature_" + (WzString::number(counter++).leftPadToMinimumLength(WzUniCodepoint::fromASCII('0'), 10)));  // Zero padded so that alphabetical sort works.
 		ini.setValue("name", psCurr->psStats->id);
@@ -7310,7 +7342,7 @@ bool writeTemplateFile(const char *pFileName)
 	mRoot["version"] = 1;
 	for (int player = 0; player < MAX_PLAYERS; player++)
 	{
-		if (apsDroidLists[player].empty() && apsStructLists[player].empty())	// only write out templates of players that are still 'alive'
+		if (apsDroidLists()[player].empty() && apsStructLists()[player].empty())	// only write out templates of players that are still 'alive'
 		{
 			continue;
 		}
@@ -7634,7 +7666,7 @@ void loadFixupResearchPendingStates()
 			// - (Ideally the game would prevent this from happening by ensuring the save is queued to happen after the next tick...)
 			if (pPlayerRes->ResearchStatus & CANCELLED_RESEARCH_PENDING)
 			{
-				STRUCTURE *psLab = findResearchingFacilityByResearchIndex(apsStructLists, plr, statInc);
+				STRUCTURE *psLab = findResearchingFacilityByResearchIndex(apsStructLists(), plr, statInc);
 				if (psLab == nullptr)
 				{
 					// check the mission list

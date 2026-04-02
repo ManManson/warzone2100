@@ -26,6 +26,7 @@ public:
 
 	void setActiveToPrimary();
 	void setActiveToOffworld();
+	void flipActiveWorld();
 
 	void reset();
 
@@ -35,6 +36,11 @@ private:
 
 GameWorld &activeGameWorld();
 const GameWorld &activeGameWorldConst();
+
+/** Object lists for the currently simulated world (same storage as activeGameWorld().objects). */
+WorldObjectState &activeObjects();
+const WorldObjectState &activeObjectsConst();
+
 void bindActiveWorld(GameWorld &world);
 bool hasActiveWorld();
 

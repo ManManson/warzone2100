@@ -404,7 +404,7 @@ bool wzapi::setAssemblyPoint(WZAPI_PARAMS(STRUCTURE *psStruct, int x, int y))
 	SCRIPT_ASSERT(false, context, psStruct->pStructureType->type == REF_FACTORY
 	              || psStruct->pStructureType->type == REF_CYBORG_FACTORY
 	              || psStruct->pStructureType->type == REF_VTOL_FACTORY, "Structure not a factory");
-	setAssemblyPoint(((FACTORY *)psStruct->pFunctionality)->psAssemblyPoint, x, y, psStruct->player, true);
+	setAssemblyPoint(activeGameWorld(), ((FACTORY *)psStruct->pFunctionality)->psAssemblyPoint, x, y, psStruct->player, true);
 	return true;
 }
 
@@ -522,7 +522,7 @@ bool wzapi::cameraTrack(WZAPI_PARAMS(optional<DROID *> _droid))
 		DROID *droid = _droid.value();
 		SCRIPT_ASSERT(false, context, droid, "No valid droid provided");
 		SCRIPT_ASSERT(false, context, selectedPlayer < MAX_PLAYERS, "Invalid selectedPlayer for current client: %" PRIu32 "", selectedPlayer);
-		for (DROID *psDroid : apsDroidLists[selectedPlayer])
+		for (DROID *psDroid : apsDroidLists()[selectedPlayer])
 		{
 			psDroid->selected = psDroid == droid; // select only the target droid
 		}
@@ -1066,7 +1066,7 @@ std::vector<const STRUCTURE *> _enumStruct_fromList(WZAPI_PARAMS(optional<int> _
 //--
 std::vector<const STRUCTURE *> wzapi::enumStruct(WZAPI_PARAMS(optional<int> _player, optional<STRUCTURE_TYPE_or_statsName_string> _structureType, optional<int> _playerFilter))
 {
-	return _enumStruct_fromList(context, _player, _structureType, _playerFilter, apsStructLists);
+	return _enumStruct_fromList(context, _player, _structureType, _playerFilter, apsStructLists());
 }
 
 //-- ## enumStructOffWorld([player[, structureType[, playerFilter]]])
@@ -1116,7 +1116,7 @@ std::vector<const DROID *> wzapi::enumDroid(WZAPI_PARAMS(optional<int> _player, 
 	}
 	SCRIPT_ASSERT_PLAYER({}, context, player);
 	SCRIPT_ASSERT({}, context, (playerFilter >= 0 && playerFilter < MAX_PLAYERS) || playerFilter == ALL_PLAYERS, "Player filter index out of range: %d", playerFilter);
-	for (DROID *psDroid : apsDroidLists[player])
+	for (DROID *psDroid : apsDroidLists()[player])
 	{
 		if ((playerFilter == ALL_PLAYERS || psDroid->visible[playerFilter])
 		    && !psDroid->died
@@ -1144,7 +1144,7 @@ std::vector<const FEATURE *> wzapi::enumFeature(WZAPI_PARAMS(int playerFilter, o
 	}
 
 	std::vector<const FEATURE *> matches;
-	for (const FEATURE *psFeat : apsFeatureLists[0])
+	for (const FEATURE *psFeat : apsFeatureLists()[0])
 	{
 		if ((playerFilter == ALL_PLAYERS || psFeat->visible[playerFilter])
 		    && !psFeat->died
@@ -1166,7 +1166,7 @@ std::vector<scr_position> wzapi::enumBlips(WZAPI_PARAMS(int player))
 {
 	SCRIPT_ASSERT_PLAYER({}, context, player);
 	std::vector<scr_position> matches;
-	for (const BASE_OBJECT *psSensor : apsSensorList[0])
+	for (const BASE_OBJECT *psSensor : apsSensorList()[0])
 	{
 		if (psSensor->visible[player] > 0 && psSensor->visible[player] < UBYTE_MAX)
 		{
@@ -1187,14 +1187,14 @@ std::vector<const BASE_OBJECT *> wzapi::enumSelected(WZAPI_NO_PARAMS_NO_CONTEXT)
 	{
 		return matches;
 	}
-	for (DROID *psDroid : apsDroidLists[selectedPlayer])
+	for (DROID *psDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (psDroid->selected)
 		{
 			matches.push_back(psDroid);
 		}
 	}
-	for (STRUCTURE *psStruct : apsStructLists[selectedPlayer])
+	for (STRUCTURE *psStruct : apsStructLists()[selectedPlayer])
 	{
 		if (psStruct->selected)
 		{
@@ -1534,7 +1534,7 @@ static bool structDoubleCheck(BASE_STATS *psStat, UDWORD xx, UDWORD yy, SDWORD m
 	y = yTL;	// top
 	for (x = xTL; x != xBR + 1; x++)
 	{
-		if (fpathBlockingTile(x, y, propType))
+		if (fpathBlockingTile(activeGameWorld(), x, y, propType))
 		{
 			count++;
 			break;
@@ -1544,7 +1544,7 @@ static bool structDoubleCheck(BASE_STATS *psStat, UDWORD xx, UDWORD yy, SDWORD m
 	y = yBR;	// bottom
 	for (x = xTL; x != xBR + 1; x++)
 	{
-		if (fpathBlockingTile(x, y, propType))
+		if (fpathBlockingTile(activeGameWorld(), x, y, propType))
 		{
 			count++;
 			break;
@@ -1554,7 +1554,7 @@ static bool structDoubleCheck(BASE_STATS *psStat, UDWORD xx, UDWORD yy, SDWORD m
 	x = xTL;	// left
 	for (y = yTL + 1; y != yBR; y++)
 	{
-		if (fpathBlockingTile(x, y, propType))
+		if (fpathBlockingTile(activeGameWorld(), x, y, propType))
 		{
 			count++;
 			break;
@@ -1564,7 +1564,7 @@ static bool structDoubleCheck(BASE_STATS *psStat, UDWORD xx, UDWORD yy, SDWORD m
 	x = xBR;	// right
 	for (y = yTL + 1; y != yBR; y++)
 	{
-		if (fpathBlockingTile(x, y, propType))
+		if (fpathBlockingTile(activeGameWorld(), x, y, propType))
 		{
 			count++;
 			break;
@@ -1953,10 +1953,10 @@ wzapi::returned_nullable_ptr<const DROID> wzapi::addDroid(WZAPI_PARAMS(int playe
 		}
 		else
 		{
-			psDroid = ::buildDroid(psTemplate.get(), world_coord(x) + TILE_UNITS / 2, world_coord(y) + TILE_UNITS / 2, player, onMission, nullptr);
+			psDroid = ::buildDroid(activeGameWorld(), psTemplate.get(), world_coord(x) + TILE_UNITS / 2, world_coord(y) + TILE_UNITS / 2, player, onMission, nullptr);
 			if (psDroid)
 			{
-				addDroid(psDroid, apsDroidLists);
+				addDroid(psDroid, apsDroidLists());
 				debug(LOG_LIFE, "Created droid %s by script for player %d: %u", objInfo(psDroid), player, psDroid->id);
 			}
 			else
@@ -2018,12 +2018,12 @@ wzapi::returned_nullable_ptr<const FEATURE> wzapi::addFeature(WZAPI_PARAMS(std::
 	int feature = getFeatureStatFromName(WzString::fromUtf8(featureName));
 	SCRIPT_ASSERT(nullptr, context, feature >= 0 && feature < asFeatureStats.size(), "Unknown feature name: %s", featureName.c_str());
 	FEATURE_STATS *psStats = &asFeatureStats[feature];
-	for (const FEATURE *psFeat : apsFeatureLists[0])
+	for (const FEATURE *psFeat : apsFeatureLists()[0])
 	{
 		SCRIPT_ASSERT(nullptr, context, map_coord(psFeat->pos.x) != x || map_coord(psFeat->pos.y) != y,
 		              "Building feature on tile already occupied");
 	}
-	FEATURE *psFeature = buildFeature(psStats, world_coord(x), world_coord(y), false);
+	FEATURE *psFeature = buildFeature(activeGameWorld(), psStats, world_coord(x), world_coord(y), false);
 	return psFeature;
 }
 
@@ -2674,11 +2674,11 @@ wzapi::no_return_value wzapi::setReinforcementTime(WZAPI_PARAMS(int _time, optio
 	{
 		/* Search for a transport that is idle; if we can't find any, remove the launch button
 		 * since there's no transport to launch */
-		auto droidIt = std::find_if(apsDroidLists[selectedPlayer].begin(), apsDroidLists[selectedPlayer].end(), [](DROID* d)
+		auto droidIt = std::find_if(apsDroidLists()[selectedPlayer].begin(), apsDroidLists()[selectedPlayer].end(), [](DROID* d)
 		{
 			return d->isTransporter() && !transporterFlying(d);
 		});
-		DROID* psDroid = droidIt != apsDroidLists[selectedPlayer].end() ? *droidIt : nullptr;
+		DROID* psDroid = droidIt != apsDroidLists()[selectedPlayer].end() ? *droidIt : nullptr;
 
 		// Didn't find an idle transporter, we can remove the launch button
 		if (psDroid == nullptr)
@@ -3154,7 +3154,7 @@ wzapi::returned_nullable_ptr<const STRUCTURE> wzapi::addStructure(WZAPI_PARAMS(s
 	uint16_t direction = static_cast<uint16_t>(DEG(_direction.value_or(0)));
 
 	STRUCTURE_STATS *psStat = &asStructureStats[structureIndex];
-	STRUCTURE *psStruct = buildStructureDir(psStat, x, y, direction, player, false);
+	STRUCTURE *psStruct = buildStructureDir(activeGameWorld(), psStat, x, y, direction, player, false);
 	if (psStruct)
 	{
 		psStruct->status = SS_BUILT;
@@ -3483,7 +3483,7 @@ bool wzapi::transformPlayerToSpectator(WZAPI_PARAMS(int player))
 // flag all droids as requiring update on next frame
 static void dirtyAllDroids(int player)
 {
-	for (DROID *psDroid : apsDroidLists[player])
+	for (DROID *psDroid : apsDroidLists()[player])
 	{
 		psDroid->flags.set(OBJECT_FLAG_DIRTY);
 	}
@@ -3499,7 +3499,7 @@ static void dirtyAllDroids(int player)
 
 static void dirtyAllStructures(int player)
 {
-	for (STRUCTURE *psCurr : apsStructLists[player])
+	for (STRUCTURE *psCurr : apsStructLists()[player])
 	{
 		psCurr->flags.set(OBJECT_FLAG_DIRTY);
 	}
@@ -3828,7 +3828,7 @@ bool wzapi::setUpgradeStats(WZAPI_BASE_PARAMS(int player, const std::string& nam
 		case SCRCB_ELW:
 			// Update resistance points for all structures, to avoid making them damaged
 			// FIXME - this is _really_ slow! we could be doing this for dozens of buildings one at a time!
-			for (STRUCTURE *psCurr : apsStructLists[player])
+			for (STRUCTURE *psCurr : apsStructLists()[player])
 			{
 				if (psStats == psCurr->pStructureType && psStats->upgrade[player].resistance < value)
 				{
@@ -3848,7 +3848,7 @@ bool wzapi::setUpgradeStats(WZAPI_BASE_PARAMS(int player, const std::string& nam
 			// Update body points for all structures, to avoid making them damaged
 			// FIXME - this is _really_ slow! we could be doing this for
 			// dozens of buildings one at a time!
-			for (STRUCTURE *psCurr : apsStructLists[player])
+			for (STRUCTURE *psCurr : apsStructLists()[player])
 			{
 				if (psStats == psCurr->pStructureType && (!bMultiPlayer || (bMultiPlayer && psStats->upgrade[player].hitpoints < value)))
 				{

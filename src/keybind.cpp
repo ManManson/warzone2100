@@ -234,7 +234,7 @@ void kf_DamageMe()
 	{
 		return; // no-op
 	}
-	for (DROID *psDroid : apsDroidLists[selectedPlayer])
+	for (DROID *psDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (psDroid->selected)
 		{
@@ -250,7 +250,7 @@ void kf_DamageMe()
 			}
 		}
 	}
-	for (STRUCTURE *psStruct : apsStructLists[selectedPlayer])
+	for (STRUCTURE *psStruct : apsStructLists()[selectedPlayer])
 	{
 		if (psStruct->selected)
 		{
@@ -275,7 +275,7 @@ void	kf_TraceObject()
 		return; // no-op
 	}
 
-	for (const DROID* psCDroid : apsDroidLists[selectedPlayer])
+	for (const DROID* psCDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (psCDroid->selected)
 		{
@@ -284,7 +284,7 @@ void	kf_TraceObject()
 			return;
 		}
 	}
-	for (const STRUCTURE* psCStruct : apsStructLists[selectedPlayer])
+	for (const STRUCTURE* psCStruct : apsStructLists()[selectedPlayer])
 	{
 		if (psCStruct->selected)
 		{
@@ -382,7 +382,7 @@ void	kf_DebugDroidInfo()
 		return; // no-op
 	}
 
-	for (const DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (const DROID* psDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (psDroid->selected)
 		{
@@ -410,7 +410,7 @@ void kf_CloneSelected(int limit)
 
 	bool selectedAnything = false;
 	const DROID* droidToClone = nullptr;
-	for (const DROID* d : apsDroidLists[selectedPlayer])
+	for (const DROID* d : apsDroidLists()[selectedPlayer])
 	{
 		if (!d->selected)
 		{
@@ -448,10 +448,10 @@ void kf_CloneSelected(int limit)
 	for (int i = 0; i < limit; i++)
 	{
 		Vector2i pos = droidToClone->pos.xy() + iSinCosR(40503 * i, iSqrt(50 * 50 * (i + 1)));  // 40503 = 65536/φ (A bit more than a right angle)
-		DROID* psNewDroid = buildDroid(sTemplate, pos.x, pos.y, droidToClone->player, false, nullptr);
+		DROID* psNewDroid = buildDroid(activeGameWorld(), sTemplate, pos.x, pos.y, droidToClone->player, false, nullptr);
 		if (psNewDroid)
 		{
-			addDroid(psNewDroid, apsDroidLists);
+			addDroid(psNewDroid, apsDroidLists());
 			triggerEventDroidBuilt(psNewDroid, nullptr);
 		}
 		else if (!bMultiMessages)
@@ -480,7 +480,7 @@ void kf_MakeMeHero()
 		return; // no-op
 	}
 
-	for (DROID *psDroid : apsDroidLists[selectedPlayer])
+	for (DROID *psDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (psDroid->selected && (psDroid->droidType == DROID_COMMAND || psDroid->droidType == DROID_SENSOR))
 		{
@@ -509,7 +509,7 @@ void kf_TeachSelected()
 		return; // no-op
 	}
 
-	for (DROID *psDroid : apsDroidLists[selectedPlayer])
+	for (DROID *psDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (psDroid->selected)
 		{
@@ -534,7 +534,7 @@ void kf_Unselectable()
 		return; // no-op
 	}
 
-	for (DROID *psDroid : apsDroidLists[selectedPlayer])
+	for (DROID *psDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (psDroid->selected)
 		{
@@ -542,7 +542,7 @@ void kf_Unselectable()
 			psDroid->selected = false;
 		}
 	}
-	for (STRUCTURE *psStruct : apsStructLists[selectedPlayer])
+	for (STRUCTURE *psStruct : apsStructLists()[selectedPlayer])
 	{
 		if (psStruct->selected)
 		{
@@ -755,7 +755,7 @@ void kf_ListDroids()
 	}
 	for (int i = 0; i < MAX_PLAYERS; i++)
 	{
-		for (const DROID *psDroid : apsDroidLists[i])
+		for (const DROID *psDroid : apsDroidLists()[i])
 		{
 			const auto x = map_coord(psDroid->pos.x);
 			const auto y = map_coord(psDroid->pos.y);
@@ -919,17 +919,17 @@ void kf_MapCheck()
 
 	if (selectedPlayer >= MAX_PLAYERS) { return; }
 
-	for (DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (DROID* psDroid : apsDroidLists()[selectedPlayer])
 	{
 		psDroid->pos.z = map_Height(activeGameWorld(), psDroid->pos.x, psDroid->pos.y);
 	}
 
-	for (STRUCTURE* psStruct : apsStructLists[selectedPlayer])
+	for (STRUCTURE* psStruct : apsStructLists()[selectedPlayer])
 	{
 		alignStructure(psStruct);
 	}
 
-	for (auto& psFlag : apsFlagPosLists[selectedPlayer])
+	for (auto& psFlag : apsFlagPosLists()[selectedPlayer])
 	{
 		psFlag->coords.z = map_Height(activeGameWorld(), psFlag->coords.x, psFlag->coords.y) + ASSEMBLY_POINT_Z_PADDING;
 	}
@@ -1098,7 +1098,7 @@ void kf_SelectGrouping(UDWORD groupNumber)
 	bool	Selected;
 
 	bAlreadySelected = false;
-	for (DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (DROID* psDroid : apsDroidLists()[selectedPlayer])
 	{
 		/* Wipe out the ones in the wrong group */
 		if (psDroid->selected && psDroid->group != groupNumber)
@@ -1319,7 +1319,7 @@ void	kf_ToggleGodMode()
 		godMode = false;
 		setRevealStatus(pastReveal);
 		// now hide the features
-		for (BASE_OBJECT* psFeat : apsFeatureLists[0])
+		for (BASE_OBJECT* psFeat : apsFeatureLists()[0])
 		{
 			psFeat->visible[selectedPlayer] = 0;
 		}
@@ -1329,7 +1329,7 @@ void	kf_ToggleGodMode()
 		{
 			if (playerId != selectedPlayer)
 			{
-				for (STRUCTURE* psStruct : apsStructLists[playerId])
+				for (STRUCTURE* psStruct : apsStructLists()[playerId])
 				{
 					psStruct->visible[selectedPlayer] = 0;
 				}
@@ -1678,16 +1678,16 @@ void	kf_JumpToResourceExtractor()
 	/* not supported if a spectator */
 	SPECTATOR_NO_OP();
 
-	if (apsExtractorLists[selectedPlayer].empty())
+	if (apsExtractorLists()[selectedPlayer].empty())
 	{
 		addConsoleMessage(_("Unable to locate any oil derricks!"), LEFT_JUSTIFY, SYSTEM_MESSAGE);
 		return;
 	}
 
-	if (!psOldRE.has_value() || std::next(*psOldRE) == apsExtractorLists[selectedPlayer].end())
+	if (!psOldRE.has_value() || std::next(*psOldRE) == apsExtractorLists()[selectedPlayer].end())
 	{
 		// Reset the pointer if `psOldRE` is either not initialized yet or points to the last element.
-		psOldRE.emplace(apsExtractorLists[selectedPlayer].begin());
+		psOldRE.emplace(apsExtractorLists()[selectedPlayer].begin());
 	}
 	else
 	{
@@ -1707,7 +1707,7 @@ void	kf_JumpToResourceExtractor()
 
 void keybindInformResourceExtractorRemoved(const STRUCTURE* psResourceExtractor)
 {
-	if (psOldRE.has_value() && *psOldRE != apsExtractorLists[selectedPlayer].end() && **psOldRE == psResourceExtractor)
+	if (psOldRE.has_value() && *psOldRE != apsExtractorLists()[selectedPlayer].end() && **psOldRE == psResourceExtractor)
 	{
 		psOldRE.reset();
 	}
@@ -1906,7 +1906,7 @@ MappableFunction kf_SelectNextFactory(const STRUCTURE_TYPE factoryType, const bo
 		selNextSpecifiedBuilding(factoryType, bJumpToSelected);
 
 		//deselect factories of other types
-		for (STRUCTURE* psCurrent : apsStructLists[selectedPlayer])
+		for (STRUCTURE* psCurrent : apsStructLists()[selectedPlayer])
 		{
 			const STRUCTURE_TYPE currentType = psCurrent->pStructureType->type;
 			const bool bIsAnotherTypeOfFactory = currentType != factoryType && std::any_of(FACTORY_TYPES.begin(), FACTORY_TYPES.end(), [currentType](const STRUCTURE_TYPE type) {
@@ -1980,12 +1980,12 @@ void	kf_KillEnemy()
 		if (playerId != selectedPlayer && !aiCheckAlliances(selectedPlayer, playerId))
 		{
 			// wipe out all the droids
-			for (const DROID* psCDroid : apsDroidLists[playerId])
+			for (const DROID* psCDroid : apsDroidLists()[playerId])
 			{
 				SendDestroyDroid(psCDroid);
 			}
 			// wipe out all their structures
-			for (STRUCTURE* psCStruct : apsStructLists[playerId])
+			for (STRUCTURE* psCStruct : apsStructLists()[playerId])
 			{
 				SendDestroyStructure(psCStruct);
 			}
@@ -2016,14 +2016,14 @@ void kf_KillSelected()
 	audio_PlayTrack(ID_SOUND_COLL_DIE);
 	Cheated = true;
 
-	for (const DROID* psCDroid : apsDroidLists[selectedPlayer])
+	for (const DROID* psCDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (psCDroid->selected)
 		{
 			SendDestroyDroid(psCDroid);
 		}
 	}
-	for (STRUCTURE* psCStruct : apsStructLists[selectedPlayer])
+	for (STRUCTURE* psCStruct : apsStructLists()[selectedPlayer])
 	{
 		if (psCStruct->selected)
 		{
@@ -2126,7 +2126,7 @@ MappableFunction kf_OrderDroid(const DroidOrderType order)
 		/* not supported if a spectator */
 		SPECTATOR_NO_OP();
 
-		for (DROID* psDroid : apsDroidLists[selectedPlayer])
+		for (DROID* psDroid : apsDroidLists()[selectedPlayer])
 		{
 			if (psDroid->selected)
 			{
@@ -2163,7 +2163,7 @@ static void kfsf_SetSelectedDroidsState(SECONDARY_ORDER sec, SECONDARY_STATE sta
 	// _not_ be disallowed in multiplayer games.
 
 	// This code is similar to SetSecondaryState() in intorder.cpp. Unfortunately, it seems hard to un-duplicate the code.
-	for (DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (DROID* psDroid : apsDroidLists()[selectedPlayer])
 	{
 		// Only set the state if it's not a transporter.
 		if (psDroid->selected && !psDroid->isTransporter())
@@ -2180,12 +2180,12 @@ void	kf_TriggerRayCast()
 	/* not supported if a spectator */
 	SPECTATOR_NO_OP();
 
-	auto selectedDroidIt = std::find_if(apsDroidLists[selectedPlayer].begin(), apsDroidLists[selectedPlayer].end(), [](DROID* d)
+	auto selectedDroidIt = std::find_if(apsDroidLists()[selectedPlayer].begin(), apsDroidLists()[selectedPlayer].end(), [](DROID* d)
 	{
 		return d->selected;
 	});
 
-	if (selectedDroidIt != apsDroidLists[selectedPlayer].end())
+	if (selectedDroidIt != apsDroidLists()[selectedPlayer].end())
 	{
 //		getBlockHeightDirToEdgeOfGrid(UDWORD x, UDWORD y, UBYTE direction, UDWORD *height, UDWORD *dist)
 //		getBlockHeightDirToEdgeOfGrid(psOther->pos.x,psOther->pos.y,psOther->direction,&height,&dist);
@@ -2203,7 +2203,7 @@ void	kf_CentreOnBase()
 	SPECTATOR_NO_OP();
 
 	/* Got through our buildings */
-	for (const STRUCTURE* pStruct : apsStructLists[selectedPlayer])
+	for (const STRUCTURE* pStruct : apsStructLists()[selectedPlayer])
 	{
 		/* Have we got a HQ? */
 		if (pStruct->pStructureType->type == REF_HQ)
@@ -2267,7 +2267,7 @@ void	kf_RightOrderMenu()
 	/* not supported if a spectator */
 	SPECTATOR_NO_OP();
 
-	for (DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (DROID* psDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (psDroid->selected) // && droidOnScreen(psDroid,0))
 		{

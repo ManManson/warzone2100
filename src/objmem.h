@@ -24,45 +24,22 @@
 #ifndef __INCLUDED_SRC_OBJMEM_H__
 #define __INCLUDED_SRC_OBJMEM_H__
 
-#include "objectdef.h"
+#include "src/game_world.h"
+#include "world_object_state.h"
 
-#include <array>
-#include <list>
+WorldObjectState &activeObjects();
+const WorldObjectState &activeObjectsConst();
 
-/* The lists of objects allocated */
-template <typename ObjectType, unsigned PlayerCount>
-using PerPlayerObjectLists = std::array<std::list<ObjectType*>, PlayerCount>;
+/* Legacy names aps*() forward to the active GameWorld's lists (single store in activeGameWorld().objects).
+   Limbo (apsLimboDroids) and psDestroyedObj stay separate globals. */
+inline PerPlayerDroidLists& apsDroidLists() { return activeObjects().droids; }
+inline PerPlayerStructureLists& apsStructLists() { return activeObjects().structures; }
+inline PerPlayerFeatureLists& apsFeatureLists() { return activeObjects().features; }
+inline PerPlayerFlagPositionLists& apsFlagPosLists() { return activeObjects().flags; }
+inline PerPlayerExtractorLists& apsExtractorLists() { return activeObjects().extractors; }
+inline GlobalSensorList& apsSensorList() { return activeObjects().sensors; }
+inline GlobalOilList& apsOilList() { return activeObjects().oils; }
 
-using PerPlayerDroidLists = PerPlayerObjectLists<DROID, MAX_PLAYERS>;
-using DroidList = typename PerPlayerDroidLists::value_type;
-extern PerPlayerDroidLists apsDroidLists;
-
-using PerPlayerStructureLists = PerPlayerObjectLists<STRUCTURE, MAX_PLAYERS>;
-using StructureList = typename PerPlayerStructureLists::value_type;
-extern PerPlayerStructureLists apsStructLists;
-
-using PerPlayerFeatureLists = PerPlayerObjectLists<FEATURE, MAX_PLAYERS>;
-using FeatureList = typename PerPlayerFeatureLists::value_type;
-extern PerPlayerFeatureLists apsFeatureLists;
-
-using PerPlayerFlagPositionLists = PerPlayerObjectLists<FLAG_POSITION, MAX_PLAYERS>;
-using FlagPositionList = typename PerPlayerFlagPositionLists::value_type;
-extern PerPlayerFlagPositionLists apsFlagPosLists;
-
-using PerPlayerExtractorLists = PerPlayerStructureLists;
-using ExtractorList = typename PerPlayerExtractorLists::value_type;
-extern PerPlayerExtractorLists apsExtractorLists;
-
-using GlobalSensorList = PerPlayerObjectLists<BASE_OBJECT, 1>;
-using SensorList = typename GlobalSensorList::value_type;
-extern GlobalSensorList apsSensorList;
-
-using GlobalOilList = PerPlayerObjectLists<FEATURE, 1>;
-using OilList = typename GlobalOilList::value_type;
-extern GlobalOilList apsOilList;
-
-/* The list of destroyed objects */
-using DestroyedObjectsList = std::list<BASE_OBJECT*>;
 extern DestroyedObjectsList psDestroyedObj;
 
 /* Initialise the object heaps */
@@ -86,18 +63,13 @@ uint32_t generateSynchronisedObjectId();
 /* add the droid to the Droid Lists */
 void addDroid(DROID *psDroidToAdd, PerPlayerDroidLists& pList);
 
-/** After swapMissionPointers in CampaignDual; refreshes BASE_OBJECT::owningWorld for all swapped lists. */
-void objmemRefreshOwningWorldsForCampaignLists();
-
-/** Set owningWorld before visTilesUpdate when the object is not yet in global sim lists (e.g. reallyBuildDroid, structure placement). Matches addDroid(…, apsDroidLists) / addStructure. */
-void assignOwningWorldForPendingGlobalDroid(DROID *d);
-void assignOwningWorldForPendingGlobalStructure(STRUCTURE *s);
-
 /*destroy a droid */
 void killDroid(DROID *psDel);
+/** Remove droid from \p list and queue destruction (e.g. parked-home lists vs active aps*()). */
+void killDroidInList(DROID *psDel, PerPlayerDroidLists &list);
 
 /* Remove all droids */
-void freeAllDroids();
+void freeAllDroids(GameWorld& world);
 
 /*Remove a single Droid from its list*/
 void removeDroid(DROID *psDroidToRemove, PerPlayerDroidLists& pList);
@@ -109,34 +81,34 @@ void freeAllMissionDroids();
 void freeAllLimboDroids();
 
 /* add the structure to the Structure Lists */
-void addStructure(STRUCTURE *psStructToAdd);
+void addStructure(GameWorld& world, STRUCTURE *psStructToAdd);
 
 /* Destroy a structure */
 void killStruct(STRUCTURE *psDel);
 
 /* Remove all structures */
-void freeAllStructs();
+void freeAllStructs(GameWorld& world);
 
 /*Remove a single Structure from a list*/
 void removeStructureFromList(STRUCTURE *psStructToRemove, PerPlayerStructureLists& pList);
 
 /* add the feature to the Feature Lists */
-void addFeature(FEATURE *psFeatureToAdd);
+void addFeature(GameWorld& world, FEATURE *psFeatureToAdd);
 
 /* Destroy a feature */
 void killFeature(FEATURE *psDel);
 
 /* Remove all features */
-void freeAllFeatures();
+void freeAllFeatures(GameWorld& world);
 
 /* Create a new Flag Position */
 bool createFlagPosition(FLAG_POSITION **ppsNew, UDWORD player);
 /* add the Flag Position to the Flag Position Lists */
-void addFlagPosition(FLAG_POSITION *psFlagPosToAdd);
+void addFlagPosition(GameWorld& world, FLAG_POSITION *psFlagPosToAdd);
 /* Remove a Flag Position from the Lists */
 void removeFlagPosition(FLAG_POSITION *psDel);
 /* Transfer a Flag Position to a new player */
-void transferFlagPositionToPlayer(FLAG_POSITION *psFlagPos, UDWORD originalPlayer, UDWORD newPlayer);
+void transferFlagPositionToPlayer(GameWorld& world, FLAG_POSITION *psFlagPos, UDWORD originalPlayer, UDWORD newPlayer);
 // free all flag positions
 void freeAllFlagPositions();
 // used to add flag position to a specific list (ex. from assignFactoryCommandDroid)

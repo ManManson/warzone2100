@@ -80,14 +80,6 @@ bool missionLimboExpand();
 /** This is called mid Limbo mission via the script. */
 void resetLimboMission();
 
-void swapMissionPointers();
-
-/** True after an odd number of swapMissionPointers calls (e.g. unpaired swap in loadGame save-on-mission). */
-bool missionMapSlotsInvertedForWorldBinding();
-
-/** Reset parity before loadGame(save-on-mission) applies its single swapMissionPointers. */
-void missionResetSwapMissionMapSlotsParity();
-
 // mission results.
 #define		IDTIMER_FORM			11000
 #define		IDTIMER_DISPLAY			11001

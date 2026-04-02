@@ -410,7 +410,7 @@ static bool BuildSelectedDroidList()
 		return false;
 	}
 
-	for (DROID *psDroid : apsDroidLists[selectedPlayer])
+	for (DROID *psDroid : apsDroidLists()[selectedPlayer])
 	{
 		if (psDroid->selected)
 		{

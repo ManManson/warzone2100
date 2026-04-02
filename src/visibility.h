@@ -57,7 +57,7 @@ STRUCTURE *visGetBlockingWall(const BASE_OBJECT *psViewer, const BASE_OBJECT *ps
 
 bool hasSharedVision(unsigned viewer, unsigned ally);
 
-void processVisibility();  ///< Calls processVisibilitySelf and processVisibilityVision on all objects.
+void processVisibility(GameWorld& world);  ///< Calls processVisibilitySelf and processVisibilityVision on all objects.
 
 // update the visibility reduction
 void visUpdateLevel();

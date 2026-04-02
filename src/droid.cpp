@@ -533,7 +533,16 @@ void recycleDroid(DROID *psDroid)
 }
 
 
-bool removeDroidBase(DROID *psDel)
+static PerPlayerStructureLists &structListsForDroidList(PerPlayerDroidLists &droidList)
+{
+	if (&droidList == &missionParkedHomeWorld().objects.droids)
+	{
+		return missionParkedHomeWorld().objects.structures;
+	}
+	return apsStructLists();
+}
+
+bool removeDroidBaseInList(DROID *psDel, PerPlayerDroidLists &droidList)
 {
 	CHECK_DROID(psDel);
 
@@ -564,15 +573,15 @@ bool removeDroidBase(DROID *psDel)
 		if (psDel->psGroup)
 		{
 			//free all droids associated with this Transporter
-			mutating_list_iterate(psDel->psGroup->psList, [psDel](DROID* psCurr)
+			mutating_list_iterate(psDel->psGroup->psList, [psDel, &droidList](DROID* psCurr)
 			{
 				if (psCurr == psDel)
 				{
 					return IterationResult::BREAK_ITERATION;
 				}
 				/* add droid to droid list then vanish it - hope this works! - GJ */
-				addDroid(psCurr, apsDroidLists);
-				vanishDroid(psCurr);
+				addDroid(psCurr, droidList);
+				removeDroidBaseInList(psCurr, droidList);
 
 				return IterationResult::CONTINUE_ITERATION;
 			});
@@ -589,7 +598,7 @@ bool removeDroidBase(DROID *psDel)
 	/* Put Deliv. Pts back into world when a command droid dies */
 	if (psDel->droidType == DROID_COMMAND)
 	{
-		for (auto psStruct : apsStructLists[psDel->player])
+		for (auto psStruct : structListsForDroidList(droidList)[psDel->player])
 		{
 			// alexl's stab at a right answer.
 			if (psStruct && psStruct->isFactory()
@@ -607,7 +616,7 @@ bool removeDroidBase(DROID *psDel)
 		if (tryingToGetLocation())
 		{
 			int numSelectedConstructors = 0;
-			for (const DROID *psDroid : apsDroidLists[psDel->player])
+			for (const DROID *psDroid : droidList[psDel->player])
 			{
 				numSelectedConstructors += psDroid->selected && psDroid->isConstructionDroid();
 			}
@@ -629,8 +638,13 @@ bool removeDroidBase(DROID *psDel)
 		intRefreshScreen();
 	}
 
-	killDroid(psDel);
+	killDroidInList(psDel, droidList);
 	return true;
+}
+
+bool removeDroidBase(DROID *psDel)
+{
+	return removeDroidBaseInList(psDel, apsDroidLists());
 }
 
 static void removeDroidFX(DROID *psDel, unsigned impactTime)
@@ -759,7 +773,7 @@ static size_t droidCancelRepairers(DROID *psDroid, PerPlayerDroidLists& pList)
 		}
 
 		// search the main (current) list of active structures to see if any point to this
-		StructureList* pStructList = &apsStructLists[player];
+		StructureList* pStructList = &apsStructLists()[player];
 		for (STRUCTURE *psCurr : *pStructList)
 		{
 			if (psCurr->pStructureType->type == REF_REPAIR_FACILITY && psCurr->pFunctionality)
@@ -873,8 +887,8 @@ void droidUpdate(DROID *psDroid)
 	// Check that we are (still) in the sensor list
 	if (psDroid->droidType == DROID_SENSOR)
 	{
-		const auto sensor = std::find(apsSensorList[0].begin(), apsSensorList[0].end(), (BASE_OBJECT*)psDroid);
-		ASSERT(sensor != apsSensorList[0].end(), "%s(%p) not in sensor list!",
+		const auto sensor = std::find(apsSensorList()[0].begin(), apsSensorList()[0].end(), (BASE_OBJECT*)psDroid);
+		ASSERT(sensor != apsSensorList()[0].end(), "%s(%p) not in sensor list!",
 			   droidGetName(psDroid), static_cast<void *>(psDroid));
 	}
 #endif
@@ -1178,7 +1192,7 @@ DroidStartBuild droidStartBuild(DROID *psDroid)
 		}
 		//ok to build
 		const auto id = generateSynchronisedObjectId();
-		psStruct = buildStructureDir(psStructStat, psDroid->order.pos.x, psDroid->order.pos.y, psDroid->order.direction, psDroid->player, false, id);
+		psStruct = buildStructureDir(activeGameWorld(), psStructStat, psDroid->order.pos.x, psDroid->order.pos.y, psDroid->order.direction, psDroid->player, false, id);
 		if (!psStruct)
 		{
 			cancelBuild(psDroid);
@@ -1861,10 +1875,10 @@ UDWORD calcDroidPower(const DROID *psDroid)
 }
 
 //Builds an instance of a Droid - the x/y passed in are in world coords.
-DROID *reallyBuildDroid(const DROID_TEMPLATE *pTemplate, Position pos, UDWORD player, bool onMission, Rotation rot, uint32_t id)
+DROID *reallyBuildDroid(GameWorld& world, const DROID_TEMPLATE *pTemplate, Position pos, UDWORD player, bool onMission, Rotation rot, uint32_t id)
 {
 	// Don't use this assertion in single player, since droids can finish building while on an away mission
-	ASSERT(!bMultiPlayer || worldOnMap(activeGameWorld(), pos.x, pos.y), "the build locations are not on the map");
+	ASSERT(!bMultiPlayer || worldOnMap(world, pos.x, pos.y), "the build locations are not on the map");
 
 	ASSERT_OR_RETURN(nullptr, player < MAX_PLAYERS, "Invalid player: %" PRIu32 "", player);
 
@@ -1880,7 +1894,7 @@ DROID *reallyBuildDroid(const DROID_TEMPLATE *pTemplate, Position pos, UDWORD pl
 	if (!onMission)
 	{
 		//set droid height
-		droid.pos.z = map_Height(activeGameWorld(), droid.pos.x, droid.pos.y);
+		droid.pos.z = map_Height(world, droid.pos.x, droid.pos.y);
 	}
 
 	if (droid.isTransporter() || droid.droidType == DROID_COMMAND)
@@ -1928,6 +1942,8 @@ DROID *reallyBuildDroid(const DROID_TEMPLATE *pTemplate, Position pos, UDWORD pl
 	/* Set droid's initial illumination */
 	droid.sDisplay.imd = BODY_IMD(&droid, droid.player);
 
+	droid.owningWorld = &world;
+
 	//don't worry if not on homebase cos not being drawn yet
 	if (!onMission)
 	{
@@ -1936,7 +1952,6 @@ DROID *reallyBuildDroid(const DROID_TEMPLATE *pTemplate, Position pos, UDWORD pl
 		{
 			updateDroidOrientation(&droid);
 		}
-		assignOwningWorldForPendingGlobalDroid(&droid);
 		visTilesUpdate(&droid);
 	}
 
@@ -1970,13 +1985,13 @@ DROID *reallyBuildDroid(const DROID_TEMPLATE *pTemplate, Position pos, UDWORD pl
 	return &droid;
 }
 
-DROID *reallyBuildDroid(const DROID_TEMPLATE *pTemplate, Position pos, UDWORD player, bool onMission, Rotation rot)
+DROID *reallyBuildDroid(GameWorld& world, const DROID_TEMPLATE *pTemplate, Position pos, UDWORD player, bool onMission, Rotation rot)
 {
 	const auto id = generateSynchronisedObjectId();
-	return reallyBuildDroid(pTemplate, pos, player, onMission, rot, id);
+	return reallyBuildDroid(world, pTemplate, pos, player, onMission, rot, id);
 }
 
-DROID *buildDroid(DROID_TEMPLATE *pTemplate, UDWORD x, UDWORD y, UDWORD player, bool onMission, const INITIAL_DROID_ORDERS *initialOrders, Rotation rot)
+DROID *buildDroid(GameWorld& world, DROID_TEMPLATE *pTemplate, UDWORD x, UDWORD y, UDWORD player, bool onMission, const INITIAL_DROID_ORDERS *initialOrders, Rotation rot)
 {
 	ASSERT_OR_RETURN(nullptr, player < MAX_PLAYERS, "invalid player?: %" PRIu32 "", player);
 	// ajl. droid will be created, so inform others
@@ -1988,7 +2003,7 @@ DROID *buildDroid(DROID_TEMPLATE *pTemplate, UDWORD x, UDWORD y, UDWORD player, 
 	}
 	else
 	{
-		return reallyBuildDroid(pTemplate, Position(x, y, 0), player, onMission, rot);
+		return reallyBuildDroid(world, pTemplate, Position(x, y, 0), player, onMission, rot);
 	}
 }
 
@@ -2083,7 +2098,7 @@ void assignObjectToGroup(UDWORD	playerNumber, UDWORD groupNumber, bool clearGrou
 	if (groupNumber < UBYTE_MAX)
 	{
 		/* Run through all the droids */
-		for (DROID* psDroid : apsDroidLists[playerNumber])
+		for (DROID* psDroid : apsDroidLists()[playerNumber])
 		{
 			/* Clear out the old ones */
 			if (clearGroup && psDroid->group == groupNumber)
@@ -2106,7 +2121,7 @@ void assignObjectToGroup(UDWORD	playerNumber, UDWORD groupNumber, bool clearGrou
 	{
 		//clear the Deliv Point if one
 		ASSERT_OR_RETURN(, selectedPlayer < MAX_PLAYERS, "Unsupported selectedPlayer: %" PRIu32 "", selectedPlayer);
-		for (auto& psFlag : apsFlagPosLists[selectedPlayer])
+		for (auto& psFlag : apsFlagPosLists()[selectedPlayer])
 		{
 			psFlag->selected = false;
 		}
@@ -2126,7 +2141,7 @@ void assignObjectToGroup(UDWORD	playerNumber, UDWORD groupNumber, bool clearGrou
 	{
 		/* If no droids were selected to be added to the group, check if a factory is selected */
 		/* Run through all the structures */
-		for (STRUCTURE *psStruct : apsStructLists[playerNumber])
+		for (STRUCTURE *psStruct : apsStructLists()[playerNumber])
 		{
 			if (psStruct->selected && psStruct->isFactory())
 			{
@@ -2152,7 +2167,7 @@ void removeObjectFromGroup(UDWORD playerNumber)
 
 	ASSERT_OR_RETURN(, playerNumber < MAX_PLAYERS, "Invalid player: %" PRIu32 "", playerNumber);
 
-	for (STRUCTURE *psStruct : apsStructLists[playerNumber])
+	for (STRUCTURE *psStruct : apsStructLists()[playerNumber])
 	{
 		if (psStruct->selected && psStruct->isFactory())
 		{
@@ -2161,7 +2176,7 @@ void removeObjectFromGroup(UDWORD playerNumber)
 		}
 	}
 
-	for (DROID* psDroid : apsDroidLists[playerNumber])
+	for (DROID* psDroid : apsDroidLists()[playerNumber])
 	{
 		if (psDroid->selected)
 		{
@@ -2187,7 +2202,7 @@ bool activateGroupAndMove(UDWORD playerNumber, UDWORD groupNumber)
 
 	if (groupNumber < UBYTE_MAX)
 	{
-		for (DROID* psDroid : apsDroidLists[playerNumber])
+		for (DROID* psDroid : apsDroidLists()[playerNumber])
 		{
 			/* Wipe out the ones in the wrong group */
 			if (psDroid->selected && psDroid->group != groupNumber)
@@ -2210,7 +2225,7 @@ bool activateGroupAndMove(UDWORD playerNumber, UDWORD groupNumber)
 			ASSERT(selectedPlayer < MAX_PLAYERS, "Unsupported selectedPlayer: %" PRIu32 "", selectedPlayer);
 			if (selectedPlayer < MAX_PLAYERS)
 			{
-				for (auto& psFlag : apsFlagPosLists[selectedPlayer])
+				for (auto& psFlag : apsFlagPosLists()[selectedPlayer])
 				{
 					psFlag->selected = false;
 				}
@@ -2254,7 +2269,7 @@ bool activateNoGroup(UDWORD playerNumber, const SELECTIONTYPE selectionType, con
 	ASSERT_OR_RETURN(false, playerNumber < MAX_PLAYERS, "Invalid player: %" PRIu32 "", playerNumber);
 
 	selectionCount = selDroidSelection(selectedPlayer, dselectionClass, dselectionType, dbOnScreen);
-	for (DROID* psDroid : apsDroidLists[playerNumber])
+	for (DROID* psDroid : apsDroidLists()[playerNumber])
 	{
 		/* Wipe out the ones in the wrong group */
 		if (psDroid->selected && psDroid->group != UBYTE_MAX)
@@ -2267,7 +2282,7 @@ bool activateNoGroup(UDWORD playerNumber, const SELECTIONTYPE selectionType, con
 	{
 		//clear the Deliv Point if one
 		ASSERT_OR_RETURN(false, selectedPlayer < MAX_PLAYERS, "Unsupported selectedPlayer: %" PRIu32 "", selectedPlayer);
-		for (auto& psFlag : apsFlagPosLists[selectedPlayer])
+		for (auto& psFlag : apsFlagPosLists()[selectedPlayer])
 		{
 			psFlag->selected = false;
 		}
@@ -2286,7 +2301,7 @@ bool activateGroup(UDWORD playerNumber, UDWORD groupNumber)
 
 	if (groupNumber < UBYTE_MAX)
 	{
-		for (DROID* psDroid : apsDroidLists[playerNumber])
+		for (DROID* psDroid : apsDroidLists()[playerNumber])
 		{
 			/* Wipe out the ones in the wrong group */
 			if (psDroid->selected && psDroid->group != groupNumber)
@@ -2307,7 +2322,7 @@ bool activateGroup(UDWORD playerNumber, UDWORD groupNumber)
 	{
 		//clear the Deliv Point if one
 		ASSERT_OR_RETURN(false, selectedPlayer < MAX_PLAYERS, "Unsupported selectedPlayer: %" PRIu32 "", selectedPlayer);
-		for (auto& psFlag : apsFlagPosLists[selectedPlayer])
+		for (auto& psFlag : apsFlagPosLists()[selectedPlayer])
 		{
 			psFlag->selected = false;
 		}
@@ -2548,7 +2563,7 @@ UDWORD	getNumDroidsForLevel(uint32_t player, UDWORD level)
 		DroidList* dList = nullptr;
 		switch (idx)
 		{
-			case 0: dList = &apsDroidLists[selectedPlayer]; break;
+			case 0: dList = &apsDroidLists()[selectedPlayer]; break;
 			case 1: if (prevMissionType == LEVEL_TYPE::LDS_MKEEP_LIMBO) { dList = &apsLimboDroids[selectedPlayer]; } break;
 			default: dList = nullptr;
 		}
@@ -2639,14 +2654,14 @@ void droidSetName(DROID *psDroid, const char *pName)
 
 // ////////////////////////////////////////////////////////////////////////////
 // returns true when no droid on x,y square.
-bool noDroid(UDWORD x, UDWORD y)
+bool noDroid(const GameWorld& world, UDWORD x, UDWORD y)
 {
 	unsigned int i;
 
 	// check each droid list
 	for (i = 0; i < MAX_PLAYERS; ++i)
 	{
-		for (const DROID* psDroid : apsDroidLists[i])
+		for (const DROID* psDroid : world.objects.droids[i])
 		{
 			if (map_coord(psDroid->pos.x) == x
 				&& map_coord(psDroid->pos.y) == y)
@@ -2660,14 +2675,14 @@ bool noDroid(UDWORD x, UDWORD y)
 
 // ////////////////////////////////////////////////////////////////////////////
 // returns true when at most one droid on x,y square.
-static bool oneDroidMax(UDWORD x, UDWORD y)
+static bool oneDroidMax(const GameWorld& world, UDWORD x, UDWORD y)
 {
 	UDWORD i;
 	bool bFound = false;
 	// check each droid list
 	for (i = 0; i < MAX_PLAYERS; i++)
 	{
-		for (const DROID* pD : apsDroidLists[i])
+		for (const DROID* pD : world.objects.droids[i])
 		{
 			if (map_coord(pD->pos.x) == x
 				&& map_coord(pD->pos.y) == y)
@@ -2686,20 +2701,20 @@ static bool oneDroidMax(UDWORD x, UDWORD y)
 
 // ////////////////////////////////////////////////////////////////////////////
 // returns true if it's a sensible place to put that droid.
-static bool sensiblePlace(SDWORD x, SDWORD y, PROPULSION_TYPE propulsion)
+static bool sensiblePlace(const GameWorld& world, SDWORD x, SDWORD y, PROPULSION_TYPE propulsion)
 {
 	// not too near the edges.
-	if ((x < TOO_NEAR_EDGE) || (x > (SDWORD)(activeGameWorld().map.width - TOO_NEAR_EDGE)))
+	if ((x < TOO_NEAR_EDGE) || (x > (SDWORD)(world.map.width - TOO_NEAR_EDGE)))
 	{
 		return false;
 	}
-	if ((y < TOO_NEAR_EDGE) || (y > (SDWORD)(activeGameWorld().map.height - TOO_NEAR_EDGE)))
+	if ((y < TOO_NEAR_EDGE) || (y > (SDWORD)(world.map.height - TOO_NEAR_EDGE)))
 	{
 		return false;
 	}
 
 	// not on a blocking tile.
-	if (fpathBlockingTile(x, y, propulsion))
+	if (fpathBlockingTile(world, x, y, propulsion))
 	{
 		return false;
 	}
@@ -2709,31 +2724,17 @@ static bool sensiblePlace(SDWORD x, SDWORD y, PROPULSION_TYPE propulsion)
 
 // ------------------------------------------------------------------------------------
 // Should stop things being placed in inaccessible areas? Assume wheeled propulsion.
-bool	zonedPAT(UDWORD x, UDWORD y)
+bool	zonedPAT(const GameWorld& world, UDWORD x, UDWORD y)
 {
-	return sensiblePlace(x, y, PROPULSION_TYPE_WHEELED) && noDroid(x, y);
+	return sensiblePlace(world, x, y, PROPULSION_TYPE_WHEELED) && noDroid(world, x, y);
 }
 
-static bool canFitDroid(UDWORD x, UDWORD y)
+static bool canFitDroid(const GameWorld& world, UDWORD x, UDWORD y)
 {
-	return sensiblePlace(x, y, PROPULSION_TYPE_WHEELED) && oneDroidMax(x, y);
+	return sensiblePlace(world, x, y, PROPULSION_TYPE_WHEELED) && oneDroidMax(world, x, y);
 }
 
-/// find a tile for which the function will return true
-bool	pickATileGen(UDWORD *x, UDWORD *y, UBYTE numIterations, bool (*function)(UDWORD x, UDWORD y))
-{
-	return pickATileGenThreat(x, y, numIterations, -1, -1, function);
-}
-
-bool pickATileGen(Vector2i *pos, unsigned numIterations, bool (*function)(UDWORD x, UDWORD y))
-{
-	UDWORD x = pos->x, y = pos->y;
-	bool ret = pickATileGenThreat(&x, &y, numIterations, -1, -1, function);
-	*pos = Vector2i(x, y);
-	return ret;
-}
-
-static bool ThreatInRange(SDWORD player, SDWORD range, SDWORD rangeX, SDWORD rangeY, bool bVTOLs)
+static bool ThreatInRange(const GameWorld& world, SDWORD player, SDWORD range, SDWORD rangeX, SDWORD rangeY, bool bVTOLs)
 {
 	UDWORD				i, structType;
 
@@ -2748,7 +2749,7 @@ static bool ThreatInRange(SDWORD player, SDWORD range, SDWORD rangeX, SDWORD ran
 		}
 
 		//check structures
-		for (const STRUCTURE* psStruct : apsStructLists[i])
+		for (const STRUCTURE* psStruct : world.objects.structures[i])
 		{
 			if (psStruct->visible[player] || psStruct->born == 2)	// if can see it or started there
 			{
@@ -2778,7 +2779,7 @@ static bool ThreatInRange(SDWORD player, SDWORD range, SDWORD rangeX, SDWORD ran
 		}
 
 		//check droids
-		for (const DROID* psDroid : apsDroidLists[i])
+		for (const DROID* psDroid : world.objects.droids[i])
 		{
 			if (psDroid->visible[player])		//can see this droid?
 			{
@@ -2806,18 +2807,18 @@ static bool ThreatInRange(SDWORD player, SDWORD range, SDWORD rangeX, SDWORD ran
 }
 
 /// find a tile for which the passed function will return true without any threat in the specified range
-bool	pickATileGenThreat(UDWORD *x, UDWORD *y, UBYTE numIterations, SDWORD threatRange,
-						   SDWORD player, bool (*function)(UDWORD x, UDWORD y))
+static bool	pickATileGenThreat(const GameWorld& world, UDWORD *x, UDWORD *y, UBYTE numIterations, SDWORD threatRange,
+						   SDWORD player, bool (*function)(const GameWorld& world, UDWORD x, UDWORD y))
 {
 	SDWORD		i, j;
 	SDWORD		startX, endX, startY, endY;
 	UDWORD		passes;
 	Vector3i	origin(world_coord(*x), world_coord(*y), 0);
 
-	ASSERT_OR_RETURN(false, *x < activeGameWorld().map.width, "x coordinate is off-map for pickATileGen");
-	ASSERT_OR_RETURN(false, *y < activeGameWorld().map.height, "y coordinate is off-map for pickATileGen");
+	ASSERT_OR_RETURN(false, *x < world.map.width, "x coordinate is off-map for pickATileGen");
+	ASSERT_OR_RETURN(false, *y < world.map.height, "y coordinate is off-map for pickATileGen");
 
-	if (function(*x, *y) && ((threatRange <= 0) || (!ThreatInRange(player, threatRange, *x, *y, false))))	//TODO: vtol check really not needed?
+	if (function(world, *x, *y) && ((threatRange <= 0) || (!ThreatInRange(world, player, threatRange, *x, *y, false))))	//TODO: vtol check really not needed?
 	{
 		return (true);
 	}
@@ -2839,9 +2840,9 @@ bool	pickATileGenThreat(UDWORD *x, UDWORD *y, UBYTE numIterations, SDWORD threat
 					Vector3i newPos(world_coord(i), world_coord(j), 0);
 
 					/* Good enough? */
-					if (function(i, j)
+					if (function(world, i, j)
 						&& fpathCheck(origin, newPos, PROPULSION_TYPE_WHEELED)
-						&& ((threatRange <= 0) || (!ThreatInRange(player, threatRange, world_coord(i), world_coord(j), false))))
+						&& ((threatRange <= 0) || (!ThreatInRange(world, player, threatRange, world_coord(i), world_coord(j), false))))
 					{
 						/* Set exit conditions and get out NOW */
 						*x = i;	*y = j;
@@ -2858,17 +2859,31 @@ bool	pickATileGenThreat(UDWORD *x, UDWORD *y, UBYTE numIterations, SDWORD threat
 
 }
 
-/// find a tile for a wheeled droid with only one other droid present
-PICKTILE pickHalfATile(UDWORD *x, UDWORD *y, UBYTE numIterations)
+/// find a tile for which the function will return true
+bool	pickATileGen(const GameWorld& world, UDWORD *x, UDWORD *y, UBYTE numIterations, bool (*function)(const GameWorld& world, UDWORD x, UDWORD y))
 {
-	return pickATileGen(x, y, numIterations, canFitDroid) ? FREE_TILE : NO_FREE_TILE;
+	return pickATileGenThreat(world, x, y, numIterations, -1, -1, function);
+}
+
+bool pickATileGen(const GameWorld& world, Vector2i *pos, unsigned numIterations, bool (*function)(const GameWorld& world, UDWORD x, UDWORD y))
+{
+	UDWORD x = pos->x, y = pos->y;
+	bool ret = pickATileGenThreat(world, &x, &y, numIterations, -1, -1, function);
+	*pos = Vector2i(x, y);
+	return ret;
+}
+
+/// find a tile for a wheeled droid with only one other droid present
+PICKTILE pickHalfATile(const GameWorld& world, UDWORD *x, UDWORD *y, UBYTE numIterations)
+{
+	return pickATileGen(world, x, y, numIterations, canFitDroid) ? FREE_TILE : NO_FREE_TILE;
 }
 
 /* Looks through the players list of droids to see if any of them are
 building the specified structure - returns true if finds one*/
 bool checkDroidsBuilding(const STRUCTURE *psStructure)
 {
-	for (const DROID* psDroid : apsDroidLists[psStructure->player])
+	for (const DROID* psDroid : apsDroidLists()[psStructure->player])
 	{
 		//check DORDER_BUILD, HELP_BUILD is handled the same
 		BASE_OBJECT *const psStruct = orderStateObj(psDroid, DORDER_BUILD);
@@ -2884,7 +2899,7 @@ bool checkDroidsBuilding(const STRUCTURE *psStructure)
 demolishing the specified structure - returns true if finds one*/
 bool checkDroidsDemolishing(const STRUCTURE *psStructure)
 {
-	for (const DROID* psDroid : apsDroidLists[psStructure->player])
+	for (const DROID* psDroid : apsDroidLists()[psStructure->player])
 	{
 		//check DORDER_DEMOLISH
 		BASE_OBJECT *const psStruct = orderStateObj(psDroid, DORDER_DEMOLISH);
@@ -3261,7 +3276,7 @@ bool allVtolsRearmed(const DROID *psDroid)
 	}
 
 	bool stillRearming = false;
-	for (const DROID *psCurr : apsDroidLists[psDroid->player])
+	for (const DROID *psCurr : apsDroidLists()[psDroid->player])
 	{
 		if (psCurr->isVtolRearming() &&
 			psCurr->order.type == psDroid->order.type &&
@@ -3532,7 +3547,7 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 		{
 			unsigned int pickX = map_coord(pos.x);
 			unsigned int pickY = map_coord(pos.y);
-			if (pickATileGen(&pickX, &pickY, LOOK_FOR_EMPTY_TILE, zonedPAT) != NO_FREE_TILE)
+			if (pickATileGen(activeGameWorld(), &pickX, &pickY, LOOK_FOR_EMPTY_TILE, zonedPAT) != NO_FREE_TILE)
 			{
 				newPos = Position(world_coord(pickX), world_coord(pickY), 0);
 			}
@@ -3542,10 +3557,10 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 			}
 		}
 		// create a new droid
-		psNewDroid = reallyBuildDroid(&sTemplate, newPos, to, false, psD->rot);
+		psNewDroid = reallyBuildDroid(activeGameWorld(), &sTemplate, newPos, to, false, psD->rot);
 		ASSERT_OR_RETURN(nullptr, psNewDroid, "Unable to build unit");
 
-		addDroid(psNewDroid, apsDroidLists);
+		addDroid(psNewDroid, apsDroidLists());
 		adjustDroidCount(psNewDroid, 1);
 
 		psNewDroid->body = clip((psD->body*psNewDroid->originalBody + psD->originalBody/2)/std::max(psD->originalBody, 1u), 1u, psNewDroid->originalBody);
@@ -3570,7 +3585,7 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 	int oldPlayer = psD->player;
 
 	// reset the assigned state of units attached to a leader
-	for (DROID *psCurr : apsDroidLists[oldPlayer])
+	for (DROID *psCurr : apsDroidLists()[oldPlayer])
 	{
 		BASE_OBJECT	*psLeader;
 
@@ -3597,11 +3612,11 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 	adjustDroidCount(psD, -1);
 	scriptRemoveObject(psD); //Remove droid from any script groups
 
-	if (droidRemove(psD, apsDroidLists))
+	if (droidRemove(psD, apsDroidLists()))
 	{
 		psD->player	= to;
 
-		addDroid(psD, apsDroidLists);
+		addDroid(psD, apsDroidLists());
 		adjustDroidCount(psD, 1);
 
 		// the new player may have different default sensor/ecm/repair components
@@ -3644,7 +3659,7 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 			continue;
 		}
 
-		for (DROID *psCurr : apsDroidLists[i])
+		for (DROID *psCurr : apsDroidLists()[i])
 		{
 			if (psCurr->order.psObj == psD || psCurr->psActionTarget[0] == psD)
 			{
@@ -3672,7 +3687,7 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 		}
 
 		// check through the players list, and our allies, of structures to see if any are targetting it
-		for (STRUCTURE *psStruct : apsStructLists[i])
+		for (STRUCTURE *psStruct : apsStructLists()[i])
 		{
 			if (psStruct->psTarget[0] == psD)
 			{
@@ -3785,9 +3800,9 @@ void SelectDroid(DROID *psDroid, bool programmaticSelection)
 void SelectGroupDroid(DROID *psGroupDroid)
 {
 	std::vector<DROID*> groupDroids;
-	for (DROID *psDroid : apsDroidLists[psGroupDroid->player])
+	for (DROID *psDroid : apsDroidLists()[psGroupDroid->player])
 	{
-		// skip itself because psGroupDroid may already exist in apsDroidLists
+		// skip itself because psGroupDroid may already exist in apsDroidLists()
 		if (psDroid == psGroupDroid)
 		{
 			continue;
@@ -3885,7 +3900,7 @@ void droidSetPosition(DROID *psDroid, int x, int y)
 {
 	psDroid->pos.x = x;
 	psDroid->pos.y = y;
-	psDroid->pos.z = map_Height(activeGameWorld(), psDroid->pos.x, psDroid->pos.y);
+	psDroid->pos.z = map_Height(*psDroid->owningWorld, psDroid->pos.x, psDroid->pos.y);
 	initDroidMovement(psDroid);
 	visTilesUpdate((BASE_OBJECT *)psDroid);
 }

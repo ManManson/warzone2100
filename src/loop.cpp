@@ -71,6 +71,7 @@
 #include "lib/framework/cursors.h"
 #include "seqdisp.h"
 #include "mission.h"
+#include "gamesessionworlds.h"
 #include "warcam.h"
 #include "lighting.h"
 #include "mapgrid.h"
@@ -210,7 +211,7 @@ static GAMECODE renderLoop()
 
 			for (unsigned i = 0; i < MAX_PLAYERS; i++)
 			{
-				for (DROID *psCurr : apsDroidLists[i])
+				for (DROID *psCurr : apsDroidLists()[i])
 				{
 					// Don't copy the next pointer - if droids somehow get destroyed in the graphics rendering loop, who cares if we crash.
 					calcDroidIllumination(psCurr);
@@ -411,7 +412,7 @@ void countUpdate(bool synch)
 		numMissionDroids[i] = 0;
 		numTransporterDroids[i] = 0;
 
-		for (DROID *psCurr : apsDroidLists[i])
+		for (DROID *psCurr : apsDroidLists()[i])
 		{
 			numDroids[i]++;
 			switch (psCurr->droidType)
@@ -431,24 +432,28 @@ void countUpdate(bool synch)
 				break;
 			}
 		}
-		for (DROID *psCurr : missionParkedHomeWorld().objects.droids[i])
+		// Parked-home lists are the same storage as aps*() when active is primary (e.g. Solo home map).
+		if (&activeGameWorld() != &missionParkedHomeWorld())
 		{
-			numMissionDroids[i]++;
-			switch (psCurr->droidType)
+			for (DROID *psCurr : missionParkedHomeWorld().objects.droids[i])
 			{
-			case DROID_COMMAND:
-				numCommandDroids[i] += 1;
-				break;
-			case DROID_CONSTRUCT:
-			case DROID_CYBORG_CONSTRUCT:
-				numConstructorDroids[i] += 1;
-				break;
-			case DROID_TRANSPORTER:
-			case DROID_SUPERTRANSPORTER:
-				droidCountsInTransporter(psCurr, i);
-				break;
-			default:
-				break;
+				numMissionDroids[i]++;
+				switch (psCurr->droidType)
+				{
+				case DROID_COMMAND:
+					numCommandDroids[i] += 1;
+					break;
+				case DROID_CONSTRUCT:
+				case DROID_CYBORG_CONSTRUCT:
+					numConstructorDroids[i] += 1;
+					break;
+				case DROID_TRANSPORTER:
+				case DROID_SUPERTRANSPORTER:
+					droidCountsInTransporter(psCurr, i);
+					break;
+				default:
+					break;
+				}
 			}
 		}
 		for (const DROID *psCurr : apsLimboDroids[i])
@@ -469,7 +474,7 @@ void countUpdate(bool synch)
 		}
 		// FIXME: These for-loops are code duplicationo
 		setLasSatExists(false, i);
-		for (const STRUCTURE *psCBuilding : apsStructLists[i])
+		for (const STRUCTURE *psCBuilding : apsStructLists()[i])
 		{
 			if (psCBuilding == nullptr || isDead(psCBuilding))
 			{
@@ -485,20 +490,23 @@ void countUpdate(bool synch)
 				setLasSatExists(true, i);
 			}
 		}
-		for (const STRUCTURE *psCBuilding : missionParkedHomeWorld().objects.structures[i])
+		if (&activeGameWorld() != &missionParkedHomeWorld())
 		{
-			if (psCBuilding == nullptr || isDead(psCBuilding))
+			for (const STRUCTURE *psCBuilding : missionParkedHomeWorld().objects.structures[i])
 			{
-				continue;
-			}
-			if (psCBuilding->pStructureType && psCBuilding->pStructureType->type == REF_SAT_UPLINK && psCBuilding->status == SS_BUILT)
-			{
-				setSatUplinkExists(true, i);
-			}
-			//don't wait for the Las Sat to be built - can't build another if one is partially built
-			if (psCBuilding->getWeaponStats(0)->weaponSubClass == WSC_LAS_SAT)
-			{
-				setLasSatExists(true, i);
+				if (psCBuilding == nullptr || isDead(psCBuilding))
+				{
+					continue;
+				}
+				if (psCBuilding->pStructureType && psCBuilding->pStructureType->type == REF_SAT_UPLINK && psCBuilding->status == SS_BUILT)
+				{
+					setSatUplinkExists(true, i);
+				}
+				//don't wait for the Las Sat to be built - can't build another if one is partially built
+				if (psCBuilding->getWeaponStats(0)->weaponSubClass == WSC_LAS_SAT)
+				{
+					setLasSatExists(true, i);
+				}
 			}
 		}
 		if (synch)
@@ -547,7 +555,7 @@ static void gameStateUpdate()
 	gridReset();
 
 	// Check which objects are visible.
-	processVisibility();
+	processVisibility(activeGameWorld());
 
 	// Update the map.
 	mapUpdate(activeGameWorld());
@@ -558,47 +566,57 @@ static void gameStateUpdate()
 	// update the command droids
 	cmdDroidUpdate();
 
+	// When active is primary, aps*() and missionParkedHomeWorld().objects.* alias the same lists.
+	// Only iterate parked-home separately when active is offworld (mission) and primary holds home.
+	const bool parkedHomeListsSeparateFromActive = &activeGameWorld() != &missionParkedHomeWorld();
+
 	for (unsigned i = 0; i < MAX_PLAYERS; i++)
 	{
 		//update the current power available for a player
 		updatePlayerPower(i);
 
 		executeFnAndProcessScriptQueuedRemovals([i]() {
-			mutating_list_iterate(apsDroidLists[i], [](DROID* d)
+			mutating_list_iterate(apsDroidLists()[i], [](DROID* d)
 			{
 				droidUpdate(d);
 				return IterationResult::CONTINUE_ITERATION;
 			});
 		});
-		executeFnAndProcessScriptQueuedRemovals([i]() {
-			mutating_list_iterate(missionParkedHomeWorld().objects.droids[i], [](DROID* d)
-			{
-				missionDroidUpdate(d);
-				return IterationResult::CONTINUE_ITERATION;
+		if (parkedHomeListsSeparateFromActive)
+		{
+			executeFnAndProcessScriptQueuedRemovals([i]() {
+				mutating_list_iterate(missionParkedHomeWorld().objects.droids[i], [](DROID* d)
+				{
+					missionDroidUpdate(d);
+					return IterationResult::CONTINUE_ITERATION;
+				});
 			});
-		});
+		}
 		// FIXME: These for-loops are code duplication
 		executeFnAndProcessScriptQueuedRemovals([i]() {
-			mutating_list_iterate(apsStructLists[i], [](STRUCTURE* s)
+			mutating_list_iterate(apsStructLists()[i], [](STRUCTURE* s)
 			{
 				structureUpdate(s, false);
 				return IterationResult::CONTINUE_ITERATION;
 			});
 		});
-		executeFnAndProcessScriptQueuedRemovals([i]() {
-			mutating_list_iterate(missionParkedHomeWorld().objects.structures[i], [](STRUCTURE* s)
-			{
-				structureUpdate(s, true); // update for mission
-				return IterationResult::CONTINUE_ITERATION;
+		if (parkedHomeListsSeparateFromActive)
+		{
+			executeFnAndProcessScriptQueuedRemovals([i]() {
+				mutating_list_iterate(missionParkedHomeWorld().objects.structures[i], [](STRUCTURE* s)
+				{
+					structureUpdate(s, true); // update for mission
+					return IterationResult::CONTINUE_ITERATION;
+				});
 			});
-		});
+		}
 	}
 
 	missionTimerUpdate();
 
 	executeFnAndProcessScriptQueuedRemovals([]() { proj_UpdateAll(); });
 
-	for (FEATURE *psCFeat : apsFeatureLists[0])
+	for (FEATURE *psCFeat : apsFeatureLists()[0])
 	{
 		featureUpdate(psCFeat);
 	}
