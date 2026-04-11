@@ -39,7 +39,6 @@
 #include "projectile.h"
 #include "display3d.h"
 #include "game.h"
-#include "src/world_map_state.h"
 #include "texture.h"
 #include "advvis.h"
 #include "random.h"
@@ -54,6 +53,7 @@
 #include "levels.h"
 #include "lib/framework/wzapp.h"
 #include "lib/ivis_opengl/pielighting.h"
+#include "world_map_state.h"
 
 #define GAME_TICKS_FOR_DANGER (GAME_TICKS_PER_SEC * 2)
 
@@ -2131,7 +2131,7 @@ static void threatUpdate(int player)
 			continue;
 		}
 
-		for (DROID* psDroid : apsDroidLists[i])
+		for (DROID* psDroid : worldObjectState.droids[i])
 		{
 			UBYTE mode = 0;
 
@@ -2154,7 +2154,7 @@ static void threatUpdate(int player)
 			}
 		}
 
-		for (STRUCTURE* psStruct : apsStructLists[i])
+		for (STRUCTURE* psStruct : worldObjectState.structures[i])
 		{
 			UBYTE mode = 0;
 
