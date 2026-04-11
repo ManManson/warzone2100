@@ -870,7 +870,7 @@ void restoreMissionData()
 	apsOilList[0] = std::move(mission.apsOilList[0]);
 	mission.apsFeatureList[0].clear();
 	mission.apsSensorList[0].clear();
-	apsOilList[0].clear();
+	mission.apsOilList[0].clear();
 	//swap mission data over
 
 	psMapTiles = std::move(mission.psMapTiles);
