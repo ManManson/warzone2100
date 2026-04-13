@@ -335,7 +335,7 @@ bool missionShutDown()
 		freeAllFeatures();
 		freeAllFlagPositions();
 		releaseAllProxDisp();
-		gwShutDown();
+		gwShutDown(gameWorld.map);
 
 		for (int inc = 0; inc < MAX_PLAYERS; inc++)
 		{
@@ -366,7 +366,7 @@ bool missionShutDown()
 		{
 			gameWorld.map.auxMap[i] = std::move(mission.gameWorld.map.auxMap[i]);
 		}
-		std::swap(mission.gameWorld.map.gateways, gwGetGateways());
+		std::swap(mission.gameWorld.map.gateways, gwGetGateways(gameWorld.map));
 	}
 	keybindShutdown();
 	// sorry if this breaks something - but it looks like it's what should happen - John
@@ -660,7 +660,7 @@ void missionFlyTransportersIn(SDWORD iPlayer, bool bTrackTransporter)
 				if ((bTrackTransporter == true) && (iPlayer == (SDWORD)selectedPlayer))
 				{
 					/* deselect all droids */
-					selDroidDeselect(selectedPlayer);
+					selDroidDeselect(gameWorld.objects, selectedPlayer);
 
 					if (getWarCamStatus())
 					{
@@ -788,7 +788,7 @@ static void saveMissionData()
 	mission.gameWorld.map.scroll.minY = gameWorld.map.scroll.minY;
 	mission.gameWorld.map.scroll.maxX = gameWorld.map.scroll.maxX;
 	mission.gameWorld.map.scroll.maxY = gameWorld.map.scroll.maxY;
-	std::swap(mission.gameWorld.map.gateways, gwGetGateways());
+	std::swap(mission.gameWorld.map.gateways, gwGetGateways(gameWorld.map));
 	// save the selectedPlayer's LZ
 	mission.homeLZ_X = getLandingX(selectedPlayer);
 	mission.homeLZ_Y = getLandingY(selectedPlayer);
@@ -816,7 +816,7 @@ static void saveMissionData()
 	//clear all the effects from the map
 	initEffectsSystem();
 
-	resizeRadar();
+	resizeRadar(gameWorld.map);
 }
 
 /*
@@ -841,7 +841,7 @@ void restoreMissionData()
 	freeAllStructs();
 	freeAllFeatures();
 	freeAllFlagPositions();
-	gwShutDown();
+	gwShutDown(gameWorld.map);
 	if (game.type != LEVEL_TYPE::CAMPAIGN)
 	{
 		ASSERT(false, "game type isn't campaign, but we are in a campaign game!");
@@ -890,7 +890,7 @@ void restoreMissionData()
 	gameWorld.map.scroll.minY = mission.gameWorld.map.scroll.minY;
 	gameWorld.map.scroll.maxX = mission.gameWorld.map.scroll.maxX;
 	gameWorld.map.scroll.maxY = mission.gameWorld.map.scroll.maxY;
-	std::swap(mission.gameWorld.map.gateways, gwGetGateways());
+	std::swap(mission.gameWorld.map.gateways, gwGetGateways(gameWorld.map));
 	//and clear the mission pointers
 	mission.gameWorld.map.tiles	= nullptr;
 	mission.gameWorld.map.width	= 0;
@@ -902,14 +902,14 @@ void restoreMissionData()
 	mission.gameWorld.map.gateways.clear();
 
 	//reset the current structure lists
-	setCurrentStructQuantity(false);
+	setCurrentStructQuantity(gameWorld.objects, false);
 
 	initFactoryNumFlag();
-	resetFactoryNumFlag();
+	resetFactoryNumFlag(gameWorld.objects);
 
 	offWorldKeepLists = false;
 
-	resizeRadar();
+	resizeRadar(gameWorld.map);
 }
 
 /*Saves the necessary data when moving from one mission to a limbo expand Mission*/
@@ -980,7 +980,7 @@ void placeLimboDroids()
 			//set up location for each of the droids
 			droidX = map_coord(getLandingX(LIMBO_LANDING));
 			droidY = map_coord(getLandingY(LIMBO_LANDING));
-			pickRes = pickHalfATile(&droidX, &droidY, LOOK_FOR_EMPTY_TILE);
+			pickRes = pickHalfATile(gameWorld, &droidX, &droidY, LOOK_FOR_EMPTY_TILE);
 			if (pickRes == NO_FREE_TILE)
 			{
 				ASSERT(false, "placeLimboUnits: Unable to find a free location");
@@ -1316,7 +1316,7 @@ static void processMission()
 			// Swap the droid and map pointers
 			swapMissionPointers();
 
-			pickRes = pickHalfATile(&droidX, &droidY, LOOK_FOR_EMPTY_TILE);
+			pickRes = pickHalfATile(gameWorld, &droidX, &droidY, LOOK_FOR_EMPTY_TILE);
 			ASSERT(pickRes != NO_FREE_TILE, "processMission: Unable to find a free location");
 			x = (UWORD)world_coord(droidX);
 			y = (UWORD)world_coord(droidY);
@@ -1397,7 +1397,7 @@ void swapMissionPointers()
 		std::swap(gameWorld.map.auxMap[i],   mission.gameWorld.map.auxMap[i]);
 	}
 	//swap gateway zones
-	std::swap(mission.gameWorld.map.gateways, gwGetGateways());
+	std::swap(mission.gameWorld.map.gateways, gwGetGateways(gameWorld.map));
 	std::swap(gameWorld.map.scroll.minX, mission.gameWorld.map.scroll.minX);
 	std::swap(gameWorld.map.scroll.minY, mission.gameWorld.map.scroll.minY);
 	std::swap(gameWorld.map.scroll.maxX, mission.gameWorld.map.scroll.maxX);
@@ -1670,7 +1670,7 @@ static void missionResetDroids()
 					x = map_coord(psStruct->pos.x);
 					y = map_coord(psStruct->pos.y);
 				}
-				pickRes = pickHalfATile(&x, &y, LOOK_FOR_EMPTY_TILE);
+				pickRes = pickHalfATile(gameWorld, &x, &y, LOOK_FOR_EMPTY_TILE);
 				if (pickRes == NO_FREE_TILE)
 				{
 					ASSERT(false, "missionResetUnits: Unable to find a free location");
@@ -1692,7 +1692,7 @@ static void missionResetDroids()
 					{
 						UDWORD		x = map_coord(psStructure->pos.x);
 						UDWORD		y = map_coord(psStructure->pos.y);
-						PICKTILE	pickRes = pickHalfATile(&x, &y, LOOK_FOR_EMPTY_TILE);
+						PICKTILE	pickRes = pickHalfATile(gameWorld, &x, &y, LOOK_FOR_EMPTY_TILE);
 
 						if (pickRes == NO_FREE_TILE)
 						{
@@ -1774,7 +1774,7 @@ void unloadTransporter(DROID *psTransporter, UDWORD x, UDWORD y)
 			//starting point...based around the value passed in
 			droidX = map_coord(x);
 			droidY = map_coord(y);
-			if (!pickATileGen(&droidX, &droidY, LOOK_FOR_EMPTY_TILE, zonedPAT))
+			if (!pickATileGen(gameWorld, &droidX, &droidY, LOOK_FOR_EMPTY_TILE, zonedPAT))
 			{
 				if (!bMultiPlayer)
 				{
@@ -2618,7 +2618,8 @@ DROID *buildMissionDroid(DROID_TEMPLATE *psTempl, UDWORD x, UDWORD y, UDWORD pla
 {
 	DROID		*psNewDroid;
 
-	psNewDroid = buildDroid(psTempl, world_coord(x), world_coord(y), player, true, nullptr);
+	// XXX: gameWorld.map - should be mission.gameWorld.map really
+	psNewDroid = buildDroid(gameWorld.map, psTempl, world_coord(x), world_coord(y), player, true, nullptr);
 	if (!psNewDroid)
 	{
 		return nullptr;
@@ -2837,12 +2838,12 @@ static void addLandingLights(UDWORD x, UDWORD y)
 
 /*	checks the x,y passed in are not within the boundary of any Landing Zone
 	x and y in tile coords*/
-bool withinLandingZone(UDWORD x, UDWORD y)
+bool withinLandingZone(const WorldMapState& mapState, UDWORD x, UDWORD y)
 {
 	UDWORD		inc;
 
-	ASSERT(x < gameWorld.map.width, "withinLandingZone: x coord bigger than mapWidth");
-	ASSERT(y < gameWorld.map.height, "withinLandingZone: y coord bigger than mapHeight");
+	ASSERT(x < mapState.width, "withinLandingZone: x coord bigger than mapWidth");
+	ASSERT(y < mapState.height, "withinLandingZone: y coord bigger than mapHeight");
 
 
 	for (inc = 0; inc < MAX_NOGO_AREAS; inc++)

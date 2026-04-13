@@ -547,7 +547,7 @@ bool multiPlayerLoop()
 	if (joinCount)
 	{
 		// deselect anything selected.
-		selDroidDeselect(selectedPlayer);
+		selDroidDeselect(gameWorld.objects, selectedPlayer);
 	}
 	else		//everyone is in the game now!
 	{

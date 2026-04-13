@@ -527,12 +527,12 @@ bool mapObjIsAboveGround(const SIMPLE_OBJECT *psObj);
 
 /* returns the max and min height of a tile by looking at the four corners
    in tile coords */
-void getTileMaxMin(int x, int y, int *pMax, int *pMin);
+void getTileMaxMin(const WorldMapState& mapState, int x, int y, int *pMax, int *pMin);
 
 bool readVisibilityData(const char *fileName);
 bool writeVisibilityData(const char *fileName);
 
-void mapFloodFillContinents();
+void mapFloodFillContinents(WorldMapState& mapState);
 
 void tileSetFire(WorldMapState& mapState, int32_t x, int32_t y, uint32_t duration);
 bool fireOnLocation(WorldMapState& mapState, unsigned int x, unsigned int y); // FIXME: add const overload
@@ -548,8 +548,10 @@ WZ_DECL_ALWAYS_INLINE static inline bool hasSensorOnTile(MAPTILE *psTile, unsign
 			);
 }
 
-void mapInit();
-void mapUpdate();
+struct GameWorld;
+
+void mapInit(GameWorld& world);
+void mapUpdate(GameWorld& world);
 
 bool shouldLoadTerrainTypeOverrides(const std::string& name);
 bool loadTerrainTypeMapOverride(MAP_TILESET tileSet);

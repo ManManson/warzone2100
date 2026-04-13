@@ -1400,7 +1400,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 	if (psOrder->type != DORDER_TRANSPORTIN         // transporters special
 	    && psOrder->psObj == nullptr			// location-type order
 	    && (validOrderForLoc(psOrder->type) || psOrder->type == DORDER_BUILD)
-	    && !fpathCheck(psDroid->pos, rPos, psPropStats->propulsionType))
+	    && !fpathCheck(gameWorld.map, psDroid->pos, rPos, psPropStats->propulsionType))
 	{
 		if (!isHumanPlayer(psDroid->player))
 		{
@@ -1488,14 +1488,14 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 	case DORDER_SCOUT:
 		// can't move vtols to blocking tiles
 		if (psDroid->isVtol()
-		    && fpathBlockingTile(map_coord(psOrder->pos), psDroid->getPropulsionStats()->propulsionType))
+		    && fpathBlockingTile(gameWorld.map, map_coord(psOrder->pos), psDroid->getPropulsionStats()->propulsionType))
 		{
 			break;
 		}
 		//in multiPlayer, cannot move Transporter to blocking tile either
 		if (game.type == LEVEL_TYPE::SKIRMISH
 		    && psDroid->isTransporter()
-		    && fpathBlockingTile(map_coord(psOrder->pos), psDroid->getPropulsionStats()->propulsionType))
+		    && fpathBlockingTile(gameWorld.map, map_coord(psOrder->pos), psDroid->getPropulsionStats()->propulsionType))
 		{
 			break;
 		}
@@ -1687,7 +1687,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 			if (psStruct->pStructureType->type == REF_HQ)
 			{
 				Vector2i pos = psStruct->pos.xy();
-				if (!CheckInScrollLimits(pos.x, pos.y))
+				if (!CheckInScrollLimits(gameWorld.map, pos.x, pos.y))
 				{
 					continue;
 				}
@@ -1715,12 +1715,12 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 			int iDY = getLandingY(psDroid->player);
 			Vector2i startPos = getPlayerStartPosition(psDroid->player);
 
-			if (iDX && iDY && CheckInScrollLimits(iDX, iDY))
+			if (iDX && iDY && CheckInScrollLimits(gameWorld.map, iDX, iDY))
 			{
 				psDroid->order = *psOrder;
 				actionDroid(psDroid, DACTION_MOVE, iDX, iDY);
 			}
-			else if (bMultiPlayer && (startPos.x != 0 && startPos.y != 0) && CheckInScrollLimits(startPos.x, startPos.y))
+			else if (bMultiPlayer && (startPos.x != 0 && startPos.y != 0) && CheckInScrollLimits(gameWorld.map, startPos.x, startPos.y))
 			{
 				psDroid->order = *psOrder;
 				actionDroid(psDroid, DACTION_MOVE, startPos.x, startPos.y);
@@ -2510,7 +2510,7 @@ DROID_ORDER chooseOrderLoc(DROID *psDroid, UDWORD x, UDWORD y, bool altOrder)
 	{
 		propulsion = PROPULSION_TYPE_WHEELED;
 	}
-	if (!fpathBlockingTile(map_coord(x), map_coord(y), propulsion))
+	if (!fpathBlockingTile(gameWorld.map, map_coord(x), map_coord(y), propulsion))
 	{
 		order = DORDER_MOVE;
 	}
@@ -3396,7 +3396,7 @@ static inline RtrBestResult decideWhereToRepairAndBalance(DROID *psDroid)
 	{
 		if (psStruct->pStructureType->type == REF_HQ)
 		{
-			if (CheckInScrollLimits(psStruct->pos.x, psStruct->pos.y))
+			if (CheckInScrollLimits(gameWorld.map, psStruct->pos.x, psStruct->pos.y))
 			{
 				psHq = psStruct;
 			}
@@ -3404,7 +3404,7 @@ static inline RtrBestResult decideWhereToRepairAndBalance(DROID *psDroid)
 		}
 		if (psStruct->pStructureType->type == REF_REPAIR_FACILITY && psStruct->status == SS_BUILT)
 		{
-			if (!CheckInScrollLimits(psStruct->pos.x, psStruct->pos.y))
+			if (!CheckInScrollLimits(gameWorld.map, psStruct->pos.x, psStruct->pos.y))
 			{
 				continue;
 			}
@@ -3440,7 +3440,7 @@ static inline RtrBestResult decideWhereToRepairAndBalance(DROID *psDroid)
 				if ((psCurr->droidType == DROID_REPAIR || psCurr->droidType == DROID_CYBORG_REPAIR)
 					&& secondaryGetState(psCurr, DSO_ACCEPT_RETREP))
 				{
-					if (!CheckInScrollLimits(psCurr->pos.x, psCurr->pos.y))
+					if (!CheckInScrollLimits(gameWorld.map, psCurr->pos.x, psCurr->pos.y))
 					{
 						continue;
 					}

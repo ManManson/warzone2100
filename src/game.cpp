@@ -2410,11 +2410,11 @@ bool loadMissionExtras(const char* pGameToLoad, LEVEL_TYPE levelType)
 	return true;
 }
 
-static void sanityUpdate()
+static void sanityUpdate(WorldObjectState& objState)
 {
 	for (int player = 0; player < game.maxPlayers; player++)
 	{
-		for (DROID *psDroid : gameWorld.objects.droids[player])
+		for (DROID *psDroid : objState.droids[player])
 		{
 			orderCheckList(psDroid);
 			actionSanity(psDroid);
@@ -2819,7 +2819,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 			{
 				setPlayerColour(i, saveGameData.playerColour[i]);
 			}
-			SetRadarZoom(saveGameData.radarZoom);
+			SetRadarZoom(gameWorld.map, saveGameData.radarZoom);
 		}
 
 		if (saveGameVersion >= VERSION_20)//V21
@@ -3314,7 +3314,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		}
 		if (game.type != LEVEL_TYPE::CAMPAIGN)
 		{
-			resetFactoryNumFlag();	//reset flags into the masks
+			resetFactoryNumFlag(gameWorld.objects);	//reset flags into the masks
 		}
 	}
 	else
@@ -3414,15 +3414,15 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 
 	if ((saveGameVersion >= VERSION_15) && UserSaveGame)
 	{
-		setCurrentStructQuantity(false);
+		setCurrentStructQuantity(gameWorld.objects, false);
 	}
 	else
 	{
-		setCurrentStructQuantity(true);
+		setCurrentStructQuantity(gameWorld.objects, true);
 	}
 
 	//check that delivery points haven't been put down in invalid location
-	checkDeliveryPoints(saveGameVersion);
+	checkDeliveryPoints(gameWorld, saveGameVersion);
 
 	//turn power on for rest of game
 	powerCalculated = true;
@@ -3553,7 +3553,7 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 
 	fileExtension = strlen(CurrentFileName) - 3;
 	gameTimeStop();
-	sanityUpdate();
+	sanityUpdate(gameWorld.objects);
 
 	/* Write the data to the file */
 	if (!writeGameFile(CurrentFileName, saveType))
@@ -5301,7 +5301,7 @@ static bool loadWzMapDroidInit(WzMap::Map &wzMap, std::unordered_map<UDWORD, UDW
 				debug(LOG_ERROR, "Found duplicate hard-coded object ID in map data: %" PRIu32 "", droid.id.value());
 			}
 		}
-		psDroid = reallyBuildDroid(psTemplate, Position(droid.position.x, droid.position.y, 0), player, false, {droid.direction, 0, 0}, newID);
+		psDroid = reallyBuildDroid(gameWorld.map, psTemplate, Position(droid.position.x, droid.position.y, 0), player, false, {droid.direction, 0, 0}, newID);
 		turnOffMultiMsg(false);
 		if (psDroid == nullptr)
 		{
@@ -5734,11 +5734,11 @@ static bool loadSaveDroid(const char *pFileName, PerPlayerDroidLists& ppsCurrent
 		turnOffMultiMsg(true);
 		if (id > 0)
 		{
-			psDroid = reallyBuildDroid(psTemplate, pos, player, onMission, rot, id);
+			psDroid = reallyBuildDroid(gameWorld.map, psTemplate, pos, player, onMission, rot, id);
 		} else
 		{
 			// will generate a new id
-			psDroid = reallyBuildDroid(psTemplate, pos, player, onMission, rot);
+			psDroid = reallyBuildDroid(gameWorld.map, psTemplate, pos, player, onMission, rot);
 		}
 		ASSERT_OR_RETURN(false, psDroid != nullptr, "Failed to build unit %s", sortedList[i].second.toUtf8().c_str());
 		turnOffMultiMsg(false);
@@ -6241,7 +6241,7 @@ bool loadSaveStructure(char *pFileData, UDWORD filesize)
 		//for modules - need to check the base structure exists
 		if (IsStatExpansionModule(psStats))
 		{
-			psStructure = getTileStructure(map_coord(psSaveStructure->x), map_coord(psSaveStructure->y));
+			psStructure = getTileStructure(gameWorld.map, map_coord(psSaveStructure->x), map_coord(psSaveStructure->y));
 			if (psStructure == nullptr)
 			{
 				debug(LOG_ERROR, "No owning structure for module - %s for player - %d", getSaveStructNameV19((SAVE_STRUCTURE_V17 *)psSaveStructure), psSaveStructure->player);
@@ -6264,7 +6264,7 @@ bool loadSaveStructure(char *pFileData, UDWORD filesize)
 			continue;
 		}
 
-		psStructure = buildStructureDir(psStats, psSaveStructure->x, psSaveStructure->y, DEG(psSaveStructure->direction), psSaveStructure->player, true);
+		psStructure = buildStructureDir(gameWorld, psStats, psSaveStructure->x, psSaveStructure->y, DEG(psSaveStructure->direction), psSaveStructure->player, true);
 		ASSERT(psStructure, "Unable to create structure");
 		if (!psStructure)
 		{
@@ -6332,7 +6332,7 @@ static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDW
 		//for modules - need to check the base structure exists
 		if (IsStatExpansionModule(psStats))
 		{
-			STRUCTURE *psStructure = getTileStructure(map_coord(structure.position.x), map_coord(structure.position.y));
+			STRUCTURE *psStructure = getTileStructure(gameWorld.map, map_coord(structure.position.x), map_coord(structure.position.y));
 			if (psStructure == nullptr)
 			{
 				debug(LOG_ERROR, "No owning structure for module - %s for player - %d", structure.name.c_str(), structure.player);
@@ -6369,7 +6369,7 @@ static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDW
 				debug(LOG_ERROR, "Found duplicate hard-coded object ID in map data: %" PRIu32 "", structure.id.value());
 			}
 		}
-		psStructure = buildStructureDir(psStats, structure.position.x, structure.position.y, structure.direction, player, true, newID);
+		psStructure = buildStructureDir(gameWorld, psStats, structure.position.x, structure.position.y, structure.direction, player, true, newID);
 		if (psStructure == nullptr)
 		{
 			debug(LOG_ERROR, "Structure %s couldn't be built (probably on top of another structure).", structure.name.c_str());
@@ -6401,7 +6401,7 @@ static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDW
 			}
 			for (int i = 0; i < structure.modules; ++i)
 			{
-				buildStructure(moduleStat, structure.position.x, structure.position.y, player, true);
+				buildStructure(gameWorld, moduleStat, structure.position.x, structure.position.y, player, true);
 			}
 		}
 		buildingComplete(psStructure);
@@ -6468,7 +6468,7 @@ static bool loadSaveStructure2(const char *pFileName)
 		//for modules - need to check the base structure exists
 		if (IsStatExpansionModule(psStats))
 		{
-			STRUCTURE *psTileStructure = getTileStructure(map_coord(pos.x), map_coord(pos.y));
+			STRUCTURE *psTileStructure = getTileStructure(gameWorld.map, map_coord(pos.x), map_coord(pos.y));
 			if (psTileStructure == nullptr)
 			{
 				debug(LOG_ERROR, "No owning structure for module - %s for player - %d", name.toUtf8().c_str(), player);
@@ -6489,7 +6489,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			id = generateSynchronisedObjectId();
 		}
 		debug(LOG_NEVER, "trying to build structure %i;%i;%s;%i;%i", id, player, psStats->name.toUtf8().c_str(), map_coord(pos.y), map_coord(pos.y));
-		psStructure = buildStructureDir(psStats, pos.x, pos.y, rot.direction, player, true, id);
+		psStructure = buildStructureDir(gameWorld, psStats, pos.x, pos.y, rot.direction, player, true, id);
 		ASSERT(psStructure, "Unable to create structure");
 		if (!psStructure)
 		{
@@ -6527,7 +6527,7 @@ static bool loadSaveStructure2(const char *pFileName)
 				//build the appropriate number of modules
 				for (int moduleIdx = 0; moduleIdx < capacity; moduleIdx++)
 				{
-					buildStructure(psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
+					buildStructure(gameWorld, psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
 
 				}
 			}
@@ -6539,7 +6539,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			if (ini.contains("Factory/assemblyPoint/pos"))
 			{
 				Position point = ini.vector3i("Factory/assemblyPoint/pos");
-				setAssemblyPoint(psFactory->psAssemblyPoint, point.x, point.y, player, false);
+				setAssemblyPoint(gameWorld, psFactory->psAssemblyPoint, point.x, point.y, player, false);
 				psFactory->psAssemblyPoint->selected = ini.value("Factory/assemblyPoint/selected", false).toBool();
 			}
 			if (ini.contains("Factory/assemblyPoint/number"))
@@ -6580,7 +6580,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			if (capacity)
 			{
 				psModule = getModuleStat(psStructure);
-				buildStructure(psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
+				buildStructure(gameWorld, psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
 			}
 			//clear subject
 			psResearch->psSubject = nullptr;
@@ -6605,7 +6605,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			if (capacity)
 			{
 				psModule = getModuleStat(psStructure);
-				buildStructure(psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
+				buildStructure(gameWorld, psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
 			}
 			break;
 		case REF_RESOURCE_EXTRACTOR:
@@ -6615,7 +6615,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			if (ini.contains("Repair/deliveryPoint/pos"))
 			{
 				Position point = ini.vector3i("Repair/deliveryPoint/pos");
-				setAssemblyPoint(psRepair->psDeliveryPoint, point.x, point.y, player, false);
+				setAssemblyPoint(gameWorld, psRepair->psDeliveryPoint, point.x, point.y, player, false);
 				psRepair->psDeliveryPoint->selected = ini.value("Repair/deliveryPoint/selected", false).toBool();
 			}
 			break;
@@ -6667,7 +6667,7 @@ static bool loadSaveStructure2(const char *pFileName)
 		}
 		ini.endGroup();
 	}
-	resetFactoryNumFlag();	//reset flags into the masks
+	resetFactoryNumFlag(gameWorld.objects);	//reset flags into the masks
 
 	return true;
 }
@@ -7064,7 +7064,7 @@ bool loadSaveFeature(char *pFileData, UDWORD filesize)
 			continue;
 		}
 		//create the Feature
-		pFeature = buildFeature(psStats, psSaveFeature->x, psSaveFeature->y, true, psSaveFeature->id);
+		pFeature = buildFeature(gameWorld.map, psStats, psSaveFeature->x, psSaveFeature->y, true, psSaveFeature->id);
 		if (!pFeature)
 		{
 			debug(LOG_ERROR, "Unable to create feature %s", psSaveFeature->name);
@@ -7121,7 +7121,7 @@ static bool loadWzMapFeature(WzMap::Map &wzMap, std::unordered_map<UDWORD, UDWOR
 				debug(LOG_ERROR, "Found duplicate hard-coded object ID in map data: %" PRIu32 "", feature.id.value());
 			}
 		}
-		pFeature = buildFeature(&*psStats, feature.position.x, feature.position.y, true, newID);
+		pFeature = buildFeature(gameWorld.map, &*psStats, feature.position.x, feature.position.y, true, newID);
 		if (!pFeature)
 		{
 			debug(LOG_ERROR, "Unable to create feature %s", feature.name.c_str());
@@ -7181,11 +7181,11 @@ bool loadSaveFeature2(const char *pFileName)
 		int id = ini.value("id", -1).toInt();
 		if (id > 0)
 		{
-			pFeature = buildFeature(psStats, pos.x, pos.y, true, id);
+			pFeature = buildFeature(gameWorld.map, psStats, pos.x, pos.y, true, id);
 		}
 		else
 		{
-			pFeature = buildFeature(psStats, pos.x, pos.y, true);
+			pFeature = buildFeature(gameWorld.map, psStats, pos.x, pos.y, true);
 		}
 		if (!pFeature)
 		{

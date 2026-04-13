@@ -340,11 +340,11 @@ static void doWaveTerrain(BASE_OBJECT *psObj)
 }
 
 /* The los ray callback */
-static bool rayLOSCallback(Vector2i pos, int32_t dist, void *data)
+static bool rayLOSCallback(WorldMapState& mapState, Vector2i pos, int32_t dist, void *data)
 {
 	VisibleObjectHelp_t *help = (VisibleObjectHelp_t *)data;
 
-	ASSERT(pos.x >= 0 && pos.x < world_coord(gameWorld.map.width) && pos.y >= 0 && pos.y < world_coord(gameWorld.map.height), "rayLOSCallback: coords off map");
+	ASSERT(pos.x >= 0 && pos.x < world_coord(mapState.width) && pos.y >= 0 && pos.y < world_coord(mapState.height), "rayLOSCallback: coords off map");
 
 	if (help->rayStart)
 	{
@@ -361,7 +361,7 @@ static bool rayLOSCallback(Vector2i pos, int32_t dist, void *data)
 	}
 
 	help->lastDist = dist;
-	help->lastHeight = map_Height(gameWorld.map, pos.x, pos.y);
+	help->lastHeight = map_Height(mapState, pos.x, pos.y);
 
 	if (help->wallsBlock)
 	{
@@ -370,7 +370,7 @@ static bool rayLOSCallback(Vector2i pos, int32_t dist, void *data)
 
 		if (tile != help->final)
 		{
-			MAPTILE *psTile = mapTile(gameWorld.map, tile);
+			MAPTILE *psTile = mapTile(mapState, tile);
 			if (TileHasWall_raycast(psTile) && !TileHasSmallStructure(psTile))
 			{
 				STRUCTURE *psStruct = (STRUCTURE *)psTile->psObject;
@@ -453,7 +453,7 @@ void visTilesUpdate(BASE_OBJECT *psObj)
 }
 
 /*reveals all the terrain in the map*/
-void revealAll(UBYTE player)
+void revealAll(WorldMapState& mapState, UBYTE player)
 {
 	SDWORD   i, j;
 	MAPTILE	*psTile;
@@ -464,11 +464,11 @@ void revealAll(UBYTE player)
 	}
 
 	//reveal all tiles
-	for (j = 0; j < gameWorld.map.height; j++)
+	for (j = 0; j < mapState.height; j++)
 	{
-		for (i = 0; i < gameWorld.map.width; i++)
+		for (i = 0; i < mapState.width; i++)
 		{
-			psTile = mapTile(gameWorld.map, i, j);
+			psTile = mapTile(mapState, i, j);
 			psTile->tileExploredBits |= alliancebits[player];
 		}
 	}
@@ -579,7 +579,7 @@ int visibleObject(const BASE_OBJECT *psViewer, const BASE_OBJECT *psTarget, bool
 	};
 
 	// Cast a ray from the viewer to the target
-	rayCast(psViewer->pos.xy(), psTarget->pos.xy(), rayLOSCallback, &help);
+	rayCast(gameWorld.map, psViewer->pos.xy(), psTarget->pos.xy(), rayLOSCallback, &help);
 
 	if (gWall != nullptr && gNumWalls != nullptr) // Out globals are set
 	{

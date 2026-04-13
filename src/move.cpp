@@ -420,17 +420,17 @@ static void moveShuffleDroid(DROID *psDroid, Vector2i s)
 
 	const auto droidPropType = psDroid->getPropulsionStats()->propulsionType;
 	// check for blocking tiles
-	if (fpathBlockingTile(map_coord((SDWORD)psDroid->pos.x + lvx),
+	if (fpathBlockingTile(gameWorld.map, map_coord((SDWORD)psDroid->pos.x + lvx),
 	                      map_coord((SDWORD)psDroid->pos.y + lvy), droidPropType))
 	{
 		leftClear = false;
 	}
-	else if (fpathBlockingTile(map_coord((SDWORD)psDroid->pos.x + rvx),
+	else if (fpathBlockingTile(gameWorld.map, map_coord((SDWORD)psDroid->pos.x + rvx),
 	                           map_coord((SDWORD)psDroid->pos.y + rvy), droidPropType))
 	{
 		rightClear = false;
 	}
-	else if (fpathBlockingTile(map_coord((SDWORD)psDroid->pos.x + svx),
+	else if (fpathBlockingTile(gameWorld.map, map_coord((SDWORD)psDroid->pos.x + svx),
 	                           map_coord((SDWORD)psDroid->pos.y + svy), droidPropType))
 	{
 		frontClear = false;
@@ -605,10 +605,10 @@ struct BLOCKING_CALLBACK_DATA
 	Vector2i dst;
 };
 
-static bool moveBlockingTileCallback(Vector2i pos, int32_t dist, void *data_)
+static bool moveBlockingTileCallback(WorldMapState& mapState, Vector2i pos, int32_t dist, void *data_)
 {
 	BLOCKING_CALLBACK_DATA *data = (BLOCKING_CALLBACK_DATA *)data_;
-	data->blocking |= pos != data->src && pos != data->dst && fpathBlockingTile(map_coord(pos.x), map_coord(pos.y), data->propulsionType);
+	data->blocking |= pos != data->src && pos != data->dst && fpathBlockingTile(mapState, map_coord(pos.x), map_coord(pos.y), data->propulsionType);
 	return !data->blocking;
 }
 
@@ -624,7 +624,7 @@ static int32_t moveDirectPathToWaypoint(DROID *psDroid, unsigned positionIndex)
 	data.blocking = false;
 	data.src = src;
 	data.dst = dst;
-	rayCast(src, dst, &moveBlockingTileCallback, &data);
+	rayCast(gameWorld.map, src, dst, &moveBlockingTileCallback, &data);
 	return data.blocking ? -1 - dist : dist;
 }
 
@@ -947,7 +947,7 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 	moveOpenGates(psDroid, Vector2i(ntx, nty));
 
 	// is the new tile blocking?
-	if (!fpathBlockingTile(ntx, nty, propulsion))
+	if (!fpathBlockingTile(gameWorld.map, ntx, nty, propulsion))
 	{
 		// not blocking, don't change the move vector
 		return;
@@ -982,7 +982,7 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 		vertX = ntx;
 		vertY = my < 0 ? nty + 1 : nty - 1;
 
-		if (fpathBlockingTile(horizX, horizY, propulsion) && fpathBlockingTile(vertX, vertY, propulsion))
+		if (fpathBlockingTile(gameWorld.map, horizX, horizY, propulsion) && fpathBlockingTile(gameWorld.map, vertX, vertY, propulsion))
 		{
 			// in a corner - choose an arbitrary slide
 			if (gameRand(2) == 0)
@@ -996,11 +996,11 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 				*pmy = 0;
 			}
 		}
-		else if (fpathBlockingTile(horizX, horizY, propulsion))
+		else if (fpathBlockingTile(gameWorld.map, horizX, horizY, propulsion))
 		{
 			*pmy = 0;
 		}
-		else if (fpathBlockingTile(vertX, vertY, propulsion))
+		else if (fpathBlockingTile(gameWorld.map, vertX, vertY, propulsion))
 		{
 			*pmx = 0;
 		}
@@ -1015,7 +1015,7 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 		if ((psDroid->pos.y & TILE_MASK) > TILE_UNITS / 2)
 		{
 			// top half
-			if (fpathBlockingTile(ntx, nty + 1, propulsion))
+			if (fpathBlockingTile(gameWorld.map, ntx, nty + 1, propulsion))
 			{
 				*pmx = 0;
 			}
@@ -1027,7 +1027,7 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 		else
 		{
 			// bottom half
-			if (fpathBlockingTile(ntx, nty - 1, propulsion))
+			if (fpathBlockingTile(gameWorld.map, ntx, nty - 1, propulsion))
 			{
 				*pmx = 0;
 			}
@@ -1043,7 +1043,7 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 		if ((psDroid->pos.x & TILE_MASK) > TILE_UNITS / 2)
 		{
 			// top half
-			if (fpathBlockingTile(ntx + 1, nty, propulsion))
+			if (fpathBlockingTile(gameWorld.map, ntx + 1, nty, propulsion))
 			{
 				*pmy = 0;
 			}
@@ -1055,7 +1055,7 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 		else
 		{
 			// bottom half
-			if (fpathBlockingTile(ntx - 1, nty, propulsion))
+			if (fpathBlockingTile(gameWorld.map, ntx - 1, nty, propulsion))
 			{
 				*pmy = 0;
 			}
@@ -1079,12 +1079,12 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 			if (inty < TILE_UNITS / 2)
 			{
 				// top left
-				if ((mx < 0) && fpathBlockingTile(tx - 1, ty, propulsion))
+				if ((mx < 0) && fpathBlockingTile(gameWorld.map, tx - 1, ty, propulsion))
 				{
 					bJumped = true;
 					jumpy = (jumpy & ~TILE_MASK) - 1;
 				}
-				if ((my < 0) && fpathBlockingTile(tx, ty - 1, propulsion))
+				if ((my < 0) && fpathBlockingTile(gameWorld.map, tx, ty - 1, propulsion))
 				{
 					bJumped = true;
 					jumpx = (jumpx & ~TILE_MASK) - 1;
@@ -1093,12 +1093,12 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 			else
 			{
 				// bottom left
-				if ((mx < 0) && fpathBlockingTile(tx - 1, ty, propulsion))
+				if ((mx < 0) && fpathBlockingTile(gameWorld.map, tx - 1, ty, propulsion))
 				{
 					bJumped = true;
 					jumpy = (jumpy & ~TILE_MASK) + TILE_UNITS;
 				}
-				if ((my >= 0) && fpathBlockingTile(tx, ty + 1, propulsion))
+				if ((my >= 0) && fpathBlockingTile(gameWorld.map, tx, ty + 1, propulsion))
 				{
 					bJumped = true;
 					jumpx = (jumpx & ~TILE_MASK) - 1;
@@ -1110,12 +1110,12 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 			if (inty < TILE_UNITS / 2)
 			{
 				// top right
-				if ((mx >= 0) && fpathBlockingTile(tx + 1, ty, propulsion))
+				if ((mx >= 0) && fpathBlockingTile(gameWorld.map, tx + 1, ty, propulsion))
 				{
 					bJumped = true;
 					jumpy = (jumpy & ~TILE_MASK) - 1;
 				}
-				if ((my < 0) && fpathBlockingTile(tx, ty - 1, propulsion))
+				if ((my < 0) && fpathBlockingTile(gameWorld.map, tx, ty - 1, propulsion))
 				{
 					bJumped = true;
 					jumpx = (jumpx & ~TILE_MASK) + TILE_UNITS;
@@ -1124,12 +1124,12 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 			else
 			{
 				// bottom right
-				if ((mx >= 0) && fpathBlockingTile(tx + 1, ty, propulsion))
+				if ((mx >= 0) && fpathBlockingTile(gameWorld.map, tx + 1, ty, propulsion))
 				{
 					bJumped = true;
 					jumpy = (jumpy & ~TILE_MASK) + TILE_UNITS;
 				}
-				if ((my >= 0) && fpathBlockingTile(tx, ty + 1, propulsion))
+				if ((my >= 0) && fpathBlockingTile(gameWorld.map, tx, ty + 1, propulsion))
 				{
 					bJumped = true;
 					jumpx = (jumpx & ~TILE_MASK) + TILE_UNITS;

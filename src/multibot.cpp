@@ -431,7 +431,7 @@ bool recvDroid(NETQUEUE queue)
 
 	// Create that droid on this machine.
 	const auto rot = Rotation();
-	psDroid = reallyBuildDroid(pT, pos, player, false, rot, id);
+	psDroid = reallyBuildDroid(gameWorld.map, pT, pos, player, false, rot, id);
 
 	// If we were able to build the droid set it up
 	if (psDroid)

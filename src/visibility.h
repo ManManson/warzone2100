@@ -28,13 +28,15 @@
 
 #define LINE_OF_FIRE_MINIMUM 5
 
+struct WorldMapState;
+
 // initialise the visibility stuff
 bool visInitialise();
 
 /* Check which tiles can be seen by an object */
 void visTilesUpdate(BASE_OBJECT *psObj);
 
-void revealAll(UBYTE player);
+void revealAll(WorldMapState& mapState, UBYTE player);
 
 /* Check whether psViewer can see psTarget
  * psViewer should be an object that has some form of sensor,

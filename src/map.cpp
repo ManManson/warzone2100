@@ -39,6 +39,7 @@
 #include "projectile.h"
 #include "display3d.h"
 #include "game.h"
+#include "src/game_world.h"
 #include "texture.h"
 #include "advvis.h"
 #include "random.h"
@@ -133,17 +134,17 @@ static std::unique_ptr<bool[]> mapDecals;           // array that tells us what 
 UBYTE terrainTypes[MAX_TILE_TEXTURES];
 
 #if 0
-void syncLogDumpAuxMaps()
+void syncLogDumpAuxMaps(const WorldMapState& mapState)
 {
 	for (int auxIdx = 0; auxIdx < MAX_PLAYERS + AUX_MAX; auxIdx++)
 	{
 		syncDebug("psAuxMap[%d]:", auxIdx);
-		for (int y = 0; y < gameWorld.map.height; ++y)
+		for (int y = 0; y < mapState.height; ++y)
 		{
 			std::string rowDetails;
-			for (int x = 0; x < gameWorld.map.width; ++x)
+			for (int x = 0; x < mapState.width; ++x)
 			{
-				auto val = auxTile(gameWorld.map, x, y, auxIdx);
+				auto val = auxTile(mapState, x, y, auxIdx);
 				rowDetails += std::to_string(val) + ",";
 			}
 			syncDebug("psAuxMap[%d] row[%d]: %s", auxIdx, y, rowDetails.c_str());
@@ -153,12 +154,12 @@ void syncLogDumpAuxMaps()
 	for (int idx = 0; idx < AUX_MAX; idx++)
 	{
 		syncDebug("psBlockMap[%d]:", idx);
-		for (int y = 0; y < gameWorld.map.height; ++y)
+		for (int y = 0; y < mapState.height; ++y)
 		{
 			std::string rowDetails;
-			for (int x = 0; x < gameWorld.map.width; ++x)
+			for (int x = 0; x < mapState.width; ++x)
 			{
-				auto val = blockTile(gameWorld.map, x, y, idx);
+				auto val = blockTile(mapState, x, y, idx);
 				rowDetails += std::to_string(val) + ",";
 			}
 			syncDebug("psBlockMap[%d] row[%d]: %s", idx, y, rowDetails.c_str());
@@ -546,7 +547,7 @@ static void rotFlip(int tile, int *i, int *j)
 }
 
 /// Tries to figure out what ground type a grid point is from the surrounding tiles
-static int determineGroundType(int x, int y, const char *tileset)
+static int determineGroundType(WorldMapState& mapState, int x, int y, const char *tileset)
 {
 	int ground[2][2];
 	int votes[2][2];
@@ -555,7 +556,7 @@ static int determineGroundType(int x, int y, const char *tileset)
 	int a, b, best;
 	MAPTILE *psTile;
 
-	if (x < 0 || y < 0 || x >= gameWorld.map.width || y >= gameWorld.map.height)
+	if (x < 0 || y < 0 || x >= mapState.width || y >= mapState.height)
 	{
 		return 0; // just return the first ground type
 	}
@@ -565,14 +566,14 @@ static int determineGroundType(int x, int y, const char *tileset)
 	{
 		for (j = 0; j < 2; j++)
 		{
-			if (x + i - 1 < 0 || y + j - 1 < 0 || x + i - 1 >= gameWorld.map.width || y + j - 1 >= gameWorld.map.height)
+			if (x + i - 1 < 0 || y + j - 1 < 0 || x + i - 1 >= mapState.width || y + j - 1 >= mapState.height)
 			{
 				psTile = nullptr;
 				tile = 0;
 			}
 			else
 			{
-				psTile = mapTile(gameWorld.map, x + i - 1, y + j - 1);
+				psTile = mapTile(mapState, x + i - 1, y + j - 1);
 				tile = psTile->texture;
 			}
 			a = i;
@@ -706,7 +707,7 @@ static bool mapSetGroundTypes()
 		{
 			MAPTILE *psTile = mapTile(gameWorld.map, i, j);
 
-			psTile->ground = determineGroundType(i, j, tilesetDir);
+			psTile->ground = determineGroundType(gameWorld.map, i, j, tilesetDir);
 
 			if (hasDecals(i, j))
 			{
@@ -735,31 +736,31 @@ bool mapReloadGroundTypes()
 	return true;
 }
 
-static bool isWaterVertex(int x, int y)
+static bool isWaterVertex(WorldMapState& mapState, int x, int y)
 {
-	if (x < 1 || y < 1 || x > gameWorld.map.width - 1 || y > gameWorld.map.height - 1)
+	if (x < 1 || y < 1 || x > mapState.width - 1 || y > mapState.height - 1)
 	{
 		return false;
 	}
-	return terrainType(mapTile(gameWorld.map, x, y)) == TER_WATER && terrainType(mapTile(gameWorld.map, x - 1, y)) == TER_WATER
-	       && terrainType(mapTile(gameWorld.map, x, y - 1)) == TER_WATER && terrainType(mapTile(gameWorld.map, x - 1, y - 1)) == TER_WATER;
+	return terrainType(mapTile(mapState, x, y)) == TER_WATER && terrainType(mapTile(mapState, x - 1, y)) == TER_WATER
+	       && terrainType(mapTile(mapState, x, y - 1)) == TER_WATER && terrainType(mapTile(mapState, x - 1, y - 1)) == TER_WATER;
 }
 
-static void generateRiverbed()
+static void generateRiverbed(WorldMapState& mapState)
 {
 	MersenneTwister mt(12345);  // 12345 = random seed.
 	int maxIdx = 1;
-	ASSERT_OR_RETURN(, gameWorld.map.width > 0 && gameWorld.map.height > 0, "Invalid map width or height (%d x %d)", gameWorld.map.width, gameWorld.map.height);
-	std::vector<int> idx(static_cast<size_t>(gameWorld.map.width) * static_cast<size_t>(gameWorld.map.height), 0);
+	ASSERT_OR_RETURN(, mapState.width > 0 && mapState.height > 0, "Invalid map width or height (%d x %d)", mapState.width, mapState.height);
+	std::vector<int> idx(static_cast<size_t>(mapState.width) * static_cast<size_t>(mapState.height), 0);
 	int x, y, l = 0;
 
-	for (y = 0; y < gameWorld.map.height; y++)
+	for (y = 0; y < mapState.height; y++)
 	{
-		for (x = 0; x < gameWorld.map.width; x++)
+		for (x = 0; x < mapState.width; x++)
 		{
 			// initially set the seabed index to 0 for ground and 100 for water
-			int val = 100 * isWaterVertex(x, y);
-			idx[x + (y * gameWorld.map.width)] = val;
+			int val = 100 * isWaterVertex(mapState, x, y);
+			idx[x + (y * mapState.width)] = val;
 			if (val > 0)
 			{
 				l++;
@@ -775,15 +776,15 @@ static void generateRiverbed()
 	do
 	{
 		maxIdx = 1;
-		for (y = 1; y < gameWorld.map.height - 2; y++)
+		for (y = 1; y < mapState.height - 2; y++)
 		{
-			for (x = 1; x < gameWorld.map.width - 2; x++)
+			for (x = 1; x < mapState.width - 2; x++)
 			{
-				int rowOffset = (y * gameWorld.map.width);
+				int rowOffset = (y * mapState.width);
 				auto& idxVal = idx[x + rowOffset];
 				if (idxVal > 0)
 				{
-					idxVal = (idx[(x - 1) + rowOffset] + idx[x + ((y - 1) * gameWorld.map.width)] + idx[x + ((y + 1) * gameWorld.map.width)] + idx[(x + 1) + rowOffset]) / 4;
+					idxVal = (idx[(x - 1) + rowOffset] + idx[x + ((y - 1) * mapState.width)] + idx[x + ((y + 1) * mapState.width)] + idx[(x + 1) + rowOffset]) / 4;
 					if (idxVal > maxIdx)
 					{
 						maxIdx = idxVal;
@@ -796,11 +797,11 @@ static void generateRiverbed()
 	}
 	while (maxIdx > 90 && l < 20);
 
-	for (y = 0; y < gameWorld.map.height; y++)
+	for (y = 0; y < mapState.height; y++)
 	{
-		for (x = 0; x < gameWorld.map.width; x++)
+		for (x = 0; x < mapState.width; x++)
 		{
-			auto& idxVal = idx[x + (y * gameWorld.map.width)];
+			auto& idxVal = idx[x + (y * mapState.width)];
 			if (idxVal > maxIdx)
 			{
 				idxVal = maxIdx;
@@ -809,10 +810,10 @@ static void generateRiverbed()
 			{
 				idxVal = 1;
 			}
-			if (isWaterVertex(x, y))
+			if (isWaterVertex(mapState, x, y))
 			{
 				l = (WATER_MAX_DEPTH + 1 - WATER_MIN_DEPTH) * (maxIdx - idxVal - mt.u32() % (maxIdx / 6 + 1));
-				mapTile(gameWorld.map, x, y)->height -= WATER_MIN_DEPTH - (l / maxIdx);
+				mapTile(mapState, x, y)->height -= WATER_MIN_DEPTH - (l / maxIdx);
 			}
 		}
 	}
@@ -1113,7 +1114,7 @@ bool mapLoadFromWzMapData(std::shared_ptr<WzMap::MapData> loadedMap)
 	size_t gwIdx = 0;
 	for (const auto gateway : loadedMap->mGateways)
 	{
-		if (!gwNewGateway(gateway.x1, gateway.y1, gateway.x2, gateway.y2))
+		if (!gwNewGateway(gameWorld.map, gateway.x1, gateway.y1, gateway.x2, gateway.y2))
 		{
 			debug(LOG_ERROR, "Unable to add gateway %zu - dropping it", gwIdx);
 		}
@@ -1143,7 +1144,7 @@ static bool afterMapLoad()
 			mapTile(gameWorld.map, x, y)->waterLevel = mapTile(gameWorld.map, x, y)->height - world_coord(1) / 3;
 		}
 	}
-	generateRiverbed();
+	generateRiverbed(gameWorld.map);
 
 	/* set up the scroll mins and maxs - set values to valid ones for any new map */
 	gameWorld.map.scroll.minX = gameWorld.map.scroll.minY = 0;
@@ -1192,7 +1193,7 @@ static bool afterMapLoad()
 	}
 
 	/* Set continents. This should ideally be done in advance by the map editor. */
-	mapFloodFillContinents();
+	mapFloodFillContinents(gameWorld.map);
 
 	return true;
 }
@@ -1224,8 +1225,8 @@ bool mapSaveToWzMapData(WzMap::MapData& output)
 
 	// Write out the gateway data
 	output.mGateways.clear();
-	output.mGateways.reserve(gwNumGateways());
-	for (auto psCurrGate : gwGetGateways())
+	output.mGateways.reserve(gwNumGateways(gameWorld.map));
+	for (auto psCurrGate : gwGetGateways(gameWorld.map))
 	{
 		WzMap::MapData::Gateway gw = {};
 		gw.x1 = psCurrGate->x1;
@@ -1731,7 +1732,7 @@ bool mapObjIsAboveGround(const SIMPLE_OBJECT *psObj)
 
 /* returns the max and min height of a tile by looking at the four corners
    in tile coords */
-void getTileMaxMin(int x, int y, int *pMax, int *pMin)
+void getTileMaxMin(const WorldMapState& mapState, int x, int y, int *pMax, int *pMin)
 {
 	*pMin = INT32_MAX;
 	*pMax = INT32_MIN;
@@ -1739,7 +1740,7 @@ void getTileMaxMin(int x, int y, int *pMax, int *pMin)
 	for (int j = 0; j < 2; ++j)
 		for (int i = 0; i < 2; ++i)
 		{
-			int height = map_TileHeight(gameWorld.map, x + i, y + j);
+			int height = map_TileHeight(mapState, x + i, y + j);
 			*pMin = std::min(*pMin, height);
 			*pMax = std::max(*pMax, height);
 		}
@@ -1895,11 +1896,11 @@ static const Vector2i aDirOffset[] =
 
 // Flood fill a "continent".
 // TODO take into account scroll limits and update continents on scroll limit changes
-static void mapFloodFill(int x, int y, int continent, uint8_t blockedBits, uint16_t MAPTILE::*varContinent)
+static void mapFloodFill(WorldMapState& mapState, int x, int y, int continent, uint8_t blockedBits, uint16_t MAPTILE::*varContinent)
 {
 	std::vector<Vector2i> open;
 	open.push_back(Vector2i(x, y));
-	mapTile(gameWorld.map, x, y)->*varContinent = continent;  // Set continent value
+	mapTile(mapState, x, y)->*varContinent = continent;  // Set continent value
 
 	while (!open.empty())
 	{
@@ -1913,13 +1914,13 @@ static void mapFloodFill(int x, int y, int continent, uint8_t blockedBits, uint1
 			// rely on the fact that all border tiles are inaccessible to avoid checking explicitly
 			Vector2i npos = pos + aDirOffset[i];
 
-			if (npos.x < 1 || npos.y < 1 || npos.x > gameWorld.map.width - 2 || npos.y > gameWorld.map.height - 2)
+			if (npos.x < 1 || npos.y < 1 || npos.x > mapState.width - 2 || npos.y > mapState.height - 2)
 			{
 				continue;
 			}
-			MAPTILE *psTile = mapTile(gameWorld.map, npos);
+			MAPTILE *psTile = mapTile(mapState, npos);
 
-			if (!(blockTile(gameWorld.map, npos.x, npos.y, AUX_MAP) & blockedBits) && psTile->*varContinent == 0)
+			if (!(blockTile(mapState, npos.x, npos.y, AUX_MAP) & blockedBits) && psTile->*varContinent == 0)
 			{
 				open.push_back(npos);               // add to open list
 				psTile->*varContinent = continent;  // Set continent value
@@ -1928,16 +1929,16 @@ static void mapFloodFill(int x, int y, int continent, uint8_t blockedBits, uint1
 	}
 }
 
-void mapFloodFillContinents()
+void mapFloodFillContinents(WorldMapState& mapState)
 {
 	int x, y, limitedContinents = 0, hoverContinents = 0;
 
 	/* Clear continents */
-	for (y = 0; y < gameWorld.map.height; y++)
+	for (y = 0; y < mapState.height; y++)
 	{
-		for (x = 0; x < gameWorld.map.width; x++)
+		for (x = 0; x < mapState.width; x++)
 		{
-			MAPTILE *psTile = mapTile(gameWorld.map, x, y);
+			MAPTILE *psTile = mapTile(mapState, x, y);
 
 			psTile->limitedContinent = 0;
 			psTile->hoverContinent = 0;
@@ -1945,24 +1946,24 @@ void mapFloodFillContinents()
 	}
 
 	/* Iterate over the whole map, looking for unset continents */
-	for (y = 1; y < gameWorld.map.height - 2; y++)
+	for (y = 1; y < mapState.height - 2; y++)
 	{
-		for (x = 1; x < gameWorld.map.width - 2; x++)
+		for (x = 1; x < mapState.width - 2; x++)
 		{
-			MAPTILE *psTile = mapTile(gameWorld.map, x, y);
+			MAPTILE *psTile = mapTile(mapState, x, y);
 
-			if (psTile->limitedContinent == 0 && !fpathBlockingTile(x, y, PROPULSION_TYPE_WHEELED))
+			if (psTile->limitedContinent == 0 && !fpathBlockingTile(mapState, x, y, PROPULSION_TYPE_WHEELED))
 			{
-				mapFloodFill(x, y, 1 + limitedContinents++, WATER_BLOCKED | FEATURE_BLOCKED, &MAPTILE::limitedContinent);
+				mapFloodFill(mapState, x, y, 1 + limitedContinents++, WATER_BLOCKED | FEATURE_BLOCKED, &MAPTILE::limitedContinent);
 			}
-			else if (psTile->limitedContinent == 0 && !fpathBlockingTile(x, y, PROPULSION_TYPE_PROPELLOR))
+			else if (psTile->limitedContinent == 0 && !fpathBlockingTile(mapState, x, y, PROPULSION_TYPE_PROPELLOR))
 			{
-				mapFloodFill(x, y, 1 + limitedContinents++, LAND_BLOCKED | FEATURE_BLOCKED, &MAPTILE::limitedContinent);
+				mapFloodFill(mapState, x, y, 1 + limitedContinents++, LAND_BLOCKED | FEATURE_BLOCKED, &MAPTILE::limitedContinent);
 			}
 
-			if (psTile->hoverContinent == 0 && !fpathBlockingTile(x, y, PROPULSION_TYPE_HOVER))
+			if (psTile->hoverContinent == 0 && !fpathBlockingTile(mapState, x, y, PROPULSION_TYPE_HOVER))
 			{
-				mapFloodFill(x, y, 1 + hoverContinents++, FEATURE_BLOCKED, &MAPTILE::hoverContinent);
+				mapFloodFill(mapState, x, y, 1 + hoverContinents++, FEATURE_BLOCKED, &MAPTILE::hoverContinent);
 			}
 		}
 	}
@@ -2005,7 +2006,7 @@ bool fireOnLocation(WorldMapState& mapState, unsigned int x, unsigned int y)
 }
 
 // This function runs in a separate thread!
-static int dangerFloodFill(int player)
+static int dangerFloodFill(WorldMapState& mapState, int player)
 {
 	int i;
 	Vector2i pos = getPlayerStartPosition(player);
@@ -2015,12 +2016,12 @@ static int dangerFloodFill(int player)
 	bool start = true;	// hack to disregard the blocking status of any building exactly on the starting position
 
 	// Set our danger bits
-	for (y = 0; y < gameWorld.map.height; y++)
+	for (y = 0; y < mapState.height; y++)
 	{
-		for (x = 0; x < gameWorld.map.width; x++)
+		for (x = 0; x < mapState.width; x++)
 		{
-			auxSet(gameWorld.map, x, y, MAX_PLAYERS + AUX_DANGERMAP, AUXBITS_DANGER);
-			auxClear(gameWorld.map, x, y, MAX_PLAYERS + AUX_DANGERMAP, AUXBITS_TEMPORARY);
+			auxSet(mapState, x, y, MAX_PLAYERS + AUX_DANGERMAP, AUXBITS_DANGER);
+			auxClear(mapState, x, y, MAX_PLAYERS + AUX_DANGERMAP, AUXBITS_TEMPORARY);
 		}
 	}
 
@@ -2035,12 +2036,12 @@ static int dangerFloodFill(int player)
 		{
 			npos.x = pos.x + aDirOffset[i].x;
 			npos.y = pos.y + aDirOffset[i].y;
-			if (!tileOnMap(gameWorld.map, npos.x, npos.y))
+			if (!tileOnMap(mapState, npos.x, npos.y))
 			{
 				continue;
 			}
-			aux = auxTile(gameWorld.map, npos.x, npos.y, MAX_PLAYERS + AUX_DANGERMAP);
-			block = blockTile(gameWorld.map, pos.x, pos.y, AUX_DANGERMAP);
+			aux = auxTile(mapState, npos.x, npos.y, MAX_PLAYERS + AUX_DANGERMAP);
+			block = blockTile(mapState, pos.x, pos.y, AUX_DANGERMAP);
 			if (!(aux & AUXBITS_TEMPORARY) && !(aux & AUXBITS_THREAT) && (aux & AUXBITS_DANGER))
 			{
 				// Note that we do not consider water to be a blocker here. This may or may not be a feature...
@@ -2056,14 +2057,14 @@ static int dangerFloodFill(int player)
 				}
 				else
 				{
-					auxClear(gameWorld.map, npos.x, npos.y, MAX_PLAYERS + AUX_DANGERMAP, AUXBITS_DANGER);
+					auxClear(mapState, npos.x, npos.y, MAX_PLAYERS + AUX_DANGERMAP, AUXBITS_DANGER);
 				}
-				auxSet(gameWorld.map, npos.x, npos.y, MAX_PLAYERS + AUX_DANGERMAP, AUXBITS_TEMPORARY); // make sure we do not process it more than once
+				auxSet(mapState, npos.x, npos.y, MAX_PLAYERS + AUX_DANGERMAP, AUXBITS_TEMPORARY); // make sure we do not process it more than once
 			}
 		}
 
 		// Clear danger
-		auxClear(gameWorld.map, pos.x, pos.y, MAX_PLAYERS + AUX_DANGERMAP, AUXBITS_DANGER);
+		auxClear(mapState, pos.x, pos.y, MAX_PLAYERS + AUX_DANGERMAP, AUXBITS_DANGER);
 
 		// Pop the last open node off the bucket list for the next iteration
 		if (bucketcounter)
@@ -2082,7 +2083,7 @@ static int dangerThreadFunc(WZ_DECL_UNUSED void *data)
 {
 	while (lastDangerPlayer != -1)
 	{
-		dangerFloodFill(lastDangerPlayer);	// Do the actual work
+		dangerFloodFill(gameWorld.map, lastDangerPlayer);	// Do the actual work
 		wzSemaphorePost(dangerDoneSemaphore);   // Signal that we are done
 		wzSemaphoreWait(dangerSemaphore);	// Go to sleep until needed.
 	}
@@ -2107,16 +2108,16 @@ static inline void threatUpdateTarget(int player, BASE_OBJECT *psObj, bool groun
 	}
 }
 
-static void threatUpdate(int player)
+static void threatUpdate(GameWorld& world, int player)
 {
 	int i, weapon, x, y;
 
 	// Step 1: Clear our threat bits
-	for (y = 0; y < gameWorld.map.height; y++)
+	for (y = 0; y < world.map.height; y++)
 	{
-		for (x = 0; x < gameWorld.map.width; x++)
+		for (x = 0; x < world.map.width; x++)
 		{
-			auxClear(gameWorld.map, x, y, MAX_PLAYERS + AUX_DANGERMAP, AUXBITS_THREAT | AUXBITS_AATHREAT);
+			auxClear(world.map, x, y, MAX_PLAYERS + AUX_DANGERMAP, AUXBITS_THREAT | AUXBITS_AATHREAT);
 		}
 	}
 
@@ -2129,7 +2130,7 @@ static void threatUpdate(int player)
 			continue;
 		}
 
-		for (DROID* psDroid : gameWorld.objects.droids[i])
+		for (DROID* psDroid : world.objects.droids[i])
 		{
 			UBYTE mode = 0;
 
@@ -2152,7 +2153,7 @@ static void threatUpdate(int player)
 			}
 		}
 
-		for (STRUCTURE* psStruct : gameWorld.objects.structures[i])
+		for (STRUCTURE* psStruct : world.objects.structures[i])
 		{
 			UBYTE mode = 0;
 
@@ -2172,12 +2173,12 @@ static void threatUpdate(int player)
 	}
 }
 
-void mapInit()
+void mapInit(GameWorld& world)
 {
 	int player;
 
 	free(floodbucket);
-	floodbucket = (struct floodtile *)malloc(gameWorld.map.width * gameWorld.map.height * sizeof(*floodbucket));
+	floodbucket = (struct floodtile *)malloc(world.map.width * world.map.height * sizeof(*floodbucket));
 
 	lastDangerUpdate = 0;
 	lastDangerPlayer = -1;
@@ -2188,10 +2189,10 @@ void mapInit()
 	{
 		for (player = 0; player < MAX_PLAYERS; player++)
 		{
-			auxMapStore(gameWorld.map, player, AUX_DANGERMAP);
-			threatUpdate(player);
-			dangerFloodFill(player);
-			auxMapRestore(gameWorld.map, player, AUX_DANGERMAP, AUXBITS_DANGER | AUXBITS_THREAT | AUXBITS_AATHREAT);
+			auxMapStore(world.map, player, AUX_DANGERMAP);
+			threatUpdate(world, player);
+			dangerFloodFill(world.map, player);
+			auxMapRestore(world.map, player, AUX_DANGERMAP, AUXBITS_DANGER | AUXBITS_THREAT | AUXBITS_AATHREAT);
 		}
 		lastDangerPlayer = 0;
 		dangerSemaphore = wzSemaphoreCreate(0);
@@ -2201,15 +2202,15 @@ void mapInit()
 	}
 }
 
-void mapUpdate()
+void mapUpdate(GameWorld& world)
 {
 	const uint16_t currentTime = gameTime / GAME_TICKS_PER_UPDATE;
 	int posX, posY;
 
-	for (posY = 0; posY < gameWorld.map.height; ++posY)
-		for (posX = 0; posX < gameWorld.map.width; ++posX)
+	for (posY = 0; posY < world.map.height; ++posY)
+		for (posX = 0; posX < world.map.width; ++posX)
 		{
-			MAPTILE *const tile = mapTile(gameWorld.map, posX, posY);
+			MAPTILE *const tile = mapTile(world.map, posX, posY);
 
 			if ((tile->tileInfoBits & BITS_ON_FIRE) != 0 && tile->fireEndTime == currentTime)
 			{
@@ -2228,10 +2229,10 @@ void mapUpdate()
 		// Lock if previous job not done yet
 		wzSemaphoreWait(dangerDoneSemaphore);
 
-		auxMapRestore(gameWorld.map, lastDangerPlayer, AUX_DANGERMAP, AUXBITS_THREAT | AUXBITS_AATHREAT | AUXBITS_DANGER);
+		auxMapRestore(world.map, lastDangerPlayer, AUX_DANGERMAP, AUXBITS_THREAT | AUXBITS_AATHREAT | AUXBITS_DANGER);
 		lastDangerPlayer = (lastDangerPlayer + 1) % game.maxPlayers;
-		auxMapStore(gameWorld.map, lastDangerPlayer, AUX_DANGERMAP);
-		threatUpdate(lastDangerPlayer);
+		auxMapStore(world.map, lastDangerPlayer, AUX_DANGERMAP);
+		threatUpdate(world, lastDangerPlayer);
 		wzSemaphorePost(dangerSemaphore);
 	}
 }
