@@ -85,6 +85,7 @@ enum OBJECT_FLAG
 };
 
 struct WEAPON_STATS;
+struct GameWorld;
 
 struct BASE_OBJECT : public SIMPLE_OBJECT
 {
@@ -118,6 +119,8 @@ struct BASE_OBJECT : public SIMPLE_OBJECT
 	std::bitset<OBJECT_FLAG_COUNT> flags;
 
 	bool                hasExtraFunction = false;   ///< Does this object include some extra functionality?
+
+	GameWorld* owningWorld = nullptr;
 
 public:
 	// Query visibility for display purposes (i.e. for `selectedPlayer`)
