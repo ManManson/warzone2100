@@ -2715,6 +2715,15 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		initFactoryNumFlag();
 	}
 
+	// FIXME: temporary hack until we have a proper solution for managing active/non-active worlds
+	// without moving/swapping them.
+	// Home objects live only in mission.gameWorld after saveMissionData; fix stale owningWorld.
+	// Skip when loading a user save: the next block clears mission lists from file.
+	if (!keepObjects && !UserSaveGame)
+	{
+		fixupAllOwningWorldLists(mission.gameWorld);
+	}
+
 	if (UserSaveGame)//always !keepObjects
 	{
 		//initialise the lists
@@ -2933,7 +2942,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 				{
 					if (selectedPlayer < MAX_PLAYERS && aiCheckAlliances(psStr->player, selectedPlayer))
 					{
-						visTilesUpdate((BASE_OBJECT *)psStr);
+						visTilesUpdate((BASE_OBJECT *)psStr, gameWorld.map);
 					}
 				}
 
@@ -2942,7 +2951,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 				{
 					if (selectedPlayer < MAX_PLAYERS && aiCheckAlliances(psDroid->player, selectedPlayer))
 					{
-						visTilesUpdate((BASE_OBJECT *)psDroid);
+						visTilesUpdate((BASE_OBJECT *)psDroid, gameWorld.map);
 					}
 				}
 			}
@@ -3104,7 +3113,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 				    && (!psCurr->isTransporter())
 				    && psCurr->pos.x != INVALID_XY)
 				{
-					updateDroidOrientation(psCurr);
+					updateDroidOrientation(psCurr, gameWorld.map);
 				}
 			}
 		}
@@ -3244,7 +3253,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 				    && !psCurr->isTransporter()
 				    && psCurr->pos.x != INVALID_XY)
 				{
-					updateDroidOrientation(psCurr);
+					updateDroidOrientation(psCurr, gameWorld.map);
 				}
 			}
 		}
@@ -5301,7 +5310,7 @@ static bool loadWzMapDroidInit(WzMap::Map &wzMap, std::unordered_map<UDWORD, UDW
 				debug(LOG_ERROR, "Found duplicate hard-coded object ID in map data: %" PRIu32 "", droid.id.value());
 			}
 		}
-		psDroid = reallyBuildDroid(gameWorld.map, psTemplate, Position(droid.position.x, droid.position.y, 0), player, false, {droid.direction, 0, 0}, newID);
+		psDroid = reallyBuildDroid(gameWorld, psTemplate, Position(droid.position.x, droid.position.y, 0), player, false, {droid.direction, 0, 0}, newID);
 		turnOffMultiMsg(false);
 		if (psDroid == nullptr)
 		{
@@ -5317,7 +5326,7 @@ static bool loadWzMapDroidInit(WzMap::Map &wzMap, std::unordered_map<UDWORD, UDW
 			scriptSetStartPos(psDroid->player, psDroid->pos.x, psDroid->pos.y);	// set map start position, FIXME - save properly elsewhere!
 		}
 
-		addDroid(psDroid, gameWorld.objects.droids);
+		addDroid(psDroid, gameWorld);
 	}
 	if (NumberOfSkippedDroids)
 	{
@@ -5734,11 +5743,11 @@ static bool loadSaveDroid(const char *pFileName, PerPlayerDroidLists& ppsCurrent
 		turnOffMultiMsg(true);
 		if (id > 0)
 		{
-			psDroid = reallyBuildDroid(gameWorld.map, psTemplate, pos, player, onMission, rot, id);
+			psDroid = reallyBuildDroid(gameWorld, psTemplate, pos, player, onMission, rot, id);
 		} else
 		{
 			// will generate a new id
-			psDroid = reallyBuildDroid(gameWorld.map, psTemplate, pos, player, onMission, rot);
+			psDroid = reallyBuildDroid(gameWorld, psTemplate, pos, player, onMission, rot);
 		}
 		ASSERT_OR_RETURN(false, psDroid != nullptr, "Failed to build unit %s", sortedList[i].second.toUtf8().c_str());
 		turnOffMultiMsg(false);
@@ -5817,7 +5826,7 @@ static bool loadSaveDroid(const char *pFileName, PerPlayerDroidLists& ppsCurrent
 				psDroid->selected = false;  // Droid should be visible in the transporter interface.
 				if (!psDroid->isTransporter())
 				{
-					visRemoveVisibility(psDroid); // should not have visibility data when in a transporter
+					visRemoveVisibility(psDroid, gameWorld.map); // should not have visibility data when in a transporter
 				}
 			}
 		}
@@ -5944,7 +5953,8 @@ static bool loadSaveDroid(const char *pFileName, PerPlayerDroidLists& ppsCurrent
 
 		if (psDroid->psGroup == nullptr || psDroid->psGroup->type != GT_TRANSPORTER || psDroid->isTransporter())  // do not add to list if on a transport, then the group list is used instead
 		{
-			addDroid(psDroid, ppsCurrentDroidLists);
+			GameWorld& world = &ppsCurrentDroidLists == &gameWorld.objects.droids ? gameWorld : mission.gameWorld;
+			addDroid(psDroid, world);
 		}
 
 		ini.endGroup();
@@ -7064,7 +7074,7 @@ bool loadSaveFeature(char *pFileData, UDWORD filesize)
 			continue;
 		}
 		//create the Feature
-		pFeature = buildFeature(gameWorld.map, psStats, psSaveFeature->x, psSaveFeature->y, true, psSaveFeature->id);
+		pFeature = buildFeature(gameWorld, psStats, psSaveFeature->x, psSaveFeature->y, true, psSaveFeature->id);
 		if (!pFeature)
 		{
 			debug(LOG_ERROR, "Unable to create feature %s", psSaveFeature->name);
@@ -7121,7 +7131,7 @@ static bool loadWzMapFeature(WzMap::Map &wzMap, std::unordered_map<UDWORD, UDWOR
 				debug(LOG_ERROR, "Found duplicate hard-coded object ID in map data: %" PRIu32 "", feature.id.value());
 			}
 		}
-		pFeature = buildFeature(gameWorld.map, &*psStats, feature.position.x, feature.position.y, true, newID);
+		pFeature = buildFeature(gameWorld, &*psStats, feature.position.x, feature.position.y, true, newID);
 		if (!pFeature)
 		{
 			debug(LOG_ERROR, "Unable to create feature %s", feature.name.c_str());
@@ -7181,11 +7191,11 @@ bool loadSaveFeature2(const char *pFileName)
 		int id = ini.value("id", -1).toInt();
 		if (id > 0)
 		{
-			pFeature = buildFeature(gameWorld.map, psStats, pos.x, pos.y, true, id);
+			pFeature = buildFeature(gameWorld, psStats, pos.x, pos.y, true, id);
 		}
 		else
 		{
-			pFeature = buildFeature(gameWorld.map, psStats, pos.x, pos.y, true);
+			pFeature = buildFeature(gameWorld, psStats, pos.x, pos.y, true);
 		}
 		if (!pFeature)
 		{

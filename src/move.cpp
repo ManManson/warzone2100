@@ -36,6 +36,7 @@
 #include "move.h"
 
 #include "objects.h"
+#include "world_map_state.h"
 #include "visibility.h"
 #include "map.h"
 #include "fpath.h"
@@ -419,18 +420,19 @@ static void moveShuffleDroid(DROID *psDroid, Vector2i s)
 	rvy = -svx;
 
 	const auto droidPropType = psDroid->getPropulsionStats()->propulsionType;
+	const WorldMapState& mapState = psDroid->owningWorld->map;
 	// check for blocking tiles
-	if (fpathBlockingTile(gameWorld.map, map_coord((SDWORD)psDroid->pos.x + lvx),
+	if (fpathBlockingTile(mapState, map_coord((SDWORD)psDroid->pos.x + lvx),
 	                      map_coord((SDWORD)psDroid->pos.y + lvy), droidPropType))
 	{
 		leftClear = false;
 	}
-	else if (fpathBlockingTile(gameWorld.map, map_coord((SDWORD)psDroid->pos.x + rvx),
+	else if (fpathBlockingTile(mapState, map_coord((SDWORD)psDroid->pos.x + rvx),
 	                           map_coord((SDWORD)psDroid->pos.y + rvy), droidPropType))
 	{
 		rightClear = false;
 	}
-	else if (fpathBlockingTile(gameWorld.map, map_coord((SDWORD)psDroid->pos.x + svx),
+	else if (fpathBlockingTile(mapState, map_coord((SDWORD)psDroid->pos.x + svx),
 	                           map_coord((SDWORD)psDroid->pos.y + svy), droidPropType))
 	{
 		frontClear = false;
@@ -544,7 +546,7 @@ void moveReallyStopDroid(DROID *psDroid)
 #define PITCH_LIMIT 150
 
 /* Get pitch and roll from direction and tile data */
-void updateDroidOrientation(DROID *psDroid)
+void updateDroidOrientation(DROID *psDroid, const WorldMapState& mapState)
 {
 	int32_t hx0, hx1, hy0, hy1;
 	int newPitch, deltaPitch, pitchLimit;
@@ -563,10 +565,10 @@ void updateDroidOrientation(DROID *psDroid)
 	//    hy0
 	// hx0 * hx1      (* = droid)
 	//    hy1
-	hx1 = map_Height(gameWorld.map, psDroid->pos.x + d, psDroid->pos.y);
-	hx0 = map_Height(gameWorld.map, MAX(0, psDroid->pos.x - d), psDroid->pos.y);
-	hy1 = map_Height(gameWorld.map, psDroid->pos.x, psDroid->pos.y + d);
-	hy0 = map_Height(gameWorld.map, psDroid->pos.x, MAX(0, psDroid->pos.y - d));
+	hx1 = map_Height(mapState, psDroid->pos.x + d, psDroid->pos.y);
+	hx0 = map_Height(mapState, MAX(0, psDroid->pos.x - d), psDroid->pos.y);
+	hy1 = map_Height(mapState, psDroid->pos.x, psDroid->pos.y + d);
+	hy0 = map_Height(mapState, psDroid->pos.x, MAX(0, psDroid->pos.y - d));
 
 	//update height in case were in the bottom of a trough
 	psDroid->pos.z = MAX(psDroid->pos.z, (hx0 + hx1) / 2);
@@ -615,6 +617,10 @@ static bool moveBlockingTileCallback(WorldMapState& mapState, Vector2i pos, int3
 // Returns -1 - distance if the direct path to the waypoint is blocked, otherwise returns the distance to the waypoint.
 static int32_t moveDirectPathToWaypoint(DROID *psDroid, unsigned positionIndex)
 {
+	GameWorld* world = psDroid->owningWorld;
+	ASSERT_OR_RETURN(-1, world != nullptr, "Invalid owning world");
+	WorldMapState& mapState = world->map;
+
 	Vector2i src(psDroid->pos.xy());
 	Vector2i dst = psDroid->sMove.asPath[positionIndex];
 	Vector2i delta = dst - src;
@@ -624,7 +630,7 @@ static int32_t moveDirectPathToWaypoint(DROID *psDroid, unsigned positionIndex)
 	data.blocking = false;
 	data.src = src;
 	data.dst = dst;
-	rayCast(gameWorld.map, src, dst, &moveBlockingTileCallback, &data);
+	rayCast(mapState, src, dst, &moveBlockingTileCallback, &data);
 	return data.blocking ? -1 - dist : dist;
 }
 
@@ -904,12 +910,16 @@ static void moveCalcSlideVector(DROID *psDroid, int32_t objX, int32_t objY, int3
 
 static void moveOpenGates(DROID *psDroid, Vector2i tile)
 {
+	GameWorld* world = psDroid->owningWorld;
+	ASSERT_OR_RETURN(, world != nullptr, "Invalid owning world");
+	WorldMapState& mapState = world->map;
+
 	// is the new tile a gate?
-	if (!worldOnMap(gameWorld.map, tile.x, tile.y))
+	if (!worldOnMap(mapState, tile.x, tile.y))
 	{
 		return;
 	}
-	MAPTILE *psTile = mapTile(gameWorld.map, tile);
+	MAPTILE *psTile = mapTile(mapState, tile);
 	if (!psDroid->isFlying() && !psDroid->isFlightBasedTransporter() && psTile && psTile->psObject && psTile->psObject->type == OBJ_STRUCTURE && aiCheckAlliances(psTile->psObject->player, psDroid->player))
 	{
 		requestOpenGate((STRUCTURE *)psTile->psObject);  // If it's a friendly gate, open it. (It would be impolite to open an enemy gate.)
@@ -946,8 +956,10 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 	// is the new tile a gate?
 	moveOpenGates(psDroid, Vector2i(ntx, nty));
 
+	const WorldMapState& mapState = psDroid->owningWorld->map;
+
 	// is the new tile blocking?
-	if (!fpathBlockingTile(gameWorld.map, ntx, nty, propulsion))
+	if (!fpathBlockingTile(mapState, ntx, nty, propulsion))
 	{
 		// not blocking, don't change the move vector
 		return;
@@ -982,7 +994,7 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 		vertX = ntx;
 		vertY = my < 0 ? nty + 1 : nty - 1;
 
-		if (fpathBlockingTile(gameWorld.map, horizX, horizY, propulsion) && fpathBlockingTile(gameWorld.map, vertX, vertY, propulsion))
+		if (fpathBlockingTile(mapState, horizX, horizY, propulsion) && fpathBlockingTile(mapState, vertX, vertY, propulsion))
 		{
 			// in a corner - choose an arbitrary slide
 			if (gameRand(2) == 0)
@@ -996,11 +1008,11 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 				*pmy = 0;
 			}
 		}
-		else if (fpathBlockingTile(gameWorld.map, horizX, horizY, propulsion))
+		else if (fpathBlockingTile(mapState, horizX, horizY, propulsion))
 		{
 			*pmy = 0;
 		}
-		else if (fpathBlockingTile(gameWorld.map, vertX, vertY, propulsion))
+		else if (fpathBlockingTile(mapState, vertX, vertY, propulsion))
 		{
 			*pmx = 0;
 		}
@@ -1015,7 +1027,7 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 		if ((psDroid->pos.y & TILE_MASK) > TILE_UNITS / 2)
 		{
 			// top half
-			if (fpathBlockingTile(gameWorld.map, ntx, nty + 1, propulsion))
+			if (fpathBlockingTile(mapState, ntx, nty + 1, propulsion))
 			{
 				*pmx = 0;
 			}
@@ -1027,7 +1039,7 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 		else
 		{
 			// bottom half
-			if (fpathBlockingTile(gameWorld.map, ntx, nty - 1, propulsion))
+			if (fpathBlockingTile(mapState, ntx, nty - 1, propulsion))
 			{
 				*pmx = 0;
 			}
@@ -1043,7 +1055,7 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 		if ((psDroid->pos.x & TILE_MASK) > TILE_UNITS / 2)
 		{
 			// top half
-			if (fpathBlockingTile(gameWorld.map, ntx + 1, nty, propulsion))
+			if (fpathBlockingTile(mapState, ntx + 1, nty, propulsion))
 			{
 				*pmy = 0;
 			}
@@ -1055,7 +1067,7 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 		else
 		{
 			// bottom half
-			if (fpathBlockingTile(gameWorld.map, ntx - 1, nty, propulsion))
+			if (fpathBlockingTile(mapState, ntx - 1, nty, propulsion))
 			{
 				*pmy = 0;
 			}
@@ -1079,12 +1091,12 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 			if (inty < TILE_UNITS / 2)
 			{
 				// top left
-				if ((mx < 0) && fpathBlockingTile(gameWorld.map, tx - 1, ty, propulsion))
+				if ((mx < 0) && fpathBlockingTile(mapState, tx - 1, ty, propulsion))
 				{
 					bJumped = true;
 					jumpy = (jumpy & ~TILE_MASK) - 1;
 				}
-				if ((my < 0) && fpathBlockingTile(gameWorld.map, tx, ty - 1, propulsion))
+				if ((my < 0) && fpathBlockingTile(mapState, tx, ty - 1, propulsion))
 				{
 					bJumped = true;
 					jumpx = (jumpx & ~TILE_MASK) - 1;
@@ -1093,12 +1105,12 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 			else
 			{
 				// bottom left
-				if ((mx < 0) && fpathBlockingTile(gameWorld.map, tx - 1, ty, propulsion))
+				if ((mx < 0) && fpathBlockingTile(mapState, tx - 1, ty, propulsion))
 				{
 					bJumped = true;
 					jumpy = (jumpy & ~TILE_MASK) + TILE_UNITS;
 				}
-				if ((my >= 0) && fpathBlockingTile(gameWorld.map, tx, ty + 1, propulsion))
+				if ((my >= 0) && fpathBlockingTile(mapState, tx, ty + 1, propulsion))
 				{
 					bJumped = true;
 					jumpx = (jumpx & ~TILE_MASK) - 1;
@@ -1110,12 +1122,12 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 			if (inty < TILE_UNITS / 2)
 			{
 				// top right
-				if ((mx >= 0) && fpathBlockingTile(gameWorld.map, tx + 1, ty, propulsion))
+				if ((mx >= 0) && fpathBlockingTile(mapState, tx + 1, ty, propulsion))
 				{
 					bJumped = true;
 					jumpy = (jumpy & ~TILE_MASK) - 1;
 				}
-				if ((my < 0) && fpathBlockingTile(gameWorld.map, tx, ty - 1, propulsion))
+				if ((my < 0) && fpathBlockingTile(mapState, tx, ty - 1, propulsion))
 				{
 					bJumped = true;
 					jumpx = (jumpx & ~TILE_MASK) + TILE_UNITS;
@@ -1124,12 +1136,12 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 			else
 			{
 				// bottom right
-				if ((mx >= 0) && fpathBlockingTile(gameWorld.map, tx + 1, ty, propulsion))
+				if ((mx >= 0) && fpathBlockingTile(mapState, tx + 1, ty, propulsion))
 				{
 					bJumped = true;
 					jumpy = (jumpy & ~TILE_MASK) + TILE_UNITS;
 				}
-				if ((my >= 0) && fpathBlockingTile(gameWorld.map, tx, ty + 1, propulsion))
+				if ((my >= 0) && fpathBlockingTile(mapState, tx, ty + 1, propulsion))
 				{
 					bJumped = true;
 					jumpx = (jumpx & ~TILE_MASK) + TILE_UNITS;
@@ -1399,9 +1411,10 @@ SDWORD moveCalcDroidSpeed(DROID *psDroid)
 	}
 	else
 	{
+		WorldMapState& mapState = psDroid->owningWorld->map;
 		mapX = map_coord(psDroid->pos.x);
 		mapY = map_coord(psDroid->pos.y);
-		speed = calcDroidSpeed(psDroid->baseSpeed, terrainType(mapTile(gameWorld.map, mapX, mapY)), psDroid->asBits[COMP_PROPULSION], getDroidEffectiveLevel(psDroid, false));
+		speed = calcDroidSpeed(psDroid->baseSpeed, terrainType(mapTile(mapState, mapX, mapY)), psDroid->asBits[COMP_PROPULSION], getDroidEffectiveLevel(psDroid, false));
 	}
 
 
@@ -1616,8 +1629,9 @@ static void moveUpdateDroidPos(DROID *psDroid, int32_t dx, int32_t dy)
 	psDroid->pos.x += gameTimeAdjustedAverage(dx, EXTRA_PRECISION);
 	psDroid->pos.y += gameTimeAdjustedAverage(dy, EXTRA_PRECISION);
 
+	const WorldMapState& mapState = psDroid->owningWorld->map;
 	/* impact if about to go off map else update coordinates */
-	if (worldOnMap(gameWorld.map, psDroid->pos.x, psDroid->pos.y) == false)
+	if (worldOnMap(mapState, psDroid->pos.x, psDroid->pos.y) == false)
 	{
 		/* transporter going off-world will trigger next map, and is ok */
 		ASSERT(psDroid->isTransporter(), "droid trying to move off the map!");
@@ -1690,9 +1704,10 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 
 	moveUpdateDroidPos(psDroid, bx, by);
 
+	const WorldMapState& mapState = psDroid->owningWorld->map;
 	//set the droid height here so other routines can use it
-	psDroid->pos.z = map_Height(gameWorld.map, psDroid->pos.x, psDroid->pos.y);//jps 21july96
-	updateDroidOrientation(psDroid);
+	psDroid->pos.z = map_Height(mapState, psDroid->pos.x, psDroid->pos.y);//jps 21july96
+	updateDroidOrientation(psDroid, mapState);
 }
 
 /* Update a persons position and speed given target values */
@@ -1743,8 +1758,9 @@ static void moveUpdatePersonModel(DROID *psDroid, SDWORD speed, uint16_t directi
 	moveCalcBlockingSlide(psDroid, &dx, &dy, direction, &slideDir);
 	moveUpdateDroidPos(psDroid, dx, dy);
 
+	const WorldMapState& mapState = psDroid->owningWorld->map;
 	//set the droid height here so other routines can use it
-	psDroid->pos.z = map_Height(gameWorld.map, psDroid->pos.x, psDroid->pos.y);//jps 21july96
+	psDroid->pos.z = map_Height(mapState, psDroid->pos.x, psDroid->pos.y);//jps 21july96
 
 	/* update anim if moving */
 	if (psDroid->droidType == DROID_PERSON && speed != 0 && (psDroid->animationEvent != ANIM_EVENT_ACTIVE && psDroid->animationEvent != ANIM_EVENT_DYING))
@@ -1858,10 +1874,11 @@ static void moveUpdateVtolModel(DROID *psDroid, SDWORD speed, uint16_t direction
 	targetRoll = clip(4 * angleDelta(psDroid->sMove.moveDir - psDroid->rot.direction), -DEG(60), DEG(60));
 	psDroid->rot.roll = psDroid->rot.roll + (uint16_t)gameTimeAdjustedIncrement(3 * angleDelta(targetRoll - psDroid->rot.roll));
 
+	const WorldMapState& mapState = psDroid->owningWorld->map;
 	/* do vertical movement - only if on the map */
-	if (worldOnMap(gameWorld.map, psDroid->pos.x, psDroid->pos.y))
+	if (worldOnMap(mapState, psDroid->pos.x, psDroid->pos.y))
 	{
-		iMapZ = map_Height(gameWorld.map, psDroid->pos.x, psDroid->pos.y);
+		iMapZ = map_Height(mapState, psDroid->pos.x, psDroid->pos.y);
 		psDroid->pos.z = MAX(iMapZ, psDroid->pos.z + gameTimeAdjustedIncrement(psDroid->sMove.iVertSpeed));
 		moveAdjustVtolHeight(psDroid, iMapZ);
 		psDroid->heightAboveMap = psDroid->pos.z - iMapZ;
@@ -1897,7 +1914,9 @@ static void moveUpdateCyborgModel(DROID *psDroid, SDWORD moveSpeed, uint16_t mov
 
 static void moveDescending(DROID *psDroid)
 {
-	int32_t iMapHeight = map_Height(gameWorld.map, psDroid->pos.x, psDroid->pos.y);
+	const GameWorld* world = psDroid->owningWorld;
+	ASSERT_OR_RETURN(, world != nullptr, "Invalid owning world");
+	int32_t iMapHeight = map_Height(world->map, psDroid->pos.x, psDroid->pos.y);
 
 	psDroid->sMove.speed = 0;
 
@@ -1916,7 +1935,7 @@ static void moveDescending(DROID *psDroid)
 		psDroid->sMove.Status = MOVEINACTIVE;
 
 		/* conform to terrain */
-		updateDroidOrientation(psDroid);
+		updateDroidOrientation(psDroid, world->map);
 	}
 }
 
@@ -2410,7 +2429,7 @@ void moveUpdateDroid(DROID *psDroid)
 	if (map_coord(oldx) != map_coord(psDroid->pos.x)
 	    || map_coord(oldy) != map_coord(psDroid->pos.y))
 	{
-		visTilesUpdate((BASE_OBJECT *)psDroid);
+		visTilesUpdate((BASE_OBJECT *)psDroid, psDroid->owningWorld->map);
 
 		// object moved from one tile to next, check to see if droid is near stuff.(oil)
 		checkLocalFeatures(psDroid);
@@ -2438,10 +2457,11 @@ void moveUpdateDroid(DROID *psDroid)
 //		}
 //	}
 
+	WorldMapState& mapState = psDroid->owningWorld->map;
 	/* If it's sitting in water then it's got to go with the flow! */
-	if (worldOnMap(gameWorld.map, psDroid->pos.x, psDroid->pos.y) && terrainType(mapTile(gameWorld.map, map_coord(psDroid->pos.x), map_coord(psDroid->pos.y))) == TER_WATER)
+	if (worldOnMap(mapState, psDroid->pos.x, psDroid->pos.y) && terrainType(mapTile(mapState, map_coord(psDroid->pos.x), map_coord(psDroid->pos.y))) == TER_WATER)
 	{
-		updateDroidOrientation(psDroid);
+		updateDroidOrientation(psDroid, mapState);
 	}
 
 	if (psDroid->sMove.Status == MOVETURNTOTARGET && psDroid->rot.direction == moveDir)

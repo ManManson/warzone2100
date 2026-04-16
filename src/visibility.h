@@ -34,7 +34,7 @@ struct WorldMapState;
 bool visInitialise();
 
 /* Check which tiles can be seen by an object */
-void visTilesUpdate(BASE_OBJECT *psObj);
+void visTilesUpdate(BASE_OBJECT *psObj, WorldMapState& mapState);
 
 void revealAll(WorldMapState& mapState, UBYTE player);
 
@@ -67,7 +67,7 @@ void visUpdateLevel();
 void setUnderTilesVis(BASE_OBJECT *psObj, UDWORD player);
 
 void visRemoveVisibilityOffWorld(BASE_OBJECT *psObj);
-void visRemoveVisibility(BASE_OBJECT *psObj);
+void visRemoveVisibility(BASE_OBJECT *psObj, WorldMapState& mapState);
 
 // fast test for whether obj2 is in range of obj1
 static inline bool visObjInRange(const BASE_OBJECT *psObj1, const BASE_OBJECT *psObj2, SDWORD range)
@@ -117,6 +117,6 @@ static inline int objJammerPower(const BASE_OBJECT *psObj)
 
 void removeSpotters();
 bool removeSpotter(uint32_t id);
-uint32_t addSpotter(int x, int y, int player, int radius, bool radar, uint32_t expiry = 0);
+uint32_t addSpotter(WorldMapState& mapState, int x, int y, int player, int radius, bool radar, uint32_t expiry = 0);
 
 #endif // __INCLUDED_SRC_VISIBILITY__

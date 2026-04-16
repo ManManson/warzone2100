@@ -1792,11 +1792,11 @@ INT_RETVAL intRunWidgets()
 					else if (psPositionStats->hasType(STAT_TEMPLATE))
 					{
 						std::string msg;
-						DROID *psDroid = buildDroid(gameWorld.map, (DROID_TEMPLATE *)psPositionStats, pos.x, pos.y, selectedPlayer, false, nullptr);
+						DROID *psDroid = buildDroid(gameWorld, (DROID_TEMPLATE *)psPositionStats, pos.x, pos.y, selectedPlayer, false, nullptr);
 						cancelDeliveryRepos();
 						if (psDroid)
 						{
-							addDroid(psDroid, gameWorld.objects.droids);
+							addDroid(psDroid, gameWorld);
 
 							// Send a text message to all players, notifying them of
 							// the fact that we're cheating ourselves a new droid.

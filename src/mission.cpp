@@ -367,6 +367,9 @@ bool missionShutDown()
 			gameWorld.map.auxMap[i] = std::move(mission.gameWorld.map.auxMap[i]);
 		}
 		std::swap(mission.gameWorld.map.gateways, gwGetGateways(gameWorld.map));
+		// FIXME: temporary hack until we have a proper solution for managing active/non-active worlds
+		// without moving/swapping them.
+		fixupAllOwningWorldLists(gameWorld);
 	}
 	keybindShutdown();
 	// sorry if this breaks something - but it looks like it's what should happen - John
@@ -642,7 +645,7 @@ void missionFlyTransportersIn(SDWORD iPlayer, bool bTrackTransporter)
 				if (droidRemove(psTransporter, mission.gameWorld.objects.droids))
 				{
 					// Do not want to add it unless managed to remove it from the previous list
-					addDroid(psTransporter, gameWorld.objects.droids);
+					addDroid(psTransporter, gameWorld);
 				}
 
 				/* set start position */
@@ -900,6 +903,9 @@ void restoreMissionData()
 	mission.gameWorld.map.scroll.maxX	= 0;
 	mission.gameWorld.map.scroll.maxY	= 0;
 	mission.gameWorld.map.gateways.clear();
+	// FIXME: temporary hack until we have a proper solution for managing active/non-active worlds
+	// without moving/swapping them.
+	fixupAllOwningWorldLists(gameWorld);
 
 	//reset the current structure lists
 	setCurrentStructQuantity(gameWorld.objects, false);
@@ -931,7 +937,7 @@ void saveMissionLimboData()
 	{
 		if (droidRemove(psDroid, gameWorld.objects.droids))
 		{
-			addDroid(psDroid, mission.gameWorld.objects.droids);
+			addDroid(psDroid, mission.gameWorld);
 		}
 		return IterationResult::CONTINUE_ITERATION;
 	});
@@ -970,7 +976,7 @@ void placeLimboDroids()
 
 		if (droidRemove(psDroid, apsLimboDroids))
 		{
-			addDroid(psDroid, gameWorld.objects.droids);
+			addDroid(psDroid, gameWorld);
 			//KILL OFF TRANSPORTER - should never be one but....
 			if (psDroid->isTransporter())
 			{
@@ -989,7 +995,7 @@ void placeLimboDroids()
 			psDroid->pos.y = (UWORD)world_coord(droidY);
 			ASSERT(worldOnMap(gameWorld.map, psDroid->pos.x, psDroid->pos.y), "limbo droid is not on the map");
 			psDroid->pos.z = map_Height(gameWorld.map, psDroid->pos.x, psDroid->pos.y);
-			updateDroidOrientation(psDroid);
+			updateDroidOrientation(psDroid, gameWorld.map);
 			psDroid->selected = false;
 			//this is mainly for VTOLs
 			setDroidBase(psDroid, nullptr);
@@ -998,7 +1004,7 @@ void placeLimboDroids()
 			//make sure the died flag is not set
 			psDroid->died = false;
 			//update visibility
-			visTilesUpdate(psDroid);
+			visTilesUpdate(psDroid, gameWorld.map);
 		}
 		else
 		{
@@ -1022,13 +1028,13 @@ void restoreMissionLimboData()
 		//remove out of stored list and add to current Droid list
 		if (droidRemove(psDroid, mission.gameWorld.objects.droids))
 		{
-			addDroid(psDroid, gameWorld.objects.droids);
+			addDroid(psDroid, gameWorld);
 			//reset droid orders
 			orderDroid(psDroid, DORDER_STOP, ModeImmediate);
 			//the location of the droid should be valid!
 			if (psDroid->pos.x != INVALID_XY && psDroid->pos.y != INVALID_XY)
 			{
-				visTilesUpdate(psDroid); //update visibility
+				visTilesUpdate(psDroid, gameWorld.map); //update visibility
 			}
 		}
 		return IterationResult::CONTINUE_ITERATION;
@@ -1067,7 +1073,7 @@ void saveCampaignData()
 					psCurr->pos.x = INVALID_XY;
 					psCurr->pos.y = INVALID_XY;
 					// Add it back into current droid lists
-					addDroid(psCurr, mission.gameWorld.objects.droids);
+					addDroid(psCurr, mission.gameWorld);
 
 					return IterationResult::CONTINUE_ITERATION;
 				});
@@ -1077,7 +1083,7 @@ void saveCampaignData()
 					//cam change add droid
 					psDroid->pos.x = INVALID_XY;
 					psDroid->pos.y = INVALID_XY;
-					addDroid(psDroid, mission.gameWorld.objects.droids);
+					addDroid(psDroid, mission.gameWorld);
 				}
 			}
 			return IterationResult::CONTINUE_ITERATION;
@@ -1094,6 +1100,9 @@ void saveCampaignData()
 			psDroid->pos.x = INVALID_XY;
 			psDroid->pos.y = INVALID_XY;
 		}
+		// FIXME: temporary hack until we have a proper solution for managing active/non-active worlds
+		// without moving/swapping them.
+		fixupAllOwningWorldLists(mission.gameWorld);
 	}
 
 	//if the droids have been moved to safety then get any Transporters that exist
@@ -1304,13 +1313,13 @@ static void processMission()
 		//reset order - do this to all the droids that are returning from offWorld
 		orderDroid(psDroid, DORDER_STOP, ModeImmediate);
 		// clean up visibility
-		visRemoveVisibility((BASE_OBJECT*)psDroid);
+		visRemoveVisibility((BASE_OBJECT*)psDroid, gameWorld.map);
 		//remove out of stored list and add to current Droid list
 		if (droidRemove(psDroid, gameWorld.objects.droids))
 		{
 			int	x, y;
 
-			addDroid(psDroid, mission.gameWorld.objects.droids);
+			addDroid(psDroid, mission.gameWorld);
 			droidX = getHomeLandingX();
 			droidY = getHomeLandingY();
 			// Swap the droid and map pointers
@@ -1322,7 +1331,7 @@ static void processMission()
 			y = (UWORD)world_coord(droidY);
 			droidSetPosition(psDroid, x, y);
 			ASSERT(worldOnMap(gameWorld.map, psDroid->pos.x, psDroid->pos.y), "the droid is not on the map");
-			updateDroidOrientation(psDroid);
+			updateDroidOrientation(psDroid, gameWorld.map);
 			// Swap the droid and map pointers back again
 			swapMissionPointers();
 			psDroid->selected = false;
@@ -1365,7 +1374,7 @@ void processMissionLimbo()
 					// Limbo list invalidate XY
 					psDroid->pos.x = INVALID_XY;
 					psDroid->pos.y = INVALID_XY;
-					addDroid(psDroid, apsLimboDroids);
+					addDroidToLimboLists(psDroid, apsLimboDroids);
 					// This is mainly for VTOLs
 					setDroidBase(psDroid, nullptr);
 					orderDroid(psDroid, DORDER_STOP, ModeImmediate);
@@ -1412,6 +1421,10 @@ void swapMissionPointers()
 	std::swap(gameWorld.objects.features[0],   mission.gameWorld.objects.features[0]);
 	std::swap(gameWorld.objects.sensors[0], mission.gameWorld.objects.sensors[0]);
 	std::swap(gameWorld.objects.oils[0],    mission.gameWorld.objects.oils[0]);
+	// FIXME: temporary hack until we have a proper solution for managing active/non-active worlds
+	// without moving/swapping them.
+	fixupAllOwningWorldLists(gameWorld);
+	fixupAllOwningWorldLists(mission.gameWorld);
 }
 
 void endMission()
@@ -1632,7 +1645,7 @@ static void missionResetDroids()
 				if (d->pos.x != INVALID_XY && d->pos.y != INVALID_XY)
 				{
 					// update visibility
-					visTilesUpdate(d);
+					visTilesUpdate(d, gameWorld.map);
 				}
 			}
 			return IterationResult::CONTINUE_ITERATION;
@@ -1727,13 +1740,13 @@ static void missionResetDroids()
 				// People always stand upright
 				if (psDroid->droidType != DROID_PERSON && !psDroid->isCyborg())
 				{
-					updateDroidOrientation(psDroid);
+					updateDroidOrientation(psDroid, gameWorld.map);
 				}
 				// Reset the selected flag
 				psDroid->selected = false;
 
 				// update visibility
-				visTilesUpdate(psDroid);
+				visTilesUpdate(psDroid, gameWorld.map);
 			}
 			else
 			{
@@ -1802,10 +1815,11 @@ void unloadTransporter(DROID *psTransporter, UDWORD x, UDWORD y)
 			lastDroidY = droidY;
 
 			//add it back into current droid lists
-			addDroid(psDroid, *ppCurrentList);
+			GameWorld& world = ppCurrentList == &gameWorld.objects.droids ? gameWorld : mission.gameWorld;
+			addDroid(psDroid, world);
 
 			droidSetPosition(psDroid, world_coord(droidX), world_coord(droidY));
-			updateDroidOrientation(psDroid);
+			updateDroidOrientation(psDroid, gameWorld.map);
 
 			//reset droid orders
 			orderDroid(psDroid, DORDER_STOP, ModeImmediate);
@@ -1885,7 +1899,7 @@ void missionMoveTransporterOffWorld(DROID *psTransporter)
 
 		if (droidRemove(psTransporter, gameWorld.objects.droids))
 		{
-			addDroid(psTransporter, mission.gameWorld.objects.droids);
+			addDroid(psTransporter, mission.gameWorld);
 		}
 
 		//stop the droid moving - the moveUpdate happens AFTER the orderUpdate and can cause problems if the droid moves from one tile to another
@@ -2619,12 +2633,12 @@ DROID *buildMissionDroid(DROID_TEMPLATE *psTempl, UDWORD x, UDWORD y, UDWORD pla
 	DROID		*psNewDroid;
 
 	// XXX: gameWorld.map - should be mission.gameWorld.map really
-	psNewDroid = buildDroid(gameWorld.map, psTempl, world_coord(x), world_coord(y), player, true, nullptr);
+	psNewDroid = buildDroid(gameWorld, psTempl, world_coord(x), world_coord(y), player, true, nullptr);
 	if (!psNewDroid)
 	{
 		return nullptr;
 	}
-	addDroid(psNewDroid, mission.gameWorld.objects.droids);
+	addDroid(psNewDroid, mission.gameWorld);
 	//set its x/y to impossible values so can detect when return from mission
 	psNewDroid->pos.x = INVALID_XY;
 	psNewDroid->pos.y = INVALID_XY;
@@ -2996,6 +3010,9 @@ void missionDestroyObjects()
 
 			//clear out the mission lists as well to make sure no Transporters exist
 			gameWorld.objects.droids[Player] = std::move(mission.gameWorld.objects.droids[Player]);
+			// FIXME: temporary hack until we have a proper solution for managing active/non-active worlds
+			// without moving/swapping them.
+			fixupAllOwningWorldLists(gameWorld);
 
 			mutating_list_iterate(gameWorld.objects.droids[Player], [](DROID* psDroid)
 			{
@@ -3079,7 +3096,7 @@ void processPreviousCampDroids()
 			// KILL OFF TRANSPORTER
 			if (droidRemove(psDroid, mission.gameWorld.objects.droids))
 			{
-				addDroid(psDroid, gameWorld.objects.droids);
+				addDroid(psDroid, gameWorld);
 				vanishDroid(psDroid);
 			}
 			return IterationResult::CONTINUE_ITERATION;
@@ -3145,7 +3162,7 @@ void moveDroidsToSafety(DROID *psTransporter)
 			//cam change add droid
 			psDroid->pos.x = INVALID_XY;
 			psDroid->pos.y = INVALID_XY;
-			addDroid(psDroid, mission.gameWorld.objects.droids);
+			addDroid(psDroid, mission.gameWorld);
 
 			return IterationResult::CONTINUE_ITERATION;
 		});
@@ -3154,7 +3171,7 @@ void moveDroidsToSafety(DROID *psTransporter)
 	//move the transporter into the mission list also
 	if (droidRemove(psTransporter, gameWorld.objects.droids))
 	{
-		addDroid(psTransporter, mission.gameWorld.objects.droids);
+		addDroid(psTransporter, mission.gameWorld);
 	}
 }
 
@@ -3259,7 +3276,7 @@ void emptyTransporters(bool bOffWorld)
 						//take it out of the Transporter group
 						psTransporter->psGroup->remove(psDroid);
 						//add it back into current droid lists
-						addDroid(psDroid, gameWorld.objects.droids);
+						addDroid(psDroid, gameWorld);
 
 						return IterationResult::CONTINUE_ITERATION;
 					});
@@ -3277,7 +3294,7 @@ void emptyTransporters(bool bOffWorld)
 						//take it out of the Transporter group
 						psTransporter->psGroup->remove(psDroid);
 						//add it back into current droid lists
-						addDroid(psDroid, mission.gameWorld.objects.droids);
+						addDroid(psDroid, mission.gameWorld);
 
 						return IterationResult::CONTINUE_ITERATION;
 					});
@@ -3309,7 +3326,7 @@ void emptyTransporters(bool bOffWorld)
 				//take it out of the Transporter group
 				psTransporter->psGroup->remove(psDroid);
 				//add it back into mission droid lists
-				addDroid(psDroid, mission.gameWorld.objects.droids);
+				addDroid(psDroid, mission.gameWorld);
 
 				return IterationResult::CONTINUE_ITERATION;
 			});

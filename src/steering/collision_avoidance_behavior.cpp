@@ -100,7 +100,7 @@ SteeringForce CollisionAvoidanceBehavior::calculate(const SteeringContext& ctx)
 		Vector2i deltaDiff = iSinCosR(obstDirectionGuess, predictionFactor);
 
 		// Don't assume obstacle can go through blocking tiles
-		if (!fpathBlockingTile(gameWorld.map, map_coord(obstacle->pos.x + deltaDiff.x),
+		if (!fpathBlockingTile(ctx.droid->owningWorld->map, map_coord(obstacle->pos.x + deltaDiff.x),
 		                       map_coord(obstacle->pos.y + deltaDiff.y),
 		                       obstaclePropStats->propulsionType))
 		{

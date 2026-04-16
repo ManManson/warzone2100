@@ -257,7 +257,7 @@ bool recvDroidDisEmbark(NETQUEUE queue)
 		NETend(r);
 
 		// find the transporter first
-		psTransporterDroid = IdToDroid(transporterID, player);
+		psTransporterDroid = IdToDroid(gameWorld.objects, transporterID, player);
 		if (!psTransporterDroid)
 		{
 			// Possible it already died? (sync error?)
@@ -431,12 +431,12 @@ bool recvDroid(NETQUEUE queue)
 
 	// Create that droid on this machine.
 	const auto rot = Rotation();
-	psDroid = reallyBuildDroid(gameWorld.map, pT, pos, player, false, rot, id);
+	psDroid = reallyBuildDroid(gameWorld, pT, pos, player, false, rot, id);
 
 	// If we were able to build the droid set it up
 	if (psDroid)
 	{
-		addDroid(psDroid, gameWorld.objects.droids);
+		addDroid(psDroid, gameWorld);
 
 		if (haveInitialOrders)
 		{
@@ -676,7 +676,7 @@ bool recvDroidInfo(NETQUEUE queue)
 			NETuint32_t(r, deltaDroidId);
 			info.droidId += deltaDroidId;
 
-			DROID *psDroid = IdToDroid(info.droidId, info.player);
+			DROID *psDroid = IdToDroid(gameWorld.objects, info.droidId, info.player);
 			if (!psDroid)
 			{
 				debug(LOG_NEVER, "Packet from %d refers to non-existent droid %u, [%s : p%d]",
@@ -726,7 +726,8 @@ bool recvDroidInfo(NETQUEUE queue)
 			case SecondaryOrder:
 				// Set the droids secondary order
 				turnOffMultiMsg(true);
-				secondarySetState(psDroid, info.secOrder, info.secState);
+				ASSERT(psDroid->owningWorld != nullptr, "Droid has no owning world");
+				secondarySetState(psDroid, psDroid->owningWorld->objects, info.secOrder, info.secState);
 				turnOffMultiMsg(false);
 				break;
 			}
@@ -758,13 +759,13 @@ static BASE_OBJECT *processDroidTarget(OBJECT_TYPE desttype, uint32_t destid)
 		switch (desttype)
 		{
 		case OBJ_DROID:
-			psObj = IdToDroid(destid, ANYPLAYER);
+			psObj = IdToDroid(gameWorld.objects, destid, ANYPLAYER);
 			break;
 		case OBJ_STRUCTURE:
 			psObj = IdToStruct(destid, ANYPLAYER);
 			break;
 		case OBJ_FEATURE:
-			psObj = IdToFeature(destid, ANYPLAYER);
+			psObj = IdToFeature(gameWorld.objects, destid, ANYPLAYER);
 			break;
 
 		// We should not get this!
@@ -815,7 +816,7 @@ bool recvDestroyDroid(NETQUEUE queue)
 
 		// Retrieve the droid
 		NETuint32_t(r, id);
-		psDroid = IdToDroid(id, ANYPLAYER);
+		psDroid = IdToDroid(gameWorld.objects, id, ANYPLAYER);
 		if (!psDroid)
 		{
 			debug(LOG_DEATH, "droid %d on request from player %d can't be found? Must be dead already?",

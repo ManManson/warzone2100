@@ -48,7 +48,7 @@
 #include "lib/ivis_opengl/piematrix.h"
 #include "lib/ivis_opengl/piedraw.h"
 #include "lib/ivis_opengl/pielight_convert.h"
-#include "src/world_map_state.h"
+#include "world_map_state.h"
 #include <glm/mat4x4.hpp>
 #ifndef GLM_ENABLE_EXPERIMENTAL
 	#define GLM_ENABLE_EXPERIMENTAL

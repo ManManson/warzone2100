@@ -447,10 +447,10 @@ void kf_CloneSelected(int limit)
 	for (int i = 0; i < limit; i++)
 	{
 		Vector2i pos = droidToClone->pos.xy() + iSinCosR(40503 * i, iSqrt(50 * 50 * (i + 1)));  // 40503 = 65536/φ (A bit more than a right angle)
-		DROID* psNewDroid = buildDroid(gameWorld.map, sTemplate, pos.x, pos.y, droidToClone->player, false, nullptr);
+		DROID* psNewDroid = buildDroid(gameWorld, sTemplate, pos.x, pos.y, droidToClone->player, false, nullptr);
 		if (psNewDroid)
 		{
-			addDroid(psNewDroid, gameWorld.objects.droids);
+			addDroid(psNewDroid, gameWorld);
 			triggerEventDroidBuilt(psNewDroid, nullptr);
 		}
 		else if (!bMultiMessages)
@@ -900,7 +900,7 @@ void kf_RevealMapAtPos()
 
 	if (selectedPlayer >= MAX_PLAYERS) { return; }
 
-	addSpotter(mouseTileX, mouseTileY, selectedPlayer, 1024, false, gameTime + 2000);
+	addSpotter(gameWorld.map, mouseTileX, mouseTileY, selectedPlayer, 1024, false, gameTime + 2000);
 }
 
 // --------------------------------------------------------------------------
@@ -2167,7 +2167,7 @@ static void kfsf_SetSelectedDroidsState(SECONDARY_ORDER sec, SECONDARY_STATE sta
 		// Only set the state if it's not a transporter.
 		if (psDroid->selected && !psDroid->isTransporter())
 		{
-			secondarySetState(psDroid, sec, state);
+			secondarySetState(psDroid, gameWorld.objects, sec, state);
 		}
 	}
 	intRefreshOrder();

@@ -52,7 +52,8 @@ uint32_t generateNewObjectId();
 uint32_t generateSynchronisedObjectId();
 
 /* add the droid to the Droid Lists */
-void addDroid(DROID *psDroidToAdd, PerPlayerDroidLists& pList);
+void addDroid(DROID *psDroidToAdd, GameWorld& world);
+void addDroidToLimboLists(DROID *psDroidToAdd, PerPlayerDroidLists& limboLists);
 
 /*destroy a droid */
 void killDroid(DROID *psDel);
@@ -61,7 +62,7 @@ void killDroid(DROID *psDel);
 void freeAllDroids();
 
 /*Remove a single Droid from its list*/
-void removeDroid(DROID *psDroidToRemove, PerPlayerDroidLists& pList);
+void removeDroid(DROID *psDroidToRemove, GameWorld& world);
 
 /*Removes all droids that may be stored in the mission lists*/
 void freeAllMissionDroids();
@@ -70,7 +71,7 @@ void freeAllMissionDroids();
 void freeAllLimboDroids();
 
 /* add the structure to the Structure Lists */
-void addStructure(STRUCTURE *psStructToAdd);
+void addStructure(STRUCTURE *psStructToAdd, GameWorld& world);
 
 /* Destroy a structure */
 void killStruct(STRUCTURE *psDel);
@@ -79,10 +80,10 @@ void killStruct(STRUCTURE *psDel);
 void freeAllStructs();
 
 /*Remove a single Structure from a list*/
-void removeStructureFromList(STRUCTURE *psStructToRemove, PerPlayerStructureLists& pList);
+void removeStructure(STRUCTURE *psStructToRemove, GameWorld& world);
 
 /* add the feature to the Feature Lists */
-void addFeature(FEATURE *psFeatureToAdd);
+void addFeature(FEATURE *psFeatureToAdd, GameWorld& world);
 
 /* Destroy a feature */
 void killFeature(FEATURE *psDel);
@@ -93,11 +94,11 @@ void freeAllFeatures();
 /* Create a new Flag Position */
 bool createFlagPosition(FLAG_POSITION **ppsNew, UDWORD player);
 /* add the Flag Position to the Flag Position Lists */
-void addFlagPosition(FLAG_POSITION *psFlagPosToAdd);
+void addFlagPosition(FLAG_POSITION *psFlagPosToAdd, GameWorld& world);
 /* Remove a Flag Position from the Lists */
-void removeFlagPosition(FLAG_POSITION *psDel);
+void removeFlagPosition(FLAG_POSITION *psDel, GameWorld& world);
 /* Transfer a Flag Position to a new player */
-void transferFlagPositionToPlayer(FLAG_POSITION *psFlagPos, UDWORD originalPlayer, UDWORD newPlayer);
+void transferFlagPositionToPlayer(FLAG_POSITION *psFlagPos, GameWorld& world, UDWORD originalPlayer, UDWORD newPlayer);
 // free all flag positions
 void freeAllFlagPositions();
 // used to add flag position to a specific list (ex. from assignFactoryCommandDroid)
@@ -124,5 +125,10 @@ void objCount(int *droids, int *structures, int *features);
 #ifdef DEBUG
 void checkFactoryFlags();
 #endif
+
+// Temporary crutch to fix up owning world pointers for all objects after a world swap
+// FIXME: temporary hack until we have a proper solution for managing active/non-active worlds
+// without moving/swapping them.
+void fixupAllOwningWorldLists(GameWorld& world);
 
 #endif // __INCLUDED_SRC_OBJMEM_H__

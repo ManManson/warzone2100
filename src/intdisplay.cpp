@@ -1374,12 +1374,14 @@ STRUCTURE *droidGetCommandFactory(DROID *psDroid)
 {
 	SDWORD		inc;
 
+	ASSERT_OR_RETURN(nullptr, psDroid->owningWorld != nullptr, "Droid has no owning world");
+
 	for (inc = 0; inc < MAX_FACTORY; inc++)
 	{
 		if (psDroid->secondaryOrder & (1 << (inc + DSS_ASSPROD_SHIFT)))
 		{
 			// found an assigned factory - look for it in the lists
-			for (STRUCTURE* psCurr : gameWorld.objects.structures[psDroid->player])
+			for (STRUCTURE* psCurr : psDroid->owningWorld->objects.structures[psDroid->player])
 			{
 				if ((psCurr->pStructureType->type == REF_FACTORY) &&
 				    (((FACTORY *)psCurr->pFunctionality)->
@@ -1392,7 +1394,7 @@ STRUCTURE *droidGetCommandFactory(DROID *psDroid)
 		if (psDroid->secondaryOrder & (1 << (inc + DSS_ASSPROD_CYBORG_SHIFT)))
 		{
 			// found an assigned factory - look for it in the lists
-			for (STRUCTURE* psCurr : gameWorld.objects.structures[psDroid->player])
+			for (STRUCTURE* psCurr : psDroid->owningWorld->objects.structures[psDroid->player])
 			{
 				if ((psCurr->pStructureType->type == REF_CYBORG_FACTORY) &&
 				    (((FACTORY *)psCurr->pFunctionality)->
@@ -1405,7 +1407,7 @@ STRUCTURE *droidGetCommandFactory(DROID *psDroid)
 		if (psDroid->secondaryOrder & (1 << (inc + DSS_ASSPROD_VTOL_SHIFT)))
 		{
 			// found an assigned factory - look for it in the lists
-			for (STRUCTURE* psCurr : gameWorld.objects.structures[psDroid->player])
+			for (STRUCTURE* psCurr : psDroid->owningWorld->objects.structures[psDroid->player])
 			{
 				if ((psCurr->pStructureType->type == REF_VTOL_FACTORY) &&
 				    (((FACTORY *)psCurr->pFunctionality)->

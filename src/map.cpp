@@ -113,7 +113,7 @@ struct GATEWAY_SAVE
 
 static void SetGroundForTile(const char *filename, const char *nametype);
 static int getTextureType(const char *textureType);
-static bool hasDecals(int i, int j);
+static bool hasDecals(WorldMapState& mapState, int i, int j);
 static void SetDecals(const char *filename, const char *decal_type);
 static void init_tileNames(MAP_TILESET type);
 
@@ -686,10 +686,10 @@ static void SetDecals(const char *filename, const char *decal_type)
 }
 // hasDecals()
 // Checks to see if the requested tile has a decal on it or not.
-static bool hasDecals(int i, int j)
+static bool hasDecals(WorldMapState& mapState, int i, int j)
 {
 	int index = 0;
-	index = TileNumber_tile(mapTile(gameWorld.map, i, j)->texture);
+	index = TileNumber_tile(mapTile(mapState, i, j)->texture);
 	if (index > MAX_TERRAIN_TILES)
 	{
 		debug(LOG_FATAL, "Tile index is out of range!  Was %d, our max is %d", index, MAX_TERRAIN_TILES);
@@ -699,17 +699,17 @@ static bool hasDecals(int i, int j)
 }
 // mapSetGroundTypes()
 // Sets the ground type to be a decal or not
-static bool mapSetGroundTypes()
+static bool mapSetGroundTypes(WorldMapState& mapState)
 {
-	for (int j = 0; j < gameWorld.map.height; j++)
+	for (int j = 0; j < mapState.height; j++)
 	{
-		for (int i = 0; i < gameWorld.map.width; i++)
+		for (int i = 0; i < mapState.width; i++)
 		{
-			MAPTILE *psTile = mapTile(gameWorld.map, i, j);
+			MAPTILE *psTile = mapTile(mapState, i, j);
 
-			psTile->ground = determineGroundType(gameWorld.map, i, j, tilesetDir);
+			psTile->ground = determineGroundType(mapState, i, j, tilesetDir);
 
-			if (hasDecals(i, j))
+			if (hasDecals(mapState, i, j))
 			{
 				SET_TILE_DECAL(psTile);
 			}
@@ -729,7 +729,7 @@ bool mapReloadGroundTypes()
 		return false;
 	}
 	mapLoadGroundTypes(false);
-	if (!mapSetGroundTypes())
+	if (!mapSetGroundTypes(gameWorld.map))
 	{
 		return false;
 	}
@@ -1131,7 +1131,7 @@ bool mapLoadFromWzMapData(std::shared_ptr<WzMap::MapData> loadedMap)
 
 static bool afterMapLoad()
 {
-	if (!mapSetGroundTypes())
+	if (!mapSetGroundTypes(gameWorld.map))
 	{
 		return false;
 	}

@@ -34,6 +34,7 @@
 #include "map.h"
 #include "power.h"
 #include "objects.h"
+#include "game_world.h"
 #include "mission.h"
 #include "structuredef.h"
 #include "structure.h"
@@ -465,16 +466,17 @@ static inline void releaseAllObjectsInList(PerPlayerObjectLists<OBJECT, MAX_PLAY
 /***************************  DROID  *********************************/
 
 /* add the droid to the Droid Lists */
-void addDroid(DROID *psDroidToAdd, PerPlayerDroidLists& pList)
+void addDroid(DROID *psDroidToAdd, GameWorld& world)
 {
 	DROID_GROUP	*psGroup;
 
-	addObjectToList(pList, psDroidToAdd, psDroidToAdd->player);
+	psDroidToAdd->owningWorld = &world;
+	addObjectToList(world.objects.droids, psDroidToAdd, psDroidToAdd->player);
 
 	/* Whenever a droid gets added to a list other than the current list
 	 * its died flag is set to NOT_CURRENT_LIST so that anything targetting
 	 * it will cancel itself - HACK?! */
-	if (&pList[psDroidToAdd->player] == &gameWorld.objects.droids[psDroidToAdd->player])
+	if (&world.objects.droids[psDroidToAdd->player] == &gameWorld.objects.droids[psDroidToAdd->player])
 	{
 		psDroidToAdd->died = false;
 		if (psDroidToAdd->droidType == DROID_SENSOR)
@@ -489,13 +491,20 @@ void addDroid(DROID *psDroidToAdd, PerPlayerDroidLists& pList)
 			psGroup->add(psDroidToAdd);
 		}
 	}
-	else if (&pList[psDroidToAdd->player] == &mission.gameWorld.objects.droids[psDroidToAdd->player])
+	else if (&world.objects.droids[psDroidToAdd->player] == &mission.gameWorld.objects.droids[psDroidToAdd->player])
 	{
 		if (psDroidToAdd->droidType == DROID_SENSOR)
 		{
 			addObjectToFuncList(mission.gameWorld.objects.sensors, (BASE_OBJECT *)psDroidToAdd, 0);
 		}
 	}
+}
+
+void addDroidToLimboLists(DROID *psDroidToAdd, PerPlayerDroidLists& limboLists)
+{
+	// FIXME: temporary hack to avoid crashes in campaign games
+	// psDroidToAdd->owningWorld = nullptr;
+	addObjectToList(limboLists, psDroidToAdd, psDroidToAdd->player);
 }
 
 /* Destroy a droid */
@@ -600,16 +609,20 @@ void freeAllDroids()
 }
 
 /*Remove a single Droid from a list*/
-void removeDroid(DROID* psDroidToRemove, PerPlayerDroidLists& pList)
+void removeDroid(DROID* psDroidToRemove, GameWorld& world)
 {
+	ASSERT_OR_RETURN(, psDroidToRemove->owningWorld == &world, "Droid is not in the correct world");
 	ASSERT_OR_RETURN(, psDroidToRemove->type == OBJ_DROID, "Pointer is not a unit");
 	ASSERT_OR_RETURN(, psDroidToRemove->player < MAX_PLAYERS, "Invalid player for unit");
-	removeObjectFromList(pList, psDroidToRemove, psDroidToRemove->player);
+
+	// FIXME: temporary hack to avoid crashes in campaign games
+	//psDroidToRemove->owningWorld = nullptr;
+	removeObjectFromList(world.objects.droids, psDroidToRemove, psDroidToRemove->player);
 
 	/* Whenever a droid is removed from the current list its died
 	 * flag is set to NOT_CURRENT_LIST so that anything targetting
 	 * it will cancel itself, and we know it is not really on the map. */
-	if (&pList[psDroidToRemove->player] == &gameWorld.objects.droids[psDroidToRemove->player])
+	if (&world.objects.droids[psDroidToRemove->player] == &gameWorld.objects.droids[psDroidToRemove->player])
 	{
 		if (psDroidToRemove->droidType == DROID_SENSOR)
 		{
@@ -617,7 +630,7 @@ void removeDroid(DROID* psDroidToRemove, PerPlayerDroidLists& pList)
 		}
 		psDroidToRemove->died = NOT_CURRENT_LIST;
 	}
-	else if (&pList[psDroidToRemove->player] == &mission.gameWorld.objects.droids[psDroidToRemove->player])
+	else if (&world.objects.droids[psDroidToRemove->player] == &mission.gameWorld.objects.droids[psDroidToRemove->player])
 	{
 		if (psDroidToRemove->droidType == DROID_SENSOR)
 		{
@@ -641,17 +654,18 @@ void freeAllLimboDroids()
 /**************************  STRUCTURE  *******************************/
 
 /* add the structure to the Structure Lists */
-void addStructure(STRUCTURE *psStructToAdd)
+void addStructure(STRUCTURE *psStructToAdd, GameWorld& world)
 {
-	addObjectToList(gameWorld.objects.structures, psStructToAdd, psStructToAdd->player);
+	psStructToAdd->owningWorld = &world;
+	addObjectToList(world.objects.structures, psStructToAdd, psStructToAdd->player);
 	if (psStructToAdd->pStructureType->pSensor
 	    && psStructToAdd->pStructureType->pSensor->location == LOC_TURRET)
 	{
-		addObjectToFuncList(gameWorld.objects.sensors, (BASE_OBJECT *)psStructToAdd, 0);
+		addObjectToFuncList(world.objects.sensors, (BASE_OBJECT *)psStructToAdd, 0);
 	}
 	else if (psStructToAdd->pStructureType->type == REF_RESOURCE_EXTRACTOR)
 	{
-		addObjectToFuncList(gameWorld.objects.extractors, psStructToAdd, psStructToAdd->player);
+		addObjectToFuncList(world.objects.extractors, psStructToAdd, psStructToAdd->player);
 	}
 }
 
@@ -695,7 +709,7 @@ void killStruct(STRUCTURE *psBuilding)
 			// remove any assembly points
 			if (psFactory->psAssemblyPoint != nullptr)
 			{
-				removeFlagPosition(psFactory->psAssemblyPoint);
+				removeFlagPosition(psFactory->psAssemblyPoint, *psBuilding->owningWorld);
 				psFactory->psAssemblyPoint = nullptr;
 			}
 		}
@@ -706,7 +720,7 @@ void killStruct(STRUCTURE *psBuilding)
 			if (psRepair->psDeliveryPoint)
 			{
 				// free up repair fac stuff
-				removeFlagPosition(psRepair->psDeliveryPoint);
+				removeFlagPosition(psRepair->psDeliveryPoint, *psBuilding->owningWorld);
 				psRepair->psDeliveryPoint = nullptr;
 			}
 		}
@@ -722,33 +736,38 @@ void freeAllStructs()
 }
 
 /*Remove a single Structure from a list*/
-void removeStructureFromList(STRUCTURE *psStructToRemove, PerPlayerStructureLists& pList)
+void removeStructure(STRUCTURE *psStructToRemove, GameWorld& world)
 {
+	ASSERT_OR_RETURN(, psStructToRemove->owningWorld == &world, "Structure is not in the correct world");
 	ASSERT(psStructToRemove->type == OBJ_STRUCTURE,
 	       "removeStructureFromList: pointer is not a structure");
 	ASSERT(psStructToRemove->player < MAX_PLAYERS,
 	       "removeStructureFromList: invalid player for structure");
-	removeObjectFromList(pList, psStructToRemove, psStructToRemove->player);
+
+	// FIXME: temporary hack to avoid crashes in campaign games
+	// psStructToRemove->owningWorld = nullptr;
+	removeObjectFromList(world.objects.structures, psStructToRemove, psStructToRemove->player);
 	if (psStructToRemove->pStructureType->pSensor
 	    && psStructToRemove->pStructureType->pSensor->location == LOC_TURRET)
 	{
-		removeObjectFromFuncList(gameWorld.objects.sensors, (BASE_OBJECT *)psStructToRemove, 0);
+		removeObjectFromFuncList(world.objects.sensors, (BASE_OBJECT *)psStructToRemove, 0);
 	}
 	else if (psStructToRemove->pStructureType->type == REF_RESOURCE_EXTRACTOR)
 	{
-		removeObjectFromFuncList(gameWorld.objects.extractors, psStructToRemove, psStructToRemove->player);
+		removeObjectFromFuncList(world.objects.extractors, psStructToRemove, psStructToRemove->player);
 	}
 }
 
 /**************************  FEATURE  *********************************/
 
 /* add the feature to the Feature Lists */
-void addFeature(FEATURE *psFeatureToAdd)
+void addFeature(FEATURE *psFeatureToAdd, GameWorld& world)
 {
-	addObjectToList(gameWorld.objects.features, psFeatureToAdd, 0);
+	psFeatureToAdd->owningWorld = &world;
+	addObjectToList(world.objects.features, psFeatureToAdd, 0);
 	if (psFeatureToAdd->psStats->subType == FEAT_OIL_RESOURCE)
 	{
-		addObjectToFuncList(gameWorld.objects.oils, psFeatureToAdd, 0);
+		addObjectToFuncList(world.objects.oils, psFeatureToAdd, 0);
 	}
 }
 
@@ -820,18 +839,18 @@ void addFlagPositionToList(FLAG_POSITION *psFlagPosToAdd, PerPlayerFlagPositionL
 }
 
 /* add the Flag Position to the Flag Position Lists */
-void addFlagPosition(FLAG_POSITION *psFlagPosToAdd)
+void addFlagPosition(FLAG_POSITION *psFlagPosToAdd, GameWorld& world)
 {
-	addFlagPositionToList(psFlagPosToAdd, gameWorld.objects.flags);
+	addFlagPositionToList(psFlagPosToAdd, world.objects.flags);
 }
 
 // Remove it from the list, but don't delete it!
-static bool removeFlagPositionFromList(FLAG_POSITION *psRemove)
+static bool removeFlagPositionFromList(FLAG_POSITION *psRemove, GameWorld& world)
 {
 	ASSERT_OR_RETURN(false, psRemove != nullptr, "Invalid Flag Position pointer");
 	ASSERT_OR_RETURN(false, psRemove->player < MAX_PLAYERS, "Invalid Flag Position player: %" PRIu32, psRemove->player);
 
-	auto& flagPosList = gameWorld.objects.flags[psRemove->player];
+	auto& flagPosList = world.objects.flags[psRemove->player];
 	auto it = std::find(flagPosList.begin(), flagPosList.end(), psRemove);
 	if (it != flagPosList.end())
 	{
@@ -843,11 +862,11 @@ static bool removeFlagPositionFromList(FLAG_POSITION *psRemove)
 }
 
 /* Remove a Flag Position from the Lists */
-void removeFlagPosition(FLAG_POSITION *psDel)
+void removeFlagPosition(FLAG_POSITION *psDel, GameWorld& world)
 {
 	ASSERT_OR_RETURN(, psDel != nullptr, "Invalid Flag Position pointer");
 
-	if (removeFlagPositionFromList(psDel))
+	if (removeFlagPositionFromList(psDel, world))
 	{
 		free(psDel);
 	}
@@ -858,13 +877,13 @@ void removeFlagPosition(FLAG_POSITION *psDel)
 }
 
 /* Transfer a Flag Position to a new player */
-void transferFlagPositionToPlayer(FLAG_POSITION *psFlagPos, UDWORD originalPlayer, UDWORD newPlayer)
+void transferFlagPositionToPlayer(FLAG_POSITION *psFlagPos, GameWorld& world, UDWORD originalPlayer, UDWORD newPlayer)
 {
 	ASSERT_OR_RETURN(, psFlagPos != nullptr, "Invalid Flag Position pointer");
 	ASSERT(originalPlayer == psFlagPos->player, "Unexpected originalPlayer (%" PRIu32 ") does not match current flagPos->player (%" PRIu32 ")", originalPlayer, psFlagPos->player);
-	ASSERT(removeFlagPositionFromList(psFlagPos), "Did not find flag position in expected list?");
+	ASSERT(removeFlagPositionFromList(psFlagPos, world), "Did not find flag position in expected list?");
 	psFlagPos->player = newPlayer;
-	addFlagPosition(psFlagPos);
+	addFlagPosition(psFlagPos, world);
 }
 
 // free all flag positions
@@ -1145,4 +1164,50 @@ void objCount(int *droids, int *structures, int *features)
 	}
 
 	*features += gameWorld.objects.features[0].size();
+}
+
+void fixupAllOwningWorldLists(GameWorld& world)
+{
+	for (auto& list : world.objects.droids)
+	{
+		for (auto& obj : list)
+		{
+			obj->owningWorld = &world;
+		}
+	}
+	for (auto& list : world.objects.structures)
+	{
+		for (auto& obj : list)
+		{
+			obj->owningWorld = &world;
+		}
+	}
+	for (auto& list : world.objects.features)
+	{
+		for (auto& obj : list)
+		{
+			obj->owningWorld = &world;
+		}
+	}
+	for (auto& list : world.objects.extractors)
+	{
+		for (auto& obj : list)
+		{
+			obj->owningWorld = &world;
+		}
+	}
+	for (auto& list : world.objects.sensors)
+	{
+		for (auto& obj : list)
+		{
+			obj->owningWorld = &world;
+		}
+	}
+	for (auto& list : world.objects.oils)
+	{
+		for (auto& obj : list)
+		{
+			obj->owningWorld = &world;
+		}
+	}
 }

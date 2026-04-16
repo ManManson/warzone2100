@@ -322,7 +322,7 @@ int32_t droidDamage(DROID *psDroid, PROJECTILE *psProjectile, unsigned damage, W
 		// reset the attack level
 		if (secondaryGetState(psDroid, DSO_ATTACK_LEVEL) == DSS_ALEV_ATTACKED)
 		{
-			secondarySetState(psDroid, DSO_ATTACK_LEVEL, DSS_ALEV_ALWAYS);
+			secondarySetState(psDroid, psDroid->owningWorld->objects, DSO_ATTACK_LEVEL, DSS_ALEV_ALWAYS);
 		}
 		// Now check for auto return on droid's secondary orders (i.e. return on medium/heavy damage)
 		secondaryCheckDamageLevel(psDroid);
@@ -523,7 +523,7 @@ void recycleDroid(DROID *psDroid)
 
 	Vector3i position = psDroid->pos.xzy();
 	const auto mapCoord = map_coord({psDroid->pos.x, psDroid->pos.y});
-	const auto psTile = mapTile(gameWorld.map, mapCoord);
+	const auto psTile = mapTile(psDroid->owningWorld->map, mapCoord);
 	if (tileIsClearlyVisible(psTile))
 	{
 		addEffect(&position, EFFECT_EXPLOSION, EXPLOSION_TYPE_DISCOVERY, false, nullptr, false, gameTime - deltaGameTime + 1);
@@ -571,7 +571,7 @@ bool removeDroidBase(DROID *psDel)
 					return IterationResult::BREAK_ITERATION;
 				}
 				/* add droid to droid list then vanish it - hope this works! - GJ */
-				addDroid(psCurr, gameWorld.objects.droids);
+				addDroid(psCurr, gameWorld);
 				vanishDroid(psCurr);
 
 				return IterationResult::CONTINUE_ITERATION;
@@ -819,7 +819,8 @@ bool droidRemove(DROID *psDroid, PerPlayerDroidLists& pList)
 	// reset the baseStruct
 	setDroidBase(psDroid, nullptr);
 
-	removeDroid(psDroid, pList);
+	GameWorld& world = &pList == &gameWorld.objects.droids ? gameWorld : mission.gameWorld;
+	removeDroid(psDroid, world);
 
 	if (psDroid->player == selectedPlayer)
 	{
@@ -869,12 +870,14 @@ void droidUpdate(DROID *psDroid)
 
 	CHECK_DROID(psDroid);
 
+	GameWorld* world = psDroid->owningWorld;
+
 #ifdef DEBUG
 	// Check that we are (still) in the sensor list
 	if (psDroid->droidType == DROID_SENSOR)
 	{
-		const auto sensor = std::find(gameWorld.objects.sensors[0].begin(), gameWorld.objects.sensors[0].end(), (BASE_OBJECT*)psDroid);
-		ASSERT(sensor != gameWorld.objects.sensors[0].end(), "%s(%p) not in sensor list!",
+		const auto sensor = std::find(world->objects.sensors[0].begin(), world->objects.sensors[0].end(), (BASE_OBJECT*)psDroid);
+		ASSERT(sensor != world->objects.sensors[0].end(), "%s(%p) not in sensor list!",
 			   droidGetName(psDroid), static_cast<void *>(psDroid));
 	}
 #endif
@@ -883,7 +886,7 @@ void droidUpdate(DROID *psDroid)
 
 	if (psDroid->flags.test(OBJECT_FLAG_DIRTY))
 	{
-		visTilesUpdate(psDroid);
+		visTilesUpdate(psDroid, world->map);
 		droidBodyUpgrade(psDroid);
 		psDroid->flags.set(OBJECT_FLAG_DIRTY, false);
 	}
@@ -1093,17 +1096,19 @@ static bool droidNextToStruct(DROID *psDroid, STRUCTURE *psStruct)
 {
 	CHECK_DROID(psDroid);
 
+	GameWorld* world = psDroid->owningWorld;
+
 	auto pos = map_coord(psDroid->pos);
 	int minX = std::max(pos.x - 1, 0);
 	int minY = std::max(pos.y - 1, 0);
-	int maxX = std::min(pos.x + 1, gameWorld.map.width);
-	int maxY = std::min(pos.y + 1, gameWorld.map.height);
+	int maxX = std::min(pos.x + 1, world->map.width);
+	int maxY = std::min(pos.y + 1, world->map.height);
 	for (int y = minY; y <= maxY; ++y)
 	{
 		for (int x = minX; x <= maxX; ++x)
 		{
-			if (TileHasStructure(mapTile(gameWorld.map, x, y)) &&
-				getTileStructure(gameWorld.map, x, y) == psStruct)
+			if (TileHasStructure(mapTile(world->map, x, y)) &&
+				getTileStructure(world->map, x, y) == psStruct)
 			{
 				return true;
 			}
@@ -1146,6 +1151,8 @@ DroidStartBuild droidStartBuild(DROID *psDroid)
 	ASSERT_OR_RETURN(DroidStartBuildFailed, psDroid != nullptr, "Bad Droid");
 	CHECK_DROID(psDroid);
 
+	GameWorld* world = psDroid->owningWorld;
+
 	/* See if we are starting a new structure */
 	if (psDroid->order.psObj == nullptr &&
 		(psDroid->order.type == DORDER_BUILD ||
@@ -1170,7 +1177,7 @@ DroidStartBuild droidStartBuild(DROID *psDroid)
 			return DroidStartBuildFailed;
 		}
 		// Can't build on burning oil derricks.
-		if (psStructStat->type == REF_RESOURCE_EXTRACTOR && fireOnLocation(gameWorld.map, psDroid->order.pos.x, psDroid->order.pos.y))
+		if (psStructStat->type == REF_RESOURCE_EXTRACTOR && fireOnLocation(world->map, psDroid->order.pos.x, psDroid->order.pos.y))
 		{
 			// Don't cancel build, since we can wait for it to stop burning.
 			objTrace(psDroid->id, "DroidStartBuildPending: burning");
@@ -1178,7 +1185,7 @@ DroidStartBuild droidStartBuild(DROID *psDroid)
 		}
 		//ok to build
 		const auto id = generateSynchronisedObjectId();
-		psStruct = buildStructureDir(gameWorld, psStructStat, psDroid->order.pos.x, psDroid->order.pos.y, psDroid->order.direction, psDroid->player, false, id);
+		psStruct = buildStructureDir(*world, psStructStat, psDroid->order.pos.x, psDroid->order.pos.y, psDroid->order.direction, psDroid->player, false, id);
 		if (!psStruct)
 		{
 			cancelBuild(psDroid);
@@ -1193,7 +1200,7 @@ DroidStartBuild droidStartBuild(DROID *psDroid)
 		psStruct = castStructure(psDroid->order.psObj);
 		if (psStruct == nullptr)
 		{
-			psStruct = castStructure(worldTile(gameWorld.map, psDroid->actionPos)->psObject);
+			psStruct = castStructure(worldTile(world->map, psDroid->actionPos)->psObject);
 		}
 		if (psStruct && !droidNextToStruct(psDroid, psStruct))
 		{
@@ -1237,12 +1244,15 @@ static void addConstructorEffect(STRUCTURE *psStruct)
 {
 	if ((ONEINTEN) && (psStruct->visibleForLocalDisplay()))
 	{
+		GameWorld* world = psStruct->owningWorld;
+		ASSERT_OR_RETURN(, world != nullptr, "Structure not in a world");
+
 		/* This needs fixing - it's an arse effect! */
 		const Vector2i size = psStruct->size() * TILE_UNITS / 4;
 		ASSERT_OR_RETURN(, size.x > 0 && size.y > 0, "Zero-size building?: %s", (psStruct && psStruct->pStructureType) ? psStruct->pStructureType->id.toUtf8().c_str() : "<null>");
 		Vector3i temp;
 		temp.x = psStruct->pos.x + ((rand() % (2 * size.x)) - size.x);
-		temp.y = map_TileHeight(gameWorld.map, map_coord(psStruct->pos.x), map_coord(psStruct->pos.y)) + (psStruct->sDisplay.imd->max.y / 6);
+		temp.y = map_TileHeight(world->map, map_coord(psStruct->pos.x), map_coord(psStruct->pos.y)) + (psStruct->sDisplay.imd->max.y / 6);
 		temp.z = psStruct->pos.y + ((rand() % (2 * size.y)) - size.y);
 		if (rand() % 2)
 		{
@@ -1566,7 +1576,8 @@ bool droidUpdateDroidRepair(DROID *psRepairDroid)
 		// if psDroidToRepair has a commander, commander will call him back anyway
 		// if no commanders, just DORDER_GUARD the repair turret
 		orderDroidObj(psDroidToRepair, DORDER_GUARD, psRepairDroid, ModeImmediate);
-		secondarySetState(psDroidToRepair, DSO_RETURN_TO_LOC, DSS_NONE);
+		ASSERT(psDroidToRepair->owningWorld != nullptr, "Droid has no owning world");
+		secondarySetState(psDroidToRepair, psDroidToRepair->owningWorld->objects, DSO_RETURN_TO_LOC, DSS_NONE);
 		psDroidToRepair->order.psObj = nullptr;
 	}
 	return needMoreRepair;
@@ -1861,15 +1872,17 @@ UDWORD calcDroidPower(const DROID *psDroid)
 }
 
 //Builds an instance of a Droid - the x/y passed in are in world coords.
-DROID *reallyBuildDroid(const WorldMapState& mapState, const DROID_TEMPLATE *pTemplate, Position pos, UDWORD player, bool onMission, Rotation rot, uint32_t id)
+DROID *reallyBuildDroid(GameWorld& world, const DROID_TEMPLATE *pTemplate, Position pos, UDWORD player, bool onMission, Rotation rot, uint32_t id)
 {
 	// Don't use this assertion in single player, since droids can finish building while on an away mission
-	ASSERT(!bMultiPlayer || worldOnMap(mapState, pos.x, pos.y), "the build locations are not on the map");
+	ASSERT(!bMultiPlayer || worldOnMap(world.map, pos.x, pos.y), "the build locations are not on the map");
 
 	ASSERT_OR_RETURN(nullptr, player < MAX_PLAYERS, "Invalid player: %" PRIu32 "", player);
 
 	DROID& droid = GlobalDroidContainer().emplace(id, player);
 	droidSetName(&droid, getLocalizedStatsName(pTemplate));
+
+	droid.owningWorld = &world;
 
 	// Set the droids type
 	droid.droidType = droidTemplateType(pTemplate);  // Is set again later to the same thing, in droidSetBits.
@@ -1880,7 +1893,7 @@ DROID *reallyBuildDroid(const WorldMapState& mapState, const DROID_TEMPLATE *pTe
 	if (!onMission)
 	{
 		//set droid height
-		droid.pos.z = map_Height(mapState, droid.pos.x, droid.pos.y);
+		droid.pos.z = map_Height(world.map, droid.pos.x, droid.pos.y);
 	}
 
 	if (droid.isTransporter() || droid.droidType == DROID_COMMAND)
@@ -1934,9 +1947,9 @@ DROID *reallyBuildDroid(const WorldMapState& mapState, const DROID_TEMPLATE *pTe
 		/* People always stand upright */
 		if (droid.droidType != DROID_PERSON)
 		{
-			updateDroidOrientation(&droid);
+			updateDroidOrientation(&droid, world.map);
 		}
-		visTilesUpdate(&droid);
+		visTilesUpdate(&droid, world.map);
 	}
 
 	/* transporter-specific stuff */
@@ -1952,7 +1965,7 @@ DROID *reallyBuildDroid(const WorldMapState& mapState, const DROID_TEMPLATE *pTe
 		droid.pos.z += TRANSPORTER_HOVER_HEIGHT;
 
 		/* reset halt secondary order from guard to hold */
-		secondarySetState(&droid, DSO_HALTTYPE, DSS_HALT_HOLD);
+		secondarySetState(&droid, world.objects, DSO_HALTTYPE, DSS_HALT_HOLD);
 	}
 
 	if (player == selectedPlayer)
@@ -1969,13 +1982,13 @@ DROID *reallyBuildDroid(const WorldMapState& mapState, const DROID_TEMPLATE *pTe
 	return &droid;
 }
 
-DROID *reallyBuildDroid(const WorldMapState& mapState, const DROID_TEMPLATE *pTemplate, Position pos, UDWORD player, bool onMission, Rotation rot)
+DROID *reallyBuildDroid(GameWorld& world, const DROID_TEMPLATE *pTemplate, Position pos, UDWORD player, bool onMission, Rotation rot)
 {
 	const auto id = generateSynchronisedObjectId();
-	return reallyBuildDroid(mapState, pTemplate, pos, player, onMission, rot, id);
+	return reallyBuildDroid(world, pTemplate, pos, player, onMission, rot, id);
 }
 
-DROID *buildDroid(const WorldMapState& mapState, DROID_TEMPLATE *pTemplate, UDWORD x, UDWORD y, UDWORD player, bool onMission, const INITIAL_DROID_ORDERS *initialOrders, Rotation rot)
+DROID *buildDroid(GameWorld& world, DROID_TEMPLATE *pTemplate, UDWORD x, UDWORD y, UDWORD player, bool onMission, const INITIAL_DROID_ORDERS *initialOrders, Rotation rot)
 {
 	ASSERT_OR_RETURN(nullptr, player < MAX_PLAYERS, "invalid player?: %" PRIu32 "", player);
 	// ajl. droid will be created, so inform others
@@ -1987,7 +2000,7 @@ DROID *buildDroid(const WorldMapState& mapState, DROID_TEMPLATE *pTemplate, UDWO
 	}
 	else
 	{
-		return reallyBuildDroid(mapState, pTemplate, Position(x, y, 0), player, onMission, rot);
+		return reallyBuildDroid(world, pTemplate, Position(x, y, 0), player, onMission, rot);
 	}
 }
 
@@ -2867,7 +2880,10 @@ PICKTILE pickHalfATile(GameWorld& world, UDWORD *x, UDWORD *y, UBYTE numIteratio
 building the specified structure - returns true if finds one*/
 bool checkDroidsBuilding(const STRUCTURE *psStructure)
 {
-	for (const DROID* psDroid : gameWorld.objects.droids[psStructure->player])
+	GameWorld* world = psStructure->owningWorld;
+	ASSERT_OR_RETURN(false, world != nullptr, "Structure not in a world");
+
+	for (const DROID* psDroid : world->objects.droids[psStructure->player])
 	{
 		//check DORDER_BUILD, HELP_BUILD is handled the same
 		BASE_OBJECT *const psStruct = orderStateObj(psDroid, DORDER_BUILD);
@@ -2883,7 +2899,10 @@ bool checkDroidsBuilding(const STRUCTURE *psStructure)
 demolishing the specified structure - returns true if finds one*/
 bool checkDroidsDemolishing(const STRUCTURE *psStructure)
 {
-	for (const DROID* psDroid : gameWorld.objects.droids[psStructure->player])
+	GameWorld* world = psStructure->owningWorld;
+	ASSERT_OR_RETURN(false, world != nullptr, "Structure not in a world");
+
+	for (const DROID* psDroid : world->objects.droids[psStructure->player])
 	{
 		//check DORDER_DEMOLISH
 		BASE_OBJECT *const psStruct = orderStateObj(psDroid, DORDER_DEMOLISH);
@@ -3541,10 +3560,10 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 			}
 		}
 		// create a new droid
-		psNewDroid = reallyBuildDroid(gameWorld.map, &sTemplate, newPos, to, false, psD->rot);
+		psNewDroid = reallyBuildDroid(gameWorld, &sTemplate, newPos, to, false, psD->rot);
 		ASSERT_OR_RETURN(nullptr, psNewDroid, "Unable to build unit");
 
-		addDroid(psNewDroid, gameWorld.objects.droids);
+		addDroid(psNewDroid, gameWorld);
 		adjustDroidCount(psNewDroid, 1);
 
 		psNewDroid->body = clip((psD->body*psNewDroid->originalBody + psD->originalBody/2)/std::max(psD->originalBody, 1u), 1u, psNewDroid->originalBody);
@@ -3553,7 +3572,7 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 
 		if (!(psNewDroid->droidType == DROID_PERSON || psNewDroid->isCyborg() || psNewDroid->isTransporter()))
 		{
-			updateDroidOrientation(psNewDroid);
+			updateDroidOrientation(psNewDroid, gameWorld.map);
 		}
 
 		triggerEventObjectTransfer(psNewDroid, psD->player);
@@ -3590,7 +3609,7 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 		}
 	}
 
-	visRemoveVisibility((BASE_OBJECT *)psD);
+	visRemoveVisibility((BASE_OBJECT *)psD, gameWorld.map);
 	psD->selected = false;
 
 	adjustDroidCount(psD, -1);
@@ -3600,7 +3619,7 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 	{
 		psD->player	= to;
 
-		addDroid(psD, gameWorld.objects.droids);
+		addDroid(psD, gameWorld);
 		adjustDroidCount(psD, 1);
 
 		// the new player may have different default sensor/ecm/repair components
@@ -3633,7 +3652,7 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 	}
 
 	// Update visibility
-	visTilesUpdate((BASE_OBJECT*)psD);
+	visTilesUpdate((BASE_OBJECT*)psD, gameWorld.map);
 
 	// check through the players, and our allies, list of droids to see if any are targetting it
 	for (unsigned int i = 0; i < MAX_PLAYERS; ++i)
@@ -3869,24 +3888,31 @@ bool isConstructionDroid(BASE_OBJECT const *psObject)
 
 bool droidOnMap(const DROID *psDroid)
 {
+	GameWorld* world = psDroid->owningWorld;
+	if (!world)
+	{
+		return false;
+	}
 	if (psDroid->died == NOT_CURRENT_LIST || psDroid->isTransporter()
 		|| psDroid->pos.x == INVALID_XY || psDroid->pos.y == INVALID_XY || missionIsOffworld()
-		|| gameWorld.map.height == 0)
+		|| world->map.height == 0)
 	{
 		// Off world or on a transport or is a transport or in mission list, or on a mission, or no map - ignore
 		return true;
 	}
-	return worldOnMap(gameWorld.map, psDroid->pos.x, psDroid->pos.y);
+	return worldOnMap(world->map, psDroid->pos.x, psDroid->pos.y);
 }
 
 /** Teleport a droid to a new position on the map */
 void droidSetPosition(DROID *psDroid, int x, int y)
 {
+	GameWorld* world = psDroid->owningWorld;
+	ASSERT_OR_RETURN(, world != nullptr, "Droid not in a world");
 	psDroid->pos.x = x;
 	psDroid->pos.y = y;
-	psDroid->pos.z = map_Height(gameWorld.map, psDroid->pos.x, psDroid->pos.y);
+	psDroid->pos.z = map_Height(world->map, psDroid->pos.x, psDroid->pos.y);
 	initDroidMovement(psDroid);
-	visTilesUpdate((BASE_OBJECT *)psDroid);
+	visTilesUpdate((BASE_OBJECT *)psDroid, world->map);
 }
 
 /** Check validity of a droid. Crash hard if it fails. */
@@ -3902,6 +3928,7 @@ void checkDroid(const DROID *droid, const char *const location, const char *func
 	ASSERT_HELPER(droid->numWeaps <= MAX_WEAPONS, location, function, "CHECK_DROID: Bad number of droid weapons %d", (int)droid->numWeaps);
 	ASSERT_HELPER((unsigned)droid->listSize <= droid->asOrderList.size() && (unsigned)droid->listPendingBegin <= droid->asOrderList.size(), location, function, "CHECK_DROID: Bad number of droid orders %d %d %d", (int)droid->listSize, (int)droid->listPendingBegin, (int)droid->asOrderList.size());
 	ASSERT_HELPER(droid->player < MAX_PLAYERS, location, function, "CHECK_DROID: Bad droid owner %d", (int)droid->player);
+	ASSERT_HELPER(droid->owningWorld != nullptr, location, function, "CHECK_DROID: Droid not in a world");
 	ASSERT_HELPER(droidOnMap(droid), location, function, "CHECK_DROID: Droid off map");
 	ASSERT_HELPER(droid->body <= droid->originalBody, location, function, "CHECK_DROID: More body points (%u) than original body points (%u).", (unsigned)droid->body, (unsigned)droid->originalBody);
 

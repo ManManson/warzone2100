@@ -362,7 +362,7 @@ void CalcRadarPosition(const WorldMapState& mapState, int mX, int mY, int *PosX,
 	*PosY = sPosY;
 }
 
-void drawRadar()
+void drawRadar(GameWorld& world)
 {
 	float	pixSizeH, pixSizeV;
 
@@ -371,13 +371,13 @@ void drawRadar()
 	ASSERT_OR_RETURN(, radarBitmap.bmp_w(), "No radar buffer allocated");
 	ASSERT_OR_RETURN(, radarOverlayBuffer, "No radar buffer allocated");
 
-	setViewingWindow(gameWorld.map);
+	setViewingWindow(world.map);
 	playerpos = playerPos.p; // cache position
 
 	if (frameSkip <= 0)
 	{
-		DrawRadarTiles(gameWorld.map);
-		DrawRadarObjects(gameWorld);
+		DrawRadarTiles(world.map);
+		DrawRadarObjects(world);
 		applyMinimapOverlay();
 		pie_DownLoadRadar(radarBitmap);
 		frameSkip = RADAR_FRAME_SKIP;
@@ -888,7 +888,7 @@ void RadarWidget::display(int xOffset, int yOffset)
 	if (!radarVisible()) { return; }
 
 	gfx_api::context::get().debugStringMarker("Draw 3D scene - radar");
-	drawRadar();
+	drawRadar(gameWorld);
 }
 
 bool RadarWidget::hitTest(int x, int y) const

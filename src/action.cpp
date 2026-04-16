@@ -811,7 +811,7 @@ void actionUpdateDroid(DROID *psDroid)
 				{
 					ASSERT_OR_RETURN(, false, "Unable to remove transporter from mission list");
 				}
-				addDroid(psDroid, gameWorld.objects.droids);
+				addDroid(psDroid, gameWorld);
 				//set the x/y up since they were set to INVALID_XY when moved offWorld
 				missionGetTransporterExit(selectedPlayer, &droidX, &droidY);
 				psDroid->pos.x = droidX;
@@ -1950,7 +1950,8 @@ void actionUpdateDroid(DROID *psDroid)
 					/* set droid points to max */
 					psDroid->body = psDroid->originalBody;
 					// if completely repaired then reset order
-					secondarySetState(psDroid, DSO_RETURN_TO_LOC, DSS_NONE);
+					ASSERT(psDroid->owningWorld != nullptr, "Droid has no owning world");
+					secondarySetState(psDroid, psDroid->owningWorld->objects, DSO_RETURN_TO_LOC, DSS_NONE);
 					orderDroidObj(psDroid, DORDER_GUARD, psDroid->order.psObj, ModeImmediate);
 				}
 				else
@@ -2873,13 +2874,16 @@ static bool vtolLandingTileSearchFunction(WorldMapState& mapState, int x, int y,
 bool actionVTOLLandingPos(DROID const *psDroid, Vector2i *p)
 {
 	CHECK_DROID(psDroid);
+	ASSERT_OR_RETURN(false, psDroid->owningWorld != nullptr, "VTOL has no owning world");
+	WorldMapState& mapState = psDroid->owningWorld->map;
+	WorldObjectState& objState = psDroid->owningWorld->objects;
 
 	/* Initial box dimensions and set iteration count to zero */
 	int startX = map_coord(p->x);
 	int startY = map_coord(p->y);
 
 	// set blocking flags for all the other droids
-	for (const DROID *psCurr : gameWorld.objects.droids[psDroid->player])
+	for (const DROID *psCurr : objState.droids[psDroid->player])
 	{
 		Vector2i t(0, 0);
 		if (DROID_STOPPED(psCurr))
@@ -2892,16 +2896,16 @@ bool actionVTOLLandingPos(DROID const *psDroid, Vector2i *p)
 		}
 		if (psCurr != psDroid)
 		{
-			if (tileOnMap(gameWorld.map, t))
+			if (tileOnMap(mapState, t))
 			{
-				mapTile(gameWorld.map, t)->tileInfoBits |= BITS_FPATHBLOCK;
+				mapTile(mapState, t)->tileInfoBits |= BITS_FPATHBLOCK;
 			}
 		}
 	}
 
 	// search for landing tile; will stop when found or radius exceeded
 	Vector2i xyCoords(0, 0);
-	const bool foundTile = spiralSearch(gameWorld.map, startX, startY, vtolLandingRadius,
+	const bool foundTile = spiralSearch(mapState, startX, startY, vtolLandingRadius,
 	                                    vtolLandingTileSearchFunction, &xyCoords);
 	if (foundTile)
 	{
@@ -2911,7 +2915,7 @@ bool actionVTOLLandingPos(DROID const *psDroid, Vector2i *p)
 	}
 
 	// clear blocking flags for all the other droids
-	for (const DROID *psCurr : gameWorld.objects.droids[psDroid->player])
+	for (const DROID *psCurr : objState.droids[psDroid->player])
 	{
 		Vector2i t(0, 0);
 		if (DROID_STOPPED(psCurr))
@@ -2922,9 +2926,9 @@ bool actionVTOLLandingPos(DROID const *psDroid, Vector2i *p)
 		{
 			t = map_coord(psCurr->sMove.destination);
 		}
-		if (tileOnMap(gameWorld.map, t))
+		if (tileOnMap(mapState, t))
 		{
-			mapTile(gameWorld.map, t)->tileInfoBits &= ~BITS_FPATHBLOCK;
+			mapTile(mapState, t)->tileInfoBits &= ~BITS_FPATHBLOCK;
 		}
 	}
 

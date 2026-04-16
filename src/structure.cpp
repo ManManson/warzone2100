@@ -37,7 +37,7 @@
 #include "map.h"
 #include "lib/gamelib/gtime.h"
 #include "objmem.h"
-#include "src/world_object_state.h"
+#include "world_object_state.h"
 #include "visibility.h"
 #include "structure.h"
 #include "research.h"
@@ -164,6 +164,10 @@ static std::vector<WzString> favoriteStructs;
 
 static void auxStructureNonblocking(STRUCTURE *psStructure)
 {
+	GameWorld* world = psStructure->owningWorld;
+	ASSERT_OR_RETURN(, world != nullptr, "auxStructureNonblocking: structure has no owning world");
+	WorldMapState& mapState = world->map;
+
 	StructureBounds b = getStructureBounds(psStructure);
 
 	for (int i = 0; i < b.size.x; i++)
@@ -172,10 +176,10 @@ static void auxStructureNonblocking(STRUCTURE *psStructure)
 		{
 			int x = b.map.x + i;
 			int y = b.map.y + j;
-			MAPTILE *psTile = mapTile(gameWorld.map, x, y);
+			MAPTILE *psTile = mapTile(mapState, x, y);
 			if (psTile->psObject == psStructure)
 			{
-				auxClearAll(gameWorld.map, x, y, AUXBITS_BLOCKING | AUXBITS_OUR_BUILDING | AUXBITS_NONPASSABLE);
+				auxClearAll(mapState, x, y, AUXBITS_BLOCKING | AUXBITS_OUR_BUILDING | AUXBITS_NONPASSABLE);
 			}
 			else
 			{
@@ -188,41 +192,53 @@ static void auxStructureNonblocking(STRUCTURE *psStructure)
 
 static void auxStructureBlocking(STRUCTURE *psStructure)
 {
+	GameWorld* world = psStructure->owningWorld;
+	ASSERT_OR_RETURN(, world != nullptr, "auxStructureBlocking: structure has no owning world");
+	WorldMapState& mapState = world->map;
+
 	StructureBounds b = getStructureBounds(psStructure);
 
 	for (int i = 0; i < b.size.x; i++)
 	{
 		for (int j = 0; j < b.size.y; j++)
 		{
-			auxSetAllied(gameWorld.map, b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_OUR_BUILDING);
-			auxSetAll(gameWorld.map, b.map.x + i, b.map.y + j, AUXBITS_BLOCKING | AUXBITS_NONPASSABLE);
+			auxSetAllied(mapState, b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_OUR_BUILDING);
+			auxSetAll(mapState, b.map.x + i, b.map.y + j, AUXBITS_BLOCKING | AUXBITS_NONPASSABLE);
 		}
 	}
 }
 
 static void auxStructureOpenGate(STRUCTURE *psStructure)
 {
+	GameWorld* world = psStructure->owningWorld;
+	ASSERT_OR_RETURN(, world != nullptr, "auxStructureOpenGate: structure has no owning world");
+	WorldMapState& mapState = world->map;
+
 	StructureBounds b = getStructureBounds(psStructure);
 
 	for (int i = 0; i < b.size.x; i++)
 	{
 		for (int j = 0; j < b.size.y; j++)
 		{
-			auxClearAll(gameWorld.map, b.map.x + i, b.map.y + j, AUXBITS_BLOCKING);
+			auxClearAll(mapState, b.map.x + i, b.map.y + j, AUXBITS_BLOCKING);
 		}
 	}
 }
 
 static void auxStructureClosedGate(STRUCTURE *psStructure)
 {
+	GameWorld* world = psStructure->owningWorld;
+	ASSERT_OR_RETURN(, world != nullptr, "auxStructureClosedGate: structure has no owning world");
+	WorldMapState& mapState = world->map;
+
 	StructureBounds b = getStructureBounds(psStructure);
 
 	for (int i = 0; i < b.size.x; i++)
 	{
 		for (int j = 0; j < b.size.y; j++)
 		{
-			auxSetEnemy(gameWorld.map, b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_NONPASSABLE);
-			auxSetAll(gameWorld.map, b.map.x + i, b.map.y + j, AUXBITS_BLOCKING);
+			auxSetEnemy(mapState, b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_NONPASSABLE);
+			auxSetAll(mapState, b.map.x + i, b.map.y + j, AUXBITS_BLOCKING);
 		}
 	}
 }
@@ -920,6 +936,10 @@ void structureBuild(STRUCTURE *psStruct, DROID *psDroid, int buildPoints, int bu
 		prevResearchState = intGetResearchState();
 	}
 
+	GameWorld* world = psStruct->owningWorld;
+	ASSERT_OR_RETURN(, world != nullptr, "structureBuild: structure has no owning world");
+	WorldObjectState& objState = world->objects;
+
 	if (psDroid && !aiCheckAlliances(psStruct->player, psDroid->player))
 	{
 		// Enemy structure
@@ -929,7 +949,7 @@ void structureBuild(STRUCTURE *psStruct, DROID *psDroid, int buildPoints, int bu
 	{
 		for (unsigned player = 0; player < MAX_PLAYERS; player++)
 		{
-			for (const DROID *psCurr : gameWorld.objects.droids[player])
+			for (const DROID *psCurr : objState.droids[player])
 			{
 				// An enemy droid is blocking it
 				if ((STRUCTURE *) orderStateObj(psCurr, DORDER_BUILD) == psStruct
@@ -986,7 +1006,7 @@ void structureBuild(STRUCTURE *psStruct, DROID *psDroid, int buildPoints, int bu
 		if (psDroid)
 		{
 			// Clear all orders for helping hands. Needed for AI script which runs next frame.
-			for (DROID* psIter : gameWorld.objects.droids[psDroid->player])
+			for (DROID* psIter : objState.droids[psDroid->player])
 			{
 				if ((psIter->order.type == DORDER_BUILD || psIter->order.type == DORDER_HELPBUILD || psIter->order.type == DORDER_LINEBUILD)
 				    && psIter->order.psObj == psStruct
@@ -1391,6 +1411,10 @@ An actual foundation structure may end up being placed down
 The x and y passed in are the CENTRE of the structure*/
 static int foundationHeight(const STRUCTURE *psStruct)
 {
+	GameWorld* world = psStruct->owningWorld;
+	ASSERT_OR_RETURN(0, world != nullptr, "foundationHeight: structure has no owning world");
+	WorldMapState& mapState = world->map;
+
 	StructureBounds b = getStructureBounds(psStruct);
 
 	//check the terrain is the correct type return -1 if not
@@ -1406,7 +1430,7 @@ static int foundationHeight(const STRUCTURE *psStruct)
 	{
 		for (int width = 0; width <= b.size.x; width++)
 		{
-			int height = map_TileHeight(gameWorld.map, b.map.x + width, b.map.y + breadth);
+			int height = map_TileHeight(mapState, b.map.x + width, b.map.y + breadth);
 			foundationMin = std::min(foundationMin, height);
 			foundationMax = std::max(foundationMax, height);
 		}
@@ -1418,17 +1442,21 @@ static int foundationHeight(const STRUCTURE *psStruct)
 
 static void buildFlatten(STRUCTURE *pStructure, int h)
 {
+	GameWorld* world = pStructure->owningWorld;
+	ASSERT_OR_RETURN(, world != nullptr, "buildFlatten: structure has no owning world");
+	WorldMapState& mapState = world->map;
+
 	StructureBounds b = getStructureBounds(pStructure);
 
 	for (int breadth = 0; breadth <= b.size.y; ++breadth)
 	{
 		for (int width = 0; width <= b.size.x; ++width)
 		{
-			setTileHeight(gameWorld.map, b.map.x + width, b.map.y + breadth, h);
+			setTileHeight(mapState, b.map.x + width, b.map.y + breadth, h);
 			// We need to raise features on raised tiles to the new height
-			if (TileHasFeature(mapTile(gameWorld.map, b.map.x + width, b.map.y + breadth)))
+			if (TileHasFeature(mapTile(mapState, b.map.x + width, b.map.y + breadth)))
 			{
-				getTileFeature(gameWorld.map, b.map.x + width, b.map.y + breadth)->pos.z = h;
+				getTileFeature(mapState, b.map.x + width, b.map.y + breadth)->pos.z = h;
 			}
 		}
 	}
@@ -1442,6 +1470,10 @@ static bool isPulledToTerrain(const STRUCTURE *psBuilding)
 
 void alignStructure(STRUCTURE *psBuilding)
 {
+	GameWorld* world = psBuilding->owningWorld;
+	ASSERT_OR_RETURN(, world != nullptr, "alignStructure: structure has no owning world");
+	WorldMapState& mapState = world->map;
+
 	/* DEFENSIVE structures are pulled to the terrain */
 	if (!isPulledToTerrain(psBuilding))
 	{
@@ -1458,7 +1490,7 @@ void alignStructure(STRUCTURE *psBuilding)
 		{
 			for (int width = -1; width <= b.size.x; ++width)
 			{
-				STRUCTURE *neighbourStructure = castStructure(mapTile(gameWorld.map, b.map.x + width, b.map.y + breadth)->psObject);
+				STRUCTURE *neighbourStructure = castStructure(mapTile(mapState, b.map.x + width, b.map.y + breadth)->psObject);
 				if (neighbourStructure != nullptr && isPulledToTerrain(neighbourStructure))
 				{
 					alignStructure(neighbourStructure);  // Recursive call, but will go to the else case, so will not re-recurse.
@@ -1480,10 +1512,10 @@ void alignStructure(STRUCTURE *psBuilding)
 		Vector2i p1{s->max.x * dir.y - s->max.z * dir.x, s->max.x * dir.x + s->max.z * dir.y};
 		Vector2i p2{s->min.x * dir.y - s->min.z * dir.x, s->min.x * dir.x + s->min.z * dir.y};
 
-		int h1 = map_Height(gameWorld.map, psBuilding->pos.x + p1.x, psBuilding->pos.y + p2.y);
-		int h2 = map_Height(gameWorld.map, psBuilding->pos.x + p1.x, psBuilding->pos.y + p1.y);
-		int h3 = map_Height(gameWorld.map, psBuilding->pos.x + p2.x, psBuilding->pos.y + p1.y);
-		int h4 = map_Height(gameWorld.map, psBuilding->pos.x + p2.x, psBuilding->pos.y + p2.y);
+		int h1 = map_Height(mapState, psBuilding->pos.x + p1.x, psBuilding->pos.y + p2.y);
+		int h2 = map_Height(mapState, psBuilding->pos.x + p1.x, psBuilding->pos.y + p1.y);
+		int h3 = map_Height(mapState, psBuilding->pos.x + p2.x, psBuilding->pos.y + p1.y);
+		int h4 = map_Height(mapState, psBuilding->pos.x + p2.x, psBuilding->pos.y + p2.y);
 		int minH = std::min({h1, h2, h3, h4});
 		int maxH = std::max({h1, h2, h3, h4});
 		psBuilding->pos.z = std::max(psBuilding->pos.z, maxH);
@@ -1630,6 +1662,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		}
 		// Emplace the structure being built in the global storage to obtain stable address.
 		STRUCTURE& stableBuilding = GlobalStructContainer().emplace(std::move(building));
+		stableBuilding.owningWorld = &world;
 		psBuilding = &stableBuilding;
 		for (int tileY = map.y; tileY < map.y + size.y; ++tileY)
 		{
@@ -1727,7 +1760,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		}
 
 		// Reveal any tiles that can be seen by the structure
-		visTilesUpdate(psBuilding);
+		visTilesUpdate(psBuilding, world.map);
 
 		/*if we're coming from a SAVEGAME and we're on an Expand_Limbo mission,
 		any factories that were built previously for the selectedPlayer will
@@ -1792,7 +1825,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		psBuilding->expectedDamage = 0;  // Begin life optimistically.
 
 		//add the structure to the list - this enables it to be drawn whilst being built
-		addStructure(psBuilding);
+		addStructure(psBuilding, world);
 
 		asStructureStats[max].curCount[player]++;
 
@@ -2123,10 +2156,10 @@ static bool setFunctionality(STRUCTURE *psBuilding, STRUCTURE_TYPE functionType)
 
 			// Set the assembly point
 			Vector2i pos = defaultAssemblyPointPos(psBuilding);
-			setAssemblyPoint(gameWorld, psFactory->psAssemblyPoint, pos.x, pos.y, psBuilding->player, true);
+			setAssemblyPoint(*psBuilding->owningWorld, psFactory->psAssemblyPoint, pos.x, pos.y, psBuilding->player, true);
 
 			// Add the flag to the list
-			addFlagPosition(psFactory->psAssemblyPoint);
+			addFlagPosition(psFactory->psAssemblyPoint, *psBuilding->owningWorld);
 			switch (functionType)
 			{
 			case REF_FACTORY:
@@ -2171,10 +2204,10 @@ static bool setFunctionality(STRUCTURE *psBuilding, STRUCTURE_TYPE functionType)
 
 			// Set the assembly point
 			Vector2i pos = defaultAssemblyPointPos(psBuilding);
-			setAssemblyPoint(gameWorld, psRepairFac->psDeliveryPoint, pos.x, pos.y, psBuilding->player, true);
+			setAssemblyPoint(*psBuilding->owningWorld, psRepairFac->psDeliveryPoint, pos.x, pos.y, psBuilding->player, true);
 
 			// Add the flag (triangular marker on the ground) at the delivery point
-			addFlagPosition(psRepairFac->psDeliveryPoint);
+			addFlagPosition(psRepairFac->psDeliveryPoint, *psBuilding->owningWorld);
 			setFlagPositionInc(psBuilding->pFunctionality, psBuilding->player, REPAIR_FLAG);
 			break;
 		}
@@ -2237,7 +2270,7 @@ static bool transferFixupFunctionality(STRUCTURE *psBuilding, STRUCTURE_TYPE fun
 			}
 
 			// Transfer / fix-up factory assembly point, and number
-			transferFlagPositionToPlayer(psFactory->psAssemblyPoint, priorPlayer, psBuilding->player);
+			transferFlagPositionToPlayer(psFactory->psAssemblyPoint, *psBuilding->owningWorld, priorPlayer, psBuilding->player);
 
 			switch (functionType)
 			{
@@ -2292,7 +2325,7 @@ static bool transferFixupFunctionality(STRUCTURE *psBuilding, STRUCTURE_TYPE fun
 			}
 
 			// Transfer / fix-up factory assembly point, and number
-			transferFlagPositionToPlayer(psRepairFac->psDeliveryPoint, priorPlayer, psBuilding->player);
+			transferFlagPositionToPlayer(psRepairFac->psDeliveryPoint, *psBuilding->owningWorld, priorPlayer, psBuilding->player);
 
 			setFlagPositionInc(psBuilding->pFunctionality, psBuilding->player, REPAIR_FLAG);
 			break;
@@ -2336,19 +2369,20 @@ void assignFactoryCommandDroid(STRUCTURE *psStruct, DROID *psCommander)
 	// removing a commander from a factory
 	if (psFact->psCommander != nullptr)
 	{
+		ASSERT(psFact->psCommander->owningWorld != nullptr, "Factory commander has no owning world");
 		if (typeFlag == FACTORY_FLAG)
 		{
-			secondarySetState(psFact->psCommander, DSO_CLEAR_PRODUCTION,
+			secondarySetState(psFact->psCommander, psFact->psCommander->owningWorld->objects, DSO_CLEAR_PRODUCTION,
 			                  (SECONDARY_STATE)(1 << (psFact->psAssemblyPoint->factoryInc + DSS_ASSPROD_SHIFT)));
 		}
 		else if (typeFlag == CYBORG_FLAG)
 		{
-			secondarySetState(psFact->psCommander, DSO_CLEAR_PRODUCTION,
+			secondarySetState(psFact->psCommander, psFact->psCommander->owningWorld->objects, DSO_CLEAR_PRODUCTION,
 			                  (SECONDARY_STATE)(1 << (psFact->psAssemblyPoint->factoryInc + DSS_ASSPROD_CYBORG_SHIFT)));
 		}
 		else
 		{
-			secondarySetState(psFact->psCommander, DSO_CLEAR_PRODUCTION,
+			secondarySetState(psFact->psCommander, psFact->psCommander->owningWorld->objects, DSO_CLEAR_PRODUCTION,
 			                  (SECONDARY_STATE)(1 << (psFact->psAssemblyPoint->factoryInc + DSS_ASSPROD_VTOL_SHIFT)));
 		}
 
@@ -2357,7 +2391,7 @@ void assignFactoryCommandDroid(STRUCTURE *psStruct, DROID *psCommander)
 		//syncDebug("Removed commander from factory %d", psStruct->id);
 		if (!missionIsOffworld())
 		{
-			addFlagPosition(psFact->psAssemblyPoint);	// add the assembly point back into the list
+			addFlagPosition(psFact->psAssemblyPoint, *psStruct->owningWorld);	// add the assembly point back into the list
 		}
 		else
 		{
@@ -2381,7 +2415,7 @@ void assignFactoryCommandDroid(STRUCTURE *psStruct, DROID *psCommander)
 			{
 				if (flagPos != psFact->psAssemblyPoint)
 				{
-					removeFlagPosition(flagPos);
+					removeFlagPosition(flagPos, *psStruct->owningWorld);
 				}
 				else
 				{
@@ -2487,12 +2521,14 @@ bool placeDroid(STRUCTURE *psStructure, const DROID_TEMPLATE * psTempl, UDWORD *
 {
 	CHECK_STRUCTURE(psStructure);
 
+	const GameWorld& world = *psStructure->owningWorld;
+
 	// Find the four corners of the square
 	StructureBounds bounds = getStructureBounds(psStructure);
 	int xmin = std::max(bounds.map.x - 1, 0);
-	int xmax = std::min(bounds.map.x + bounds.size.x, gameWorld.map.width);
+	int xmax = std::min(bounds.map.x + bounds.size.x, world.map.width);
 	int ymin = std::max(bounds.map.y - 1, 0);
-	int ymax = std::min(bounds.map.y + bounds.size.y, gameWorld.map.height);
+	int ymax = std::min(bounds.map.y + bounds.size.y, world.map.height);
 
 	// Round direction to nearest 90°.
 	uint16_t direction = snapDirection(psStructure->rot.direction);
@@ -2530,7 +2566,7 @@ bool placeDroid(STRUCTURE *psStructure, const DROID_TEMPLATE * psTempl, UDWORD *
 	{
 		for (int x = xmin; x <= xmax; ++x)
 		{
-			if (structClearTile(gameWorld, x, y, psTempl->getPropulsionStats()->propulsionType))
+			if (structClearTile(world, x, y, psTempl->getPropulsionStats()->propulsionType))
 			{
 				tiles.push_back(Vector2i(12 * x - sx, 12 * y - sy));
 			}
@@ -2586,25 +2622,26 @@ void setFactorySecondaryState(DROID *psDroid, STRUCTURE *psStructure)
 	{
 		uint32_t newState = psStructure->pFunctionality->factory.secondaryOrder;
 		uint32_t diff = newState ^ psDroid->secondaryOrder;
+		ASSERT(psDroid->owningWorld != nullptr, "Factory output droid has no owning world");
 		if ((diff & DSS_ARANGE_MASK) != 0)
 		{
-			secondarySetState(psDroid, DSO_ATTACK_RANGE, (SECONDARY_STATE)(newState & DSS_ARANGE_MASK));
+			secondarySetState(psDroid, psDroid->owningWorld->objects, DSO_ATTACK_RANGE, (SECONDARY_STATE)(newState & DSS_ARANGE_MASK));
 		}
 		if ((diff & DSS_REPLEV_MASK) != 0)
 		{
-			secondarySetState(psDroid, DSO_REPAIR_LEVEL, (SECONDARY_STATE)(newState & DSS_REPLEV_MASK));
+			secondarySetState(psDroid, psDroid->owningWorld->objects, DSO_REPAIR_LEVEL, (SECONDARY_STATE)(newState & DSS_REPLEV_MASK));
 		}
 		if ((diff & DSS_ALEV_MASK) != 0)
 		{
-			secondarySetState(psDroid, DSO_ATTACK_LEVEL, (SECONDARY_STATE)(newState & DSS_ALEV_MASK));
+			secondarySetState(psDroid, psDroid->owningWorld->objects, DSO_ATTACK_LEVEL, (SECONDARY_STATE)(newState & DSS_ALEV_MASK));
 		}
 		if ((diff & DSS_CIRCLE_MASK) != 0)
 		{
-			secondarySetState(psDroid, DSO_CIRCLE, (SECONDARY_STATE)(newState & DSS_CIRCLE_MASK));
+			secondarySetState(psDroid, psDroid->owningWorld->objects, DSO_CIRCLE, (SECONDARY_STATE)(newState & DSS_CIRCLE_MASK));
 		}
 		if ((diff & DSS_HALT_MASK) != 0)
 		{
-			secondarySetState(psDroid, DSO_HALTTYPE, (SECONDARY_STATE)(newState & DSS_HALT_MASK));
+			secondarySetState(psDroid, psDroid->owningWorld->objects, DSO_HALTTYPE, (SECONDARY_STATE)(newState & DSS_HALT_MASK));
 		}
 	}
 }
@@ -2626,11 +2663,13 @@ static bool structPlaceDroid(STRUCTURE *psStructure, DROID_TEMPLATE *psTempl, DR
 
 	if (placed)
 	{
+		GameWorld& world = *psStructure->owningWorld;
+
 		INITIAL_DROID_ORDERS initialOrders = {psStructure->pFunctionality->factory.secondaryOrder, psStructure->pFunctionality->factory.psAssemblyPoint->coords.x, psStructure->pFunctionality->factory.psAssemblyPoint->coords.y, psStructure->id};
 		//create a droid near to the structure
 		syncDebug("Placing new droid at (%d,%d)", x, y);
 		turnOffMultiMsg(true);
-		psNewDroid = buildDroid(gameWorld.map, psTempl, x, y, psStructure->player, false, &initialOrders, psStructure->rot);
+		psNewDroid = buildDroid(world, psTempl, x, y, psStructure->player, false, &initialOrders, psStructure->rot);
 		turnOffMultiMsg(false);
 		if (!psNewDroid)
 		{
@@ -2650,9 +2689,9 @@ static bool structPlaceDroid(STRUCTURE *psStructure, DROID_TEMPLATE *psTempl, DR
 			}
 		}
 		setFactorySecondaryState(psNewDroid, psStructure);
-		displayConstructionCloud(gameWorld.map, psNewDroid->pos);
+		displayConstructionCloud(world.map, psNewDroid->pos);
 		/* add the droid to the list */
-		addDroid(psNewDroid, gameWorld.objects.droids);
+		addDroid(psNewDroid, world);
 		*ppsDroid = psNewDroid;
 		if (psNewDroid->player == selectedPlayer)
 		{
@@ -2708,7 +2747,7 @@ static bool structPlaceDroid(STRUCTURE *psStructure, DROID_TEMPLATE *psTempl, DR
 				factoryType = VTOL_FLAG;
 			}
 			//find flag in question.
-			const auto& flagPosList = gameWorld.objects.flags[psFact->psAssemblyPoint->player];
+			const auto& flagPosList = world.objects.flags[psFact->psAssemblyPoint->player];
 			auto psFlag = std::find_if(flagPosList.begin(), flagPosList.end(), [psFact, factoryType](FLAG_POSITION* psFlag)
 			{
 				return psFlag->factoryInc == psFact->psAssemblyPoint->factoryInc // correct fact.
@@ -3028,7 +3067,8 @@ RepairState aiUpdateRepair_handleEvents(STRUCTURE &station, RepairEvents ev, DRO
 		// only call "secondarySetState" *after* triggering "droidWasFullyRepaired"
 		// because in some cases calling it would modify primary order
 		// thus, loosing information that we actually had a RTR|RTR_SPECIFIED before
-		secondarySetState(psDroid, DSO_RETURN_TO_LOC, DSS_NONE);
+		ASSERT(psDroid->owningWorld != nullptr, "Repaired droid has no owning world");
+		secondarySetState(psDroid, psDroid->owningWorld->objects, DSO_RETURN_TO_LOC, DSS_NONE);
 		return RepairState::Idle;
 	};
 	case RepairEvents::UnitDied:
@@ -3788,7 +3828,7 @@ void structureUpdate(STRUCTURE *psBuilding, bool bMission)
 
 	if (psBuilding->flags.test(OBJECT_FLAG_DIRTY) && !bMission)
 	{
-		visTilesUpdate(psBuilding);
+		visTilesUpdate(psBuilding, psBuilding->owningWorld->map);
 		psBuilding->flags.set(OBJECT_FLAG_DIRTY, false);
 	}
 
@@ -4545,6 +4585,10 @@ bool validLocation(GameWorld& world, BASE_STATS *psStats, Vector2i pos, uint16_t
 //remove a structure from the map
 static void removeStructFromMap(STRUCTURE *psStruct)
 {
+	GameWorld* world = psStruct->owningWorld;
+	ASSERT_OR_RETURN(, world != nullptr, "removeStructFromMap: structure has no owning world");
+	WorldMapState& mapState = world->map;
+
 	auxStructureNonblocking(psStruct);
 
 	/* set tiles drawing */
@@ -4553,11 +4597,11 @@ static void removeStructFromMap(STRUCTURE *psStruct)
 	{
 		for (int i = 0; i < b.size.x; ++i)
 		{
-			MAPTILE *psTile = mapTile(gameWorld.map, b.map.x + i, b.map.y + j);
+			MAPTILE *psTile = mapTile(mapState, b.map.x + i, b.map.y + j);
 			if (psTile->psObject == psStruct)
 			{
 				psTile->psObject = nullptr;
-				auxClearBlocking(gameWorld.map, b.map.x + i, b.map.y + j, AIR_BLOCKED);
+				auxClearBlocking(mapState, b.map.x + i, b.map.y + j, AIR_BLOCKED);
 			}
 		}
 	}
@@ -4587,7 +4631,7 @@ bool removeStruct(STRUCTURE *psDel, bool bDestroy)
 		HOW MUCH IS THERE && NOT RES EXTRACTORS */
 		if (psDel->pStructureType->type == REF_RESOURCE_EXTRACTOR)
 		{
-			FEATURE *psOil = buildFeature(gameWorld.map, oilResFeature, psDel->pos.x, psDel->pos.y, false);
+			FEATURE *psOil = buildFeature(gameWorld, oilResFeature, psDel->pos.x, psDel->pos.y, false);
 			memcpy(psOil->seenThisTick, psDel->visible, sizeof(psOil->seenThisTick));
 			resourceFound = true;
 		}
@@ -5412,7 +5456,7 @@ void buildingComplete(STRUCTURE *psBuilding)
 	psBuilding->currentBuildPts = structureBuildPointsToCompletion(*psBuilding);
 	psBuilding->status = SS_BUILT;
 
-	visTilesUpdate(psBuilding);
+	visTilesUpdate(psBuilding, psBuilding->owningWorld->map);
 
 	if (psBuilding->prebuiltImd != nullptr)
 	{
@@ -5443,7 +5487,7 @@ void buildingComplete(STRUCTURE *psBuilding)
 		releaseProduction(psBuilding, ModeImmediate);
 		break;
 	case REF_SAT_UPLINK:
-		revealAll(gameWorld.map, psBuilding->player);
+		revealAll(psBuilding->owningWorld->map, psBuilding->player);
 		break;
 	case REF_GATE:
 		auxStructureNonblocking(psBuilding);  // Clear outdated flags.
@@ -5496,8 +5540,10 @@ static unsigned int countAssignedDroids(const STRUCTURE *psStructure)
 		return 0;
 	}
 
+	const GameWorld& world = *psStructure->owningWorld;
+
 	num = 0;
-	for (const DROID* psCurr : gameWorld.objects.droids[selectedPlayer])
+	for (const DROID* psCurr : world.objects.droids[selectedPlayer])
 	{
 		if (psCurr->order.psObj
 		    && psCurr->order.psObj->id == psStructure->id
@@ -6563,7 +6609,7 @@ void checkDeliveryPoints(GameWorld& world, UDWORD version)
 								ASSERT(!"can't create new delivery point for repair facility", "unable to create new delivery point for repair facility");
 								return;
 							}
-							addFlagPosition(psRepair->psDeliveryPoint);
+							addFlagPosition(psRepair->psDeliveryPoint, world);
 							setFlagPositionInc(psStruct->pFunctionality, psStruct->player, REPAIR_FLAG);
 							//initialise the assembly point position
 							x = map_coord(psStruct->pos.x + 256);
@@ -6786,7 +6832,8 @@ STRUCTURE *findNearestReArmPad(DROID *psDroid, STRUCTURE *psTarget, bool bClear)
 	totallyDist = SDWORD_MAX;
 	psNearest = nullptr;
 	psTotallyClear = nullptr;
-	for (STRUCTURE *psStruct : gameWorld.objects.structures[psDroid->player])
+	ASSERT_OR_RETURN(nullptr, psDroid->owningWorld != nullptr, "Droid has no owning world");
+	for (STRUCTURE *psStruct : psDroid->owningWorld->objects.structures[psDroid->player])
 	{
 		if (psStruct->pStructureType->type == REF_REARM_PAD && (!bClear || clearRearmPad(psStruct)))
 		{
@@ -6829,11 +6876,12 @@ void ensureRearmPadClear(STRUCTURE *psStruct, DROID *psDroid)
 	const int tx = map_coord(psStruct->pos.x);
 	const int ty = map_coord(psStruct->pos.y);
 
+	ASSERT_OR_RETURN(, psStruct->owningWorld != nullptr, "Structure has no owning world");
 	for (int i = 0; i < MAX_PLAYERS; i++)
 	{
 		if (aiCheckAlliances(psStruct->player, i))
 		{
-			for (DROID *psCurr : gameWorld.objects.droids[i])
+			for (DROID *psCurr : psStruct->owningWorld->objects.droids[i])
 			{
 				if (psCurr != psDroid
 				    && map_coord(psCurr->pos.x) == tx
@@ -6851,12 +6899,16 @@ void ensureRearmPadClear(STRUCTURE *psStruct, DROID *psDroid)
 // return whether a rearm pad has a vtol on it
 bool vtolOnRearmPad(const STRUCTURE *psStruct, const DROID *psDroid)
 {
+
+	const GameWorld* world = psStruct->owningWorld;
+	ASSERT_OR_RETURN(false, world != nullptr, "vtolOnRearmPad: structure has no owning world");
+
 	SDWORD	tx, ty;
 
 	tx = map_coord(psStruct->pos.x);
 	ty = map_coord(psStruct->pos.y);
 
-	for (const DROID* psCurr : gameWorld.objects.droids[psStruct->player])
+	for (const DROID* psCurr : world->objects.droids[psStruct->player])
 	{
 		if (psCurr != psDroid
 		    && map_coord(psCurr->pos.x) == tx
@@ -6890,7 +6942,7 @@ STRUCTURE *giftSingleStructure(STRUCTURE *psStructure, UBYTE attackPlayer, bool 
 
 	ASSERT_OR_RETURN(nullptr, attackPlayer < MAX_PLAYERS, "attackPlayer (%" PRIu32 ") must be < MAX_PLAYERS", attackPlayer);
 	CHECK_STRUCTURE(psStructure);
-	visRemoveVisibility(psStructure);
+	visRemoveVisibility(psStructure, gameWorld.map);
 
 	int prevState = intGetResearchState();
 	bool reward = electronicReward(psStructure, attackPlayer);
@@ -6905,7 +6957,7 @@ STRUCTURE *giftSingleStructure(STRUCTURE *psStructure, UBYTE attackPlayer, bool 
 			(void)removeStruct(psStructure, false);
 
 			// remove structure from one list
-			removeStructureFromList(psStructure, gameWorld.objects.structures);
+			removeStructure(psStructure, gameWorld);
 
 			psStructure->selected = false;
 
@@ -6916,7 +6968,7 @@ STRUCTURE *giftSingleStructure(STRUCTURE *psStructure, UBYTE attackPlayer, bool 
 			psStructure->resistance = (UWORD)structureResistance(psStructure->pStructureType, psStructure->player);
 
 			// add to other list.
-			addStructure(psStructure);
+			addStructure(psStructure, gameWorld);
 
 			// increment structure count for new owner
 			UDWORD max = psStructure->pStructureType - asStructureStats;
@@ -7143,6 +7195,7 @@ void checkStructure(const STRUCTURE *psStructure, const char *const location_des
 	ASSERT_HELPER(psStructure->player < MAX_PLAYERS, location_description, function, "CHECK_STRUCTURE: Out of bound player num (%u)", (unsigned int)psStructure->player);
 	ASSERT_HELPER(psStructure->pStructureType->type < NUM_DIFF_BUILDINGS, location_description, function, "CHECK_STRUCTURE: Out of bound structure type (%u)", (unsigned int)psStructure->pStructureType->type);
 	ASSERT_HELPER(psStructure->numWeaps <= MAX_WEAPONS, location_description, function, "CHECK_STRUCTURE: Out of bound weapon count (%u)", (unsigned int)psStructure->numWeaps);
+	ASSERT_HELPER(psStructure->owningWorld != nullptr, location_description, function, "CHECK_STRUCTURE: Structure has no owning world");
 
 	for (unsigned i = 0; i < ARRAY_SIZE(psStructure->asWeaps); ++i)
 	{

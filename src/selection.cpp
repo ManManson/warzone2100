@@ -530,13 +530,16 @@ void selNextSpecifiedBuilding(WorldObjectState& objState, STRUCTURE_TYPE structT
 // see if a commander is the n'th command droid
 static bool droidIsCommanderNum(DROID *psDroid, SDWORD n)
 {
+	const GameWorld* world = psDroid->owningWorld;
+	ASSERT_OR_RETURN(false, world != nullptr, "droidIsCommanderNum: droid has no owning world");
+
 	if (psDroid->droidType != DROID_COMMAND)
 	{
 		return false;
 	}
 
 	int numLess = 0;
-	for (const DROID *psCurr : gameWorld.objects.droids[psDroid->player])
+	for (const DROID *psCurr : world->objects.droids[psDroid->player])
 	{
 		if ((psCurr->droidType == DROID_COMMAND) && (psCurr->id < psDroid->id))
 		{

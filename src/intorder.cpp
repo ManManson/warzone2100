@@ -916,7 +916,8 @@ static bool SetSecondaryState(SECONDARY_ORDER sec, unsigned State)
 			//Only set the state if it's not a transporter.
 			if (!SelectedDroid->isTransporter())
 			{
-				if (!secondarySetState(SelectedDroid, sec, (SECONDARY_STATE)State))
+				ASSERT(SelectedDroid->owningWorld != nullptr, "Selected droid has no owning world");
+				if (!secondarySetState(SelectedDroid, SelectedDroid->owningWorld->objects, sec, (SECONDARY_STATE)State))
 				{
 					return false;
 				}

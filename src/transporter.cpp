@@ -943,7 +943,7 @@ void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode)
 			ASSERT(false, "Unable to find a valid location");
 		}
 		droidSetPosition(psDroid, world_coord(droidPos.x), world_coord(droidPos.y));
-		updateDroidOrientation(psDroid);
+		updateDroidOrientation(psDroid, gameWorld.map);
 	}
 
 	// remove it from the transporter group
@@ -952,19 +952,19 @@ void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode)
 	//add it back into apsDroidLists
 	if (onMission)
 	{
-		addDroid(psDroid, mission.gameWorld.objects.droids);
+		addDroid(psDroid, mission.gameWorld);
 	}
 	else
 	{
 		// add the droid back onto the droid list
-		addDroid(psDroid, gameWorld.objects.droids);
+		addDroid(psDroid, gameWorld);
 	}
 
 	if (psDroid->pos.x != INVALID_XY)
 	{
 		// We can update the orders now, since everyone has been
 		// notified of the droid exiting the transporter
-		updateDroidOrientation(psDroid);
+		updateDroidOrientation(psDroid, gameWorld.map);
 	}
 	//initialise the movement data
 	initDroidMovement(psDroid);
@@ -1099,7 +1099,7 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd)
 	}
 	else
 	{
-		visRemoveVisibility((BASE_OBJECT *)psDroidToAdd);
+		visRemoveVisibility((BASE_OBJECT *)psDroidToAdd, gameWorld.map);
 	}
 	fpathRemoveDroidData(psDroidToAdd->id);
 
@@ -1257,7 +1257,7 @@ bool updateTransporter(DROID *psTransporter)
 		//Remove visibility so tiles are not bright around where the transporter left the map
 		if (psTransporter->action != DACTION_TRANSPORTIN)
 		{
-			visRemoveVisibility((BASE_OBJECT *) psTransporter);
+			visRemoveVisibility((BASE_OBJECT *) psTransporter, gameWorld.map);
 		}
 
 		// Got to destination
