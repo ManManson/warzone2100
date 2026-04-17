@@ -2235,6 +2235,14 @@ static UDWORD		width, height;
 static GAME_TYPE	gameType;
 static bool IsScenario;
 
+/** Result of loading mission.gameWorld from auxiliary user-save files (offworld). */
+enum class MissionGameWorldUserSaveLoadResult
+{
+	Success,
+	MapLoadFailedEarlyReturn,       /*!< match loadGame: return false without error-path cleanup */
+	FailedUseLoadGameErrorCleanup
+};
+
 /***************************************************************************/
 /*
  *	Local ProtoTypes
@@ -2649,6 +2657,140 @@ const WzMap::GamInfo* GameLoadDetails::getGamInfoFromPackage() const
 	return nullptr; // silence compiler warning
 }
 
+/* Load mission.map / misvis / mfeature / mstruct / mdroid into gameWorld, then swapMissionPointers()
+ * so the data lives in mission.gameWorld (user save made while offworld).
+ * Swaps the current game world with the mission game world. */
+static MissionGameWorldUserSaveLoadResult loadGame_MissionGameWorldFromUserSave(char *aFileName, size_t fileExten, std::map<WzString, PerPlayerDroidLists *> &droidMap, std::map<WzString, PerPlayerStructureLists *> &structMap)
+{
+	UWORD missionScrollMinX = 0, missionScrollMinY = 0, missionScrollMaxX = 0, missionScrollMaxY = 0;
+	UDWORD player;
+	UDWORD fileSize;
+	char *pFileData;
+
+	//the scroll limits for the mission map have already been written
+	if (saveGameVersion >= VERSION_29)
+	{
+		missionScrollMinX = (UWORD)mission.gameWorld.map.scroll.minX;
+		missionScrollMinY = (UWORD)mission.gameWorld.map.scroll.minY;
+		missionScrollMaxX = (UWORD)mission.gameWorld.map.scroll.maxX;
+		missionScrollMaxY = (UWORD)mission.gameWorld.map.scroll.maxY;
+	}
+
+	//load the map and the droids then swap pointers
+
+	//load in the map file
+	aFileName[fileExten] = '\0';
+	strcat(aFileName, "mission.map");
+	if (!mapLoad(aFileName, gameWorld.map))
+	{
+		debug(LOG_ERROR, "Failed with: %s", aFileName);
+		return MissionGameWorldUserSaveLoadResult::MapLoadFailedEarlyReturn;
+	}
+
+	//load in the visibility file
+	aFileName[fileExten] = '\0';
+	strcat(aFileName, "misvis.bjo");
+
+	// Load in the visibility data from the chosen file
+	if (!readVisibilityData(aFileName, gameWorld.map))
+	{
+		debug(LOG_ERROR, "Failed with: %s", aFileName);
+		return MissionGameWorldUserSaveLoadResult::FailedUseLoadGameErrorCleanup;
+	}
+
+	// reload the objects that were in the mission list
+	//load in the features -do before the structures
+	aFileName[fileExten] = '\0';
+	strcat(aFileName, "mfeature.json");
+
+	//load the data into apsFeatureList
+	if (!loadSaveFeature2(aFileName, gameWorld))
+	{
+		aFileName[fileExten] = '\0';
+		strcat(aFileName, "mfeat.bjo");
+		/* Load in the chosen file data */
+		pFileData = fileLoadBuffer;
+		if (!loadFileToBuffer(aFileName, pFileData, FILE_LOAD_BUFFER_SIZE, &fileSize))
+		{
+			debug(LOG_ERROR, "Failed with: %s", aFileName);
+			return MissionGameWorldUserSaveLoadResult::FailedUseLoadGameErrorCleanup;
+		}
+		if (!loadSaveFeature(pFileData, fileSize))
+		{
+			debug(LOG_ERROR, "Failed with: %s", aFileName);
+			return MissionGameWorldUserSaveLoadResult::FailedUseLoadGameErrorCleanup;
+		}
+	}
+
+	initStructLimits();
+	aFileName[fileExten] = '\0';
+	strcat(aFileName, "mstruct.json");
+
+	//load in the mission structures
+	if (!loadSaveStructure2(aFileName, gameWorld))
+	{
+		aFileName[fileExten] = '\0';
+		strcat(aFileName, "mstruct.bjo");
+		/* Load in the chosen file data */
+		pFileData = fileLoadBuffer;
+		if (!loadFileToBuffer(aFileName, pFileData, FILE_LOAD_BUFFER_SIZE, &fileSize))
+		{
+			debug(LOG_ERROR, "Failed with: %s", aFileName);
+			return MissionGameWorldUserSaveLoadResult::FailedUseLoadGameErrorCleanup;
+		}
+		//load the data into apsStructLists
+		if (!loadSaveStructure(pFileData, fileSize))
+		{
+			debug(LOG_ERROR, "Failed with: %s", aFileName);
+			return MissionGameWorldUserSaveLoadResult::FailedUseLoadGameErrorCleanup;
+		}
+	}
+	else
+	{
+		structMap[aFileName] = &mission.gameWorld.objects.structures;	// we swap pointers below
+	}
+
+	// load in the mission droids, if any
+	aFileName[fileExten] = '\0';
+	strcat(aFileName, "mdroid.json");
+	if (loadSaveDroid(aFileName, gameWorld.objects.droids))
+	{
+		droidMap[aFileName] = &mission.gameWorld.objects.droids; // need to swap here to read correct list later
+	}
+
+	/* after we've loaded in the units we need to redo the orientation because
+	 * the direction may have been saved - we need to do it outside of the loop
+	 * whilst the current map is valid for the units
+	 */
+	for (player = 0; player < MAX_PLAYERS; ++player)
+	{
+		for (DROID* psCurr : gameWorld.objects.droids[player])
+		{
+			if (psCurr->droidType != DROID_PERSON
+			    // && psCurr->droidType != DROID_CYBORG
+			    && !psCurr->isCyborg()
+			    && (!psCurr->isTransporter())
+			    && psCurr->pos.x != INVALID_XY)
+			{
+				updateDroidOrientation(psCurr, gameWorld.map);
+			}
+		}
+	}
+
+	swapMissionPointers();
+
+	//once the mission map has been loaded reset the mission scroll limits
+	if (saveGameVersion >= VERSION_29)
+	{
+		mission.gameWorld.map.scroll.minX = missionScrollMinX;
+		mission.gameWorld.map.scroll.minY = missionScrollMinY;
+		mission.gameWorld.map.scroll.maxX = missionScrollMaxX;
+		mission.gameWorld.map.scroll.maxY = missionScrollMaxY;
+	}
+
+	return MissionGameWorldUserSaveLoadResult::Success;
+}
+
 // -----------------------------------------------------------------------------------------
 // UserSaveGame ... this is true when you are loading a players save game
 bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
@@ -2668,11 +2810,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 	const bool		UserSaveGame = (gameToLoad.loadType == GameLoadDetails::GameLoadType::UserSaveGame);
 	char			aFileName[256];
 	size_t			fileExten;
-	UDWORD			fileSize;
-	char			*pFileData = nullptr;
 	UDWORD			player, inc, i, j;
-	UWORD           missionScrollMinX = 0, missionScrollMinY = 0,
-	                missionScrollMaxX = 0, missionScrollMaxY = 0;
 
 	/* Stop the game clock */
 	gameTimeStop();
@@ -3009,125 +3147,15 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 
 	if (saveGameOnMission && UserSaveGame)
 	{
-		//the scroll limits for the mission map have already been written
-		if (saveGameVersion >= VERSION_29)
+		// NOTE: This function swaps the current game world with the mission game world!
+		switch (loadGame_MissionGameWorldFromUserSave(aFileName, fileExten, droidMap, structMap))
 		{
-			missionScrollMinX = (UWORD)mission.gameWorld.map.scroll.minX;
-			missionScrollMinY = (UWORD)mission.gameWorld.map.scroll.minY;
-			missionScrollMaxX = (UWORD)mission.gameWorld.map.scroll.maxX;
-			missionScrollMaxY = (UWORD)mission.gameWorld.map.scroll.maxY;
-		}
-
-		//load the map and the droids then swap pointers
-
-		//load in the map file
-		aFileName[fileExten] = '\0';
-		strcat(aFileName, "mission.map");
-		if (!mapLoad(aFileName, gameWorld.map))
-		{
-			debug(LOG_ERROR, "Failed with: %s", aFileName);
+		case MissionGameWorldUserSaveLoadResult::Success:
+			break;
+		case MissionGameWorldUserSaveLoadResult::MapLoadFailedEarlyReturn:
 			return false;
-		}
-
-		//load in the visibility file
-		aFileName[fileExten] = '\0';
-		strcat(aFileName, "misvis.bjo");
-
-		// Load in the visibility data from the chosen file
-		if (!readVisibilityData(aFileName, gameWorld.map))
-		{
-			debug(LOG_ERROR, "Failed with: %s", aFileName);
+		case MissionGameWorldUserSaveLoadResult::FailedUseLoadGameErrorCleanup:
 			goto error;
-		}
-
-		// reload the objects that were in the mission list
-		//load in the features -do before the structures
-		aFileName[fileExten] = '\0';
-		strcat(aFileName, "mfeature.json");
-
-		//load the data into apsFeatureList
-		if (!loadSaveFeature2(aFileName, gameWorld))
-		{
-			aFileName[fileExten] = '\0';
-			strcat(aFileName, "mfeat.bjo");
-			/* Load in the chosen file data */
-			pFileData = fileLoadBuffer;
-			if (!loadFileToBuffer(aFileName, pFileData, FILE_LOAD_BUFFER_SIZE, &fileSize))
-			{
-				debug(LOG_ERROR, "Failed with: %s", aFileName);
-				goto error;
-			}
-			if (!loadSaveFeature(pFileData, fileSize))
-			{
-				debug(LOG_ERROR, "Failed with: %s", aFileName);
-				goto error;
-			}
-		}
-
-		initStructLimits();
-		aFileName[fileExten] = '\0';
-		strcat(aFileName, "mstruct.json");
-
-		//load in the mission structures
-		if (!loadSaveStructure2(aFileName, gameWorld))
-		{
-			aFileName[fileExten] = '\0';
-			strcat(aFileName, "mstruct.bjo");
-			/* Load in the chosen file data */
-			pFileData = fileLoadBuffer;
-			if (!loadFileToBuffer(aFileName, pFileData, FILE_LOAD_BUFFER_SIZE, &fileSize))
-			{
-				debug(LOG_ERROR, "Failed with: %s", aFileName);
-				goto error;
-			}
-			//load the data into apsStructLists
-			if (!loadSaveStructure(pFileData, fileSize))
-			{
-				debug(LOG_ERROR, "Failed with: %s", aFileName);
-				goto error;
-			}
-		}
-		else
-		{
-			structMap[aFileName] = &mission.gameWorld.objects.structures;	// we swap pointers below
-		}
-
-		// load in the mission droids, if any
-		aFileName[fileExten] = '\0';
-		strcat(aFileName, "mdroid.json");
-		if (loadSaveDroid(aFileName, gameWorld.objects.droids))
-		{
-			droidMap[aFileName] = &mission.gameWorld.objects.droids; // need to swap here to read correct list later
-		}
-
-		/* after we've loaded in the units we need to redo the orientation because
-		 * the direction may have been saved - we need to do it outside of the loop
-		 * whilst the current map is valid for the units
-		 */
-		for (player = 0; player < MAX_PLAYERS; ++player)
-		{
-			for (DROID* psCurr : gameWorld.objects.droids[player])
-			{
-				if (psCurr->droidType != DROID_PERSON
-				    // && psCurr->droidType != DROID_CYBORG
-				    && !psCurr->isCyborg()
-				    && (!psCurr->isTransporter())
-				    && psCurr->pos.x != INVALID_XY)
-				{
-					updateDroidOrientation(psCurr, gameWorld.map);
-				}
-			}
-		}
-
-		swapMissionPointers();
-
-		//once the mission map has been loaded reset the mission scroll limits
-		if (saveGameVersion >= VERSION_29)
-		{
-			mission.gameWorld.map.scroll.minX = missionScrollMinX;
-			mission.gameWorld.map.scroll.minY = missionScrollMinY;
-			mission.gameWorld.map.scroll.maxX = missionScrollMaxX;
-			mission.gameWorld.map.scroll.maxY = missionScrollMaxY;
 		}
 	}
 
