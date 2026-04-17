@@ -2254,17 +2254,17 @@ static bool loadSaveDroidPointers(const WzString &pFileName, PerPlayerDroidLists
 static bool writeDroidFile(const char *pFileName, const PerPlayerDroidLists& ppsCurrentDroidLists);
 
 static bool loadSaveStructure(char *pFileData, UDWORD filesize);
-static bool loadSaveStructure2(const char *pFileName);
+static bool loadSaveStructure2(const char *pFileName, GameWorld& world);
 static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDWORD>& fixedMapIdToGeneratedId, std::array<std::unordered_map<UDWORD, UDWORD>, MAX_PLAYER_SLOTS>& moduleToBuilding);
 static bool loadSaveStructurePointers(const WzString& filename, PerPlayerStructureLists *ppList);
-static bool writeStructFile(const char *pFileName);
+static bool writeStructFile(const char *pFileName, const WorldObjectState& objState);
 
 static bool loadSaveTemplate(const char *pFileName);
 static bool writeTemplateFile(const char *pFileName);
 
 static bool loadSaveFeature(char *pFileData, UDWORD filesize);
-static bool writeFeatureFile(const char *pFileName);
-static bool loadSaveFeature2(const char *pFileName);
+static bool writeFeatureFile(const char *pFileName, const WorldObjectState& objState);
+static bool loadSaveFeature2(const char *pFileName, GameWorld& world);
 static bool loadWzMapFeature(WzMap::Map &wzMap, std::unordered_map<UDWORD, UDWORD>& fixedMapIdToGeneratedId);
 
 static bool writeTerrainTypeMapFile(char *pFileName);
@@ -3045,7 +3045,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		strcat(aFileName, "mfeature.json");
 
 		//load the data into apsFeatureList
-		if (!loadSaveFeature2(aFileName))
+		if (!loadSaveFeature2(aFileName, gameWorld))
 		{
 			aFileName[fileExten] = '\0';
 			strcat(aFileName, "mfeat.bjo");
@@ -3068,7 +3068,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		strcat(aFileName, "mstruct.json");
 
 		//load in the mission structures
-		if (!loadSaveStructure2(aFileName))
+		if (!loadSaveStructure2(aFileName, gameWorld))
 		{
 			aFileName[fileExten] = '\0';
 			strcat(aFileName, "mstruct.bjo");
@@ -3297,7 +3297,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 	{
 		aFileName[fileExten] = '\0';
 		strcat(aFileName, "feature.json");
-		if (!loadSaveFeature2(aFileName))
+		if (!loadSaveFeature2(aFileName, gameWorld))
 		{
 			debug(LOG_ERROR, "Failed with: %s", aFileName);
 			goto error;
@@ -3328,7 +3328,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 	}
 	else
 	{
-		if (!loadSaveStructure2(aFileName))
+		if (!loadSaveStructure2(aFileName, gameWorld))
 		{
 			debug(LOG_ERROR, "Failed with: %s", aFileName);
 			goto error;
@@ -3612,7 +3612,7 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 	CurrentFileName[fileExtension] = '\0';
 	strcat(CurrentFileName, "struct.json");
 	/*Write the data to the file*/
-	if (!writeStructFile(CurrentFileName))
+	if (!writeStructFile(CurrentFileName, gameWorld.objects))
 	{
 		debug(LOG_ERROR, "saveGame: writeStructFile(\"%s\") failed", CurrentFileName);
 		goto error;
@@ -3632,7 +3632,7 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 	CurrentFileName[fileExtension] = '\0';
 	strcat(CurrentFileName, "feature.json");
 	/*Write the data to the file*/
-	if (!writeFeatureFile(CurrentFileName))
+	if (!writeFeatureFile(CurrentFileName, gameWorld.objects))
 	{
 		debug(LOG_ERROR, "saveGame: writeFeatureFile(\"%s\") failed", CurrentFileName);
 		goto error;
@@ -3820,7 +3820,7 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 		CurrentFileName[fileExtension] = '\0';
 		strcat(CurrentFileName, "mstruct.json");
 		/*Write the data to the file*/
-		if (!writeStructFile(CurrentFileName))
+		if (!writeStructFile(CurrentFileName, gameWorld.objects))
 		{
 			debug(LOG_ERROR, "saveGame: writeStructFile(\"%s\") failed", CurrentFileName);
 			goto error;
@@ -3830,7 +3830,7 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 		CurrentFileName[fileExtension] = '\0';
 		strcat(CurrentFileName, "mfeature.json");
 		/*Write the data to the file*/
-		if (!writeFeatureFile(CurrentFileName))
+		if (!writeFeatureFile(CurrentFileName, gameWorld.objects))
 		{
 			debug(LOG_ERROR, "saveGame: writeFeatureFile(\"%s\") failed", CurrentFileName);
 			goto error;
@@ -6436,7 +6436,7 @@ static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDW
 
 // -----------------------------------------------------------------------------------------
 /* code for versions after version 20 of a save structure */
-static bool loadSaveStructure2(const char *pFileName)
+static bool loadSaveStructure2(const char *pFileName, GameWorld& world)
 {
 	if (!PHYSFS_exists(pFileName))
 	{
@@ -6478,7 +6478,7 @@ static bool loadSaveStructure2(const char *pFileName)
 		//for modules - need to check the base structure exists
 		if (IsStatExpansionModule(psStats))
 		{
-			STRUCTURE *psTileStructure = getTileStructure(gameWorld.map, map_coord(pos.x), map_coord(pos.y));
+			STRUCTURE *psTileStructure = getTileStructure(world.map, map_coord(pos.x), map_coord(pos.y));
 			if (psTileStructure == nullptr)
 			{
 				debug(LOG_ERROR, "No owning structure for module - %s for player - %d", name.toUtf8().c_str(), player);
@@ -6487,8 +6487,8 @@ static bool loadSaveStructure2(const char *pFileName)
 			}
 		}
 		//check not trying to build too near the edge
-		if (map_coord(pos.x) < TOO_NEAR_EDGE || map_coord(pos.x) > gameWorld.map.width - TOO_NEAR_EDGE
-		    || map_coord(pos.y) < TOO_NEAR_EDGE || map_coord(pos.y) > gameWorld.map.height - TOO_NEAR_EDGE)
+		if (map_coord(pos.x) < TOO_NEAR_EDGE || map_coord(pos.x) > world.map.width - TOO_NEAR_EDGE
+		    || map_coord(pos.y) < TOO_NEAR_EDGE || map_coord(pos.y) > world.map.height - TOO_NEAR_EDGE)
 		{
 			debug(LOG_ERROR, "Structure %s (%s), coord too near the edge of the map", name.toUtf8().c_str(), list[i].toUtf8().c_str());
 			ini.endGroup();
@@ -6499,7 +6499,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			id = generateSynchronisedObjectId();
 		}
 		debug(LOG_NEVER, "trying to build structure %i;%i;%s;%i;%i", id, player, psStats->name.toUtf8().c_str(), map_coord(pos.y), map_coord(pos.y));
-		psStructure = buildStructureDir(gameWorld, psStats, pos.x, pos.y, rot.direction, player, true, id);
+		psStructure = buildStructureDir(world, psStats, pos.x, pos.y, rot.direction, player, true, id);
 		ASSERT(psStructure, "Unable to create structure");
 		if (!psStructure)
 		{
@@ -6537,7 +6537,7 @@ static bool loadSaveStructure2(const char *pFileName)
 				//build the appropriate number of modules
 				for (int moduleIdx = 0; moduleIdx < capacity; moduleIdx++)
 				{
-					buildStructure(gameWorld, psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
+					buildStructure(world, psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
 
 				}
 			}
@@ -6549,7 +6549,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			if (ini.contains("Factory/assemblyPoint/pos"))
 			{
 				Position point = ini.vector3i("Factory/assemblyPoint/pos");
-				setAssemblyPoint(gameWorld, psFactory->psAssemblyPoint, point.x, point.y, player, false);
+				setAssemblyPoint(world, psFactory->psAssemblyPoint, point.x, point.y, player, false);
 				psFactory->psAssemblyPoint->selected = ini.value("Factory/assemblyPoint/selected", false).toBool();
 			}
 			if (ini.contains("Factory/assemblyPoint/number"))
@@ -6590,7 +6590,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			if (capacity)
 			{
 				psModule = getModuleStat(psStructure);
-				buildStructure(gameWorld, psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
+				buildStructure(world, psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
 			}
 			//clear subject
 			psResearch->psSubject = nullptr;
@@ -6615,7 +6615,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			if (capacity)
 			{
 				psModule = getModuleStat(psStructure);
-				buildStructure(gameWorld, psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
+				buildStructure(world, psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
 			}
 			break;
 		case REF_RESOURCE_EXTRACTOR:
@@ -6625,7 +6625,7 @@ static bool loadSaveStructure2(const char *pFileName)
 			if (ini.contains("Repair/deliveryPoint/pos"))
 			{
 				Position point = ini.vector3i("Repair/deliveryPoint/pos");
-				setAssemblyPoint(gameWorld, psRepair->psDeliveryPoint, point.x, point.y, player, false);
+				setAssemblyPoint(world, psRepair->psDeliveryPoint, point.x, point.y, player, false);
 				psRepair->psDeliveryPoint->selected = ini.value("Repair/deliveryPoint/selected", false).toBool();
 			}
 			break;
@@ -6677,7 +6677,7 @@ static bool loadSaveStructure2(const char *pFileName)
 		}
 		ini.endGroup();
 	}
-	resetFactoryNumFlag(gameWorld.objects);	//reset flags into the masks
+	resetFactoryNumFlag(world.objects);	//reset flags into the masks
 
 	return true;
 }
@@ -6721,14 +6721,14 @@ bool writeGameInfo(const char *pFileName)
 /*
 Writes the linked list of structure for each player to a file
 */
-bool writeStructFile(const char *pFileName)
+bool writeStructFile(const char *pFileName, const WorldObjectState& objState)
 {
 	WzConfig ini(WzString::fromUtf8(pFileName), WzConfig::ReadAndWrite);
 	int counter = 0;
 
 	for (int player = 0; player < MAX_PLAYERS; player++)
 	{
-		for (const STRUCTURE *psCurr : gameWorld.objects.structures[player])
+		for (const STRUCTURE *psCurr : objState.structures[player])
 		{
 			if (!psCurr->pStructureType)
 			{
@@ -7149,7 +7149,7 @@ static bool loadWzMapFeature(WzMap::Map &wzMap, std::unordered_map<UDWORD, UDWOR
 	return true;
 }
 
-bool loadSaveFeature2(const char *pFileName)
+bool loadSaveFeature2(const char *pFileName, GameWorld& world)
 {
 	if (!PHYSFS_exists(pFileName))
 	{
@@ -7191,11 +7191,11 @@ bool loadSaveFeature2(const char *pFileName)
 		int id = ini.value("id", -1).toInt();
 		if (id > 0)
 		{
-			pFeature = buildFeature(gameWorld, psStats, pos.x, pos.y, true, id);
+			pFeature = buildFeature(world, psStats, pos.x, pos.y, true, id);
 		}
 		else
 		{
-			pFeature = buildFeature(gameWorld, psStats, pos.x, pos.y, true);
+			pFeature = buildFeature(world, psStats, pos.x, pos.y, true);
 		}
 		if (!pFeature)
 		{
@@ -7224,12 +7224,12 @@ bool loadSaveFeature2(const char *pFileName)
 /*
 Writes the linked list of features to a file
 */
-bool writeFeatureFile(const char *pFileName)
+bool writeFeatureFile(const char *pFileName, const WorldObjectState& objState)
 {
 	WzConfig ini(WzString::fromUtf8(pFileName), WzConfig::ReadAndWrite);
 	int counter = 0;
 
-	for (const FEATURE *psCurr : gameWorld.objects.features[0])
+	for (const FEATURE *psCurr : objState.features[0])
 	{
 		ini.beginGroup("feature_" + (WzString::number(counter++).leftPadToMinimumLength(WzUniCodepoint::fromASCII('0'), 10)));  // Zero padded so that alphabetical sort works.
 		ini.setValue("name", psCurr->psStats->id);
