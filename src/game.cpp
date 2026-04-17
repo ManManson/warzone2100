@@ -5656,6 +5656,8 @@ static bool loadSaveDroid(const char *pFileName, PerPlayerDroidLists& ppsCurrent
 	using DroidGroupIdMapping = std::unordered_map<int, DROID_GROUP*>;
 	DroidGroupIdMapping aigroupToDroidGroupMapping;
 
+	GameWorld& world = &ppsCurrentDroidLists == &gameWorld.objects.droids ? gameWorld : mission.gameWorld;
+
 	for (size_t i = 0; i < list.size(); ++i)
 	{
 		ini.beginGroup(list[i]);
@@ -5736,19 +5738,19 @@ static bool loadSaveDroid(const char *pFileName, PerPlayerDroidLists& ppsCurrent
 		// If droid is on a mission, calling with the saved position might cause an assertion. Or something like that.
 		if (!onMission)
 		{
-			pos.x = clip(pos.x, world_coord(1), world_coord(gameWorld.map.width - 1));
-			pos.y = clip(pos.y, world_coord(1), world_coord(gameWorld.map.height - 1));
+			pos.x = clip(pos.x, world_coord(1), world_coord(world.map.width - 1));
+			pos.y = clip(pos.y, world_coord(1), world_coord(world.map.height - 1));
 		}
 
 		/* Create the Droid */
 		turnOffMultiMsg(true);
 		if (id > 0)
 		{
-			psDroid = reallyBuildDroid(gameWorld, psTemplate, pos, player, onMission, rot, id);
+			psDroid = reallyBuildDroid(world, psTemplate, pos, player, onMission, rot, id);
 		} else
 		{
 			// will generate a new id
-			psDroid = reallyBuildDroid(gameWorld, psTemplate, pos, player, onMission, rot);
+			psDroid = reallyBuildDroid(world, psTemplate, pos, player, onMission, rot);
 		}
 		ASSERT_OR_RETURN(false, psDroid != nullptr, "Failed to build unit %s", sortedList[i].second.toUtf8().c_str());
 		turnOffMultiMsg(false);
@@ -5827,7 +5829,7 @@ static bool loadSaveDroid(const char *pFileName, PerPlayerDroidLists& ppsCurrent
 				psDroid->selected = false;  // Droid should be visible in the transporter interface.
 				if (!psDroid->isTransporter())
 				{
-					visRemoveVisibility(psDroid, gameWorld.map); // should not have visibility data when in a transporter
+					visRemoveVisibility(psDroid, world.map); // should not have visibility data when in a transporter
 				}
 			}
 		}
@@ -5954,7 +5956,6 @@ static bool loadSaveDroid(const char *pFileName, PerPlayerDroidLists& ppsCurrent
 
 		if (psDroid->psGroup == nullptr || psDroid->psGroup->type != GT_TRANSPORTER || psDroid->isTransporter())  // do not add to list if on a transport, then the group list is used instead
 		{
-			GameWorld& world = &ppsCurrentDroidLists == &gameWorld.objects.droids ? gameWorld : mission.gameWorld;
 			addDroid(psDroid, world);
 		}
 
@@ -6135,7 +6136,7 @@ static bool writeDroidFile(const char *pFileName, const PerPlayerDroidLists& pps
 					}
 				}
 				//always save transporter droids that are in the mission list with an invalid value
-				if (&ppsCurrentDroidLists[player] == &mission.gameWorld.objects.droids[player])
+				if (onMission)
 				{
 					mRoot[droidKey.toStdString()]["position"] = Vector3i(INVALID_XY, INVALID_XY, -1); // Must be INVALID_XY or else unit placement could get messed up in missionResetDroids().
 				}
