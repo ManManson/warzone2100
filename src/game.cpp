@@ -59,6 +59,7 @@
 #include "power.h"
 #include "projectile.h"
 #include "loadsave.h"
+#include "src/world_map_state.h"
 #include "text.h"
 #include "message.h"
 #include "hci.h"
@@ -2299,7 +2300,7 @@ static bool loadRulesetJson();
 static bool gameLoad(const char *fileName);
 
 /* set the global scroll values to use for the save game */
-static void setMapScroll();
+static void setMapScroll(WorldMapState& mapState);
 
 static char *getSaveStructNameV19(SAVE_STRUCTURE_V17 *psSaveStructure)
 {
@@ -3193,7 +3194,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 	}
 
 	//adjust the scroll range for the new map or the expanded map
-	setMapScroll();
+	setMapScroll(gameWorld.map);
 
 	if (IsScenario)
 	{
@@ -8217,44 +8218,44 @@ static bool loadSaveGuideTopics(const char *pFileName)
 
 // -----------------------------------------------------------------------------------------
 /* set the global scroll values to use for the save game */
-static void setMapScroll()
+static void setMapScroll(WorldMapState& mapState)
 {
 	//if loading in a pre version5 then scroll values will not have been set up so set to max poss
 	if (width == 0 && height == 0)
 	{
-		gameWorld.map.scroll.minX = 0;
-		gameWorld.map.scroll.maxX = gameWorld.map.width;
-		gameWorld.map.scroll.minY = 0;
-		gameWorld.map.scroll.maxY = gameWorld.map.height;
+		mapState.scroll.minX = 0;
+		mapState.scroll.maxX = mapState.width;
+		mapState.scroll.minY = 0;
+		mapState.scroll.maxY = mapState.height;
 		return;
 	}
-	gameWorld.map.scroll.minX = startX;
-	gameWorld.map.scroll.minY = startY;
-	gameWorld.map.scroll.maxX = startX + width;
-	gameWorld.map.scroll.maxY = startY + height;
+	mapState.scroll.minX = startX;
+	mapState.scroll.minY = startY;
+	mapState.scroll.maxX = startX + width;
+	mapState.scroll.maxY = startY + height;
 	//check not going beyond width/height of map
-	if (gameWorld.map.scroll.maxX > (SDWORD)gameWorld.map.width)
+	if (mapState.scroll.maxX > (SDWORD)mapState.width)
 	{
-		gameWorld.map.scroll.maxX = gameWorld.map.width;
+		mapState.scroll.maxX = mapState.width;
 		debug(LOG_NEVER, "scrollMaxX was too big - It has been set to map width");
 	}
-	if (gameWorld.map.scroll.maxY > (SDWORD)gameWorld.map.height)
+	if (mapState.scroll.maxY > (SDWORD)mapState.height)
 	{
-		gameWorld.map.scroll.maxY = gameWorld.map.height;
+		mapState.scroll.maxY = mapState.height;
 		debug(LOG_NEVER, "scrollMaxY was too big - It has been set to map height");
 	}
 	// check for invalid minimum values (fixes some broken maps)
-	if (gameWorld.map.scroll.minX >= gameWorld.map.scroll.maxX)
+	if (mapState.scroll.minX >= mapState.scroll.maxX)
 	{
 		ASSERT(false, "scrollMinX was >= scrollMaxX - min has been set to 0, max has been set to mapWidth");
-		gameWorld.map.scroll.minX = 0;
-		gameWorld.map.scroll.maxX = gameWorld.map.width;
+		mapState.scroll.minX = 0;
+		mapState.scroll.maxX = mapState.width;
 	}
-	if (gameWorld.map.scroll.minY >= gameWorld.map.scroll.maxY)
+	if (mapState.scroll.minY >= mapState.scroll.maxY)
 	{
 		ASSERT(false, "scrollMinY was >= scrollMaxY - min has been set to 0, max has been set to mapHeight");
-		gameWorld.map.scroll.minY = 0;
-		gameWorld.map.scroll.maxY = gameWorld.map.height;
+		mapState.scroll.minY = 0;
+		mapState.scroll.maxY = mapState.height;
 	}
 }
 
