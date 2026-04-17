@@ -34,4 +34,3 @@ struct WorldObjectState
 	GlobalSensorList sensors; ///< List of sensors in the game.
 	GlobalOilList oils;
 };
- 

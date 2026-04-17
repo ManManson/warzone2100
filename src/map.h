@@ -416,7 +416,7 @@ static inline WZ_DECL_PURE MAPTILE *mapTile(WorldMapState& mapState, int32_t x, 
 
 static inline WZ_DECL_PURE const MAPTILE* mapTile(const WorldMapState& mapState, int32_t x, int32_t y)
 {
-	return mapTile(const_cast<const WorldMapState&>(mapState), x, y);
+	return mapTile(const_cast<WorldMapState&>(mapState), x, y);
 }
 
 static inline WZ_DECL_PURE MAPTILE *mapTile(WorldMapState& mapState, Vector2i const &v)
@@ -426,7 +426,7 @@ static inline WZ_DECL_PURE MAPTILE *mapTile(WorldMapState& mapState, Vector2i co
 
 static inline WZ_DECL_PURE const MAPTILE* mapTile(const WorldMapState& mapState, Vector2i const &v)
 {
-	return mapTile(const_cast<const WorldMapState&>(mapState), v.x, v.y);
+	return mapTile(const_cast<WorldMapState&>(mapState), v.x, v.y);
 }
 
 /** Return a pointer to the tile structure at x,y in world coordinates */
@@ -437,7 +437,7 @@ static inline WZ_DECL_PURE MAPTILE *worldTile(WorldMapState& mapState, int32_t x
 
 static inline WZ_DECL_PURE const MAPTILE* worldTile(const WorldMapState& mapState, int32_t x, int32_t y)
 {
-	return mapTile(const_cast<const WorldMapState&>(mapState), map_coord(x), map_coord(y));
+	return mapTile(const_cast<WorldMapState&>(mapState), map_coord(x), map_coord(y));
 }
 
 static inline WZ_DECL_PURE MAPTILE *worldTile(WorldMapState& mapState, Vector2i const &v)
@@ -447,7 +447,7 @@ static inline WZ_DECL_PURE MAPTILE *worldTile(WorldMapState& mapState, Vector2i 
 
 static inline WZ_DECL_PURE const MAPTILE* worldTile(const WorldMapState& mapState, Vector2i const &v)
 {
-	return mapTile(const_cast<const WorldMapState&>(mapState), map_coord(v));
+	return mapTile(const_cast<WorldMapState&>(mapState), map_coord(v));
 }
 
 /// Return ground height of top-left corner of tile at x,y
