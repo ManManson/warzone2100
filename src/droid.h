@@ -81,6 +81,7 @@ struct INITIAL_DROID_ORDERS
 
 struct GameWorld;
 struct WorldObjectState;
+struct WorldMapState;
 
 /*Builds an instance of a Structure - the x/y passed in are in world coords.*/
 /// Sends a GAME_DROID message if bMultiMessages is true, or actually creates it if false. Only uses initialOrders if sending a GAME_DROID message.
@@ -314,7 +315,7 @@ bool isConstructionDroid(BASE_OBJECT const *psObject);
 /** Check if droid is in a legal world position and is not on its way to drive off the map. */
 bool droidOnMap(const DROID *psDroid);
 
-void droidSetPosition(DROID *psDroid, int x, int y);
+void droidSetPosition(DROID *psDroid, WorldMapState& mapState, int x, int y);
 
 /// Return a percentage of how fully armed the object is, or -1 if N/A.
 int droidReloadBar(const BASE_OBJECT *psObj, const WEAPON *psWeap, int weapon_slot);
