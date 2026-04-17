@@ -30,6 +30,7 @@
 #include <list>
 
 struct GameWorld;
+struct WorldObjectState;
 
 /* The list of destroyed objects */
 using DestroyedObjectsList = std::list<BASE_OBJECT*>;
@@ -99,7 +100,7 @@ void removeFlagPosition(FLAG_POSITION *psDel, GameWorld& world);
 /* Transfer a Flag Position to a new player */
 void transferFlagPositionToPlayer(FLAG_POSITION *psFlagPos, GameWorld& world, UDWORD originalPlayer, UDWORD newPlayer);
 // free all flag positions
-void freeAllFlagPositions();
+void freeAllFlagPositions(WorldObjectState& objState);
 // used to add flag position to a specific list (ex. from assignFactoryCommandDroid)
 void addFlagPositionToList(FLAG_POSITION* psFlagPosToAdd, PerPlayerFlagPositionLists& list);
 

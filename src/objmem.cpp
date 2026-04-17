@@ -36,6 +36,7 @@
 #include "objects.h"
 #include "game_world.h"
 #include "mission.h"
+#include "world_object_state.h"
 #include "structuredef.h"
 #include "structure.h"
 #include "droid.h"
@@ -881,16 +882,16 @@ void transferFlagPositionToPlayer(FLAG_POSITION *psFlagPos, GameWorld& world, UD
 }
 
 // free all flag positions
-void freeAllFlagPositions()
+void freeAllFlagPositions(WorldObjectState& objState)
 {
 	for (uint32_t player = 0; player < MAX_PLAYERS; player++)
 	{
-		for (const auto& flagPos : gameWorld.objects.flags[player])
+		for (const auto& flagPos : objState.flags[player])
 		{
 			ASSERT(player == flagPos->player, "Player mismatch? (flagPos->player == %" PRIu32 ", expecting: %d", flagPos->player, player);
 			free(flagPos);
 		}
-		gameWorld.objects.flags[player].clear();
+		objState.flags[player].clear();
 	}
 }
 

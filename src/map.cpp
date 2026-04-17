@@ -820,7 +820,7 @@ static void generateRiverbed(WorldMapState& mapState)
 
 }
 
-static bool afterMapLoad();
+static bool afterMapLoad(WorldMapState& mapState);
 
 class WzMapBinaryPhysFSStream : public WzMap::BinaryIOStream
 {
@@ -1002,7 +1002,7 @@ void WzMapDebugLogger::printLog(WzMap::LoggingProtocol::LogLevel level, const ch
 }
 
 /* Initialise the map structure */
-bool mapLoad(char const *filename)
+bool mapLoad(char const *filename, WorldMapState& mapState)
 {
 	WzMapPhysFSIO mapIO;
 	WzMapDebugLogger debugLoggerInstance;
@@ -1013,7 +1013,7 @@ bool mapLoad(char const *filename)
 		// loadMapData call handles logging errors
 		return false;
 	}
-	return mapLoadFromWzMapData(loadedMap);
+	return mapLoadFromWzMapData(loadedMap, mapState);
 
 }
 
@@ -1048,7 +1048,7 @@ bool loadTerrainTypeMap(const std::shared_ptr<WzMap::TerrainTypeData>& ttypeData
 }
 
 ///* Initialise the map structure */
-bool mapLoadFromWzMapData(std::shared_ptr<WzMap::MapData> loadedMap)
+bool mapLoadFromWzMapData(std::shared_ptr<WzMap::MapData> loadedMap, WorldMapState& mapState)
 {
 	uint32_t		width, height;
 	const bool		preview = false;
@@ -1057,15 +1057,15 @@ bool mapLoadFromWzMapData(std::shared_ptr<WzMap::MapData> loadedMap)
 	height = loadedMap->height;
 
 	/* See if this is the first time a map has been loaded */
-	ASSERT(gameWorld.map.tiles == nullptr, "Map has not been cleared before calling mapLoad()!");
+	ASSERT(mapState.tiles == nullptr, "Map has not been cleared before calling mapLoad()!");
 
 	/* Allocate the memory for the map */
-	gameWorld.map.tiles = std::make_unique<MAPTILE[]>(static_cast<size_t>(width) * height);
+	mapState.tiles = std::make_unique<MAPTILE[]>(static_cast<size_t>(width) * height);
 	getCurrentLightmapData().reset(width, height);
-	ASSERT(gameWorld.map.tiles != nullptr, "Out of memory");
+	ASSERT(mapState.tiles != nullptr, "Out of memory");
 
-	gameWorld.map.width = width;
-	gameWorld.map.height = height;
+	mapState.width = width;
+	mapState.height = height;
 
 	// FIXME: the map preview code loads the map without setting the tileset
 	if (!tilesetDir)
@@ -1090,19 +1090,19 @@ bool mapLoadFromWzMapData(std::shared_ptr<WzMap::MapData> loadedMap)
 	//load in the map data itself
 
 	/* Load in the map data */
-	for (int i = 0; i < gameWorld.map.width * gameWorld.map.height; ++i)
+	for (int i = 0; i < mapState.width * mapState.height; ++i)
 	{
 		ASSERT(loadedMap->mMapTiles[i].height <= TILE_MAX_HEIGHT, "Tile height (%" PRIu16 ") exceeds TILE_MAX_HEIGHT (%zu)", loadedMap->mMapTiles[i].height, static_cast<size_t>(TILE_MAX_HEIGHT));
-		gameWorld.map.tiles[i].texture = loadedMap->mMapTiles[i].texture;
-		gameWorld.map.tiles[i].height = loadedMap->mMapTiles[i].height;
+		mapState.tiles[i].texture = loadedMap->mMapTiles[i].texture;
+		mapState.tiles[i].height = loadedMap->mMapTiles[i].height;
 
 		// Visibility stuff
-		memset(gameWorld.map.tiles[i].watchers, 0, sizeof(gameWorld.map.tiles[i].watchers));
-		memset(gameWorld.map.tiles[i].sensors, 0, sizeof(gameWorld.map.tiles[i].sensors));
-		memset(gameWorld.map.tiles[i].jammers, 0, sizeof(gameWorld.map.tiles[i].jammers));
-		gameWorld.map.tiles[i].sensorBits = 0;
-		gameWorld.map.tiles[i].jammerBits = 0;
-		gameWorld.map.tiles[i].tileExploredBits = 0;
+		memset(mapState.tiles[i].watchers, 0, sizeof(mapState.tiles[i].watchers));
+		memset(mapState.tiles[i].sensors, 0, sizeof(mapState.tiles[i].sensors));
+		memset(mapState.tiles[i].jammers, 0, sizeof(mapState.tiles[i].jammers));
+		mapState.tiles[i].sensorBits = 0;
+		mapState.tiles[i].jammerBits = 0;
+		mapState.tiles[i].tileExploredBits = 0;
 	}
 
 	if (preview)
@@ -1114,14 +1114,14 @@ bool mapLoadFromWzMapData(std::shared_ptr<WzMap::MapData> loadedMap)
 	size_t gwIdx = 0;
 	for (const auto gateway : loadedMap->mGateways)
 	{
-		if (!gwNewGateway(gameWorld.map, gateway.x1, gateway.y1, gateway.x2, gateway.y2))
+		if (!gwNewGateway(mapState, gateway.x1, gateway.y1, gateway.x2, gateway.y2))
 		{
 			debug(LOG_ERROR, "Unable to add gateway %zu - dropping it", gwIdx);
 		}
 		gwIdx++;
 	}
 
-	if (!afterMapLoad())
+	if (!afterMapLoad(mapState))
 	{
 		return false;
 	}
@@ -1129,71 +1129,71 @@ bool mapLoadFromWzMapData(std::shared_ptr<WzMap::MapData> loadedMap)
 	return true;
 }
 
-static bool afterMapLoad()
+static bool afterMapLoad(WorldMapState& mapState)
 {
-	if (!mapSetGroundTypes(gameWorld.map))
+	if (!mapSetGroundTypes(mapState))
 	{
 		return false;
 	}
 
-	for (int y = 0; y < gameWorld.map.height; ++y)
+	for (int y = 0; y < mapState.height; ++y)
 	{
-		for (int x = 0; x < gameWorld.map.width; ++x)
+		for (int x = 0; x < mapState.width; ++x)
 		{
 			// FIXME: magic number
-			mapTile(gameWorld.map, x, y)->waterLevel = mapTile(gameWorld.map, x, y)->height - world_coord(1) / 3;
+			mapTile(mapState, x, y)->waterLevel = mapTile(mapState, x, y)->height - world_coord(1) / 3;
 		}
 	}
-	generateRiverbed(gameWorld.map);
+	generateRiverbed(mapState);
 
 	/* set up the scroll mins and maxs - set values to valid ones for any new map */
-	gameWorld.map.scroll.minX = gameWorld.map.scroll.minY = 0;
-	gameWorld.map.scroll.maxX = gameWorld.map.width;
-	gameWorld.map.scroll.maxY = gameWorld.map.height;
+	mapState.scroll.minX = mapState.scroll.minY = 0;
+	mapState.scroll.maxX = mapState.width;
+	mapState.scroll.maxY = mapState.height;
 
 	/* Allocate aux maps */
-	ASSERT(gameWorld.map.width >= 0 && gameWorld.map.height >= 0, "Invalid mapWidth or mapHeight (%d x %d)", gameWorld.map.width, gameWorld.map.height);
-	const size_t mapSize = static_cast<size_t>(gameWorld.map.width) * static_cast<size_t>(gameWorld.map.height);
-	gameWorld.map.blockMap[AUX_MAP] = std::make_unique<uint8_t[]>(mapSize);
-	gameWorld.map.blockMap[AUX_ASTARMAP] =  std::make_unique<uint8_t[]>(mapSize);
-	gameWorld.map.blockMap[AUX_DANGERMAP] = std::make_unique<uint8_t[]>(mapSize);
+	ASSERT(mapState.width >= 0 && mapState.height >= 0, "Invalid mapWidth or mapHeight (%d x %d)", mapState.width, mapState.height);
+	const size_t mapSize = static_cast<size_t>(mapState.width) * static_cast<size_t>(mapState.height);
+	mapState.blockMap[AUX_MAP] = std::make_unique<uint8_t[]>(mapSize);
+	mapState.blockMap[AUX_ASTARMAP] =  std::make_unique<uint8_t[]>(mapSize);
+	mapState.blockMap[AUX_DANGERMAP] = std::make_unique<uint8_t[]>(mapSize);
 	for (int x = 0; x < MAX_PLAYERS + AUX_MAX; ++x)
 	{
-		gameWorld.map.auxMap[x] = std::make_unique<uint8_t[]> (mapSize);
+		mapState.auxMap[x] = std::make_unique<uint8_t[]> (mapSize);
 	}
 
 	// Set our blocking bits
-	for (int y = 0; y < gameWorld.map.height; ++y)
+	for (int y = 0; y < mapState.height; ++y)
 	{
-		for (int x = 0; x < gameWorld.map.width; ++x)
+		for (int x = 0; x < mapState.width; ++x)
 		{
-			MAPTILE *psTile = mapTile(gameWorld.map, x, y);
+			MAPTILE *psTile = mapTile(mapState, x, y);
 
-			auxClearBlocking(gameWorld.map, x, y, AUXBITS_ALL);
-			auxClearAll(gameWorld.map, x, y, AUXBITS_ALL);
+			auxClearBlocking(mapState, x, y, AUXBITS_ALL);
+			auxClearAll(mapState, x, y, AUXBITS_ALL);
 
 			/* All tiles outside of the map and on map border are blocking. */
-			if (x < 1 || y < 1 || x > gameWorld.map.width - 1 || y > gameWorld.map.height - 1)
+			if (x < 1 || y < 1 || x > mapState.width - 1 || y > mapState.height - 1)
 			{
-				auxSetBlocking(gameWorld.map, x, y, AUXBITS_ALL);	// block everything
+				auxSetBlocking(mapState, x, y, AUXBITS_ALL);	// block everything
 			}
 			if (terrainType(psTile) == TER_WATER)
 			{
-				auxSetBlocking(gameWorld.map, x, y, WATER_BLOCKED);
+				auxSetBlocking(mapState, x, y, WATER_BLOCKED);
 			}
 			else
 			{
-				auxSetBlocking(gameWorld.map, x, y, LAND_BLOCKED);
+				auxSetBlocking(mapState, x, y, LAND_BLOCKED);
 			}
 			if (terrainType(psTile) == TER_CLIFFFACE)
 			{
-				auxSetBlocking(gameWorld.map, x, y, FEATURE_BLOCKED);
+				auxSetBlocking(mapState, x, y, FEATURE_BLOCKED);
 			}
 		}
 	}
 
 	/* Set continents. This should ideally be done in advance by the map editor. */
-	mapFloodFillContinents(gameWorld.map);
+	mapFloodFillContinents(mapState);
 
 	return true;
 }

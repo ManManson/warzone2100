@@ -333,7 +333,7 @@ bool missionShutDown()
 		freeAllDroids(gameWorld);
 		freeAllStructs(gameWorld);
 		freeAllFeatures(gameWorld);
-		freeAllFlagPositions();
+		freeAllFlagPositions(gameWorld.objects);
 		releaseAllProxDisp();
 		gwShutDown(gameWorld.map);
 
@@ -843,7 +843,7 @@ void restoreMissionData()
 	freeAllDroids(gameWorld);
 	freeAllStructs(gameWorld);
 	freeAllFeatures(gameWorld);
-	freeAllFlagPositions();
+	freeAllFlagPositions(gameWorld.objects);
 	gwShutDown(gameWorld.map);
 	if (game.type != LEVEL_TYPE::CAMPAIGN)
 	{

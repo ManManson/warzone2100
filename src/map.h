@@ -356,10 +356,10 @@ static inline void clip_world_offmap(const WorldMapState& mapState, int *worldX,
 bool mapShutdown();
 
 /* Load the map data */
-bool mapLoad(char const *filename);
+bool mapLoad(char const *filename, WorldMapState& mapState);
 struct ScriptMapData;
 bool loadTerrainTypeMap(const std::shared_ptr<WzMap::TerrainTypeData>& ttypeData);
-bool mapLoadFromWzMapData(std::shared_ptr<WzMap::MapData> mapData);
+bool mapLoadFromWzMapData(std::shared_ptr<WzMap::MapData> mapData, WorldMapState& mapState);
 
 // used to reload decal + ground types types when switching terrain overrides
 bool mapReloadGroundTypes();

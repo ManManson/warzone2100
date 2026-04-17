@@ -59,7 +59,7 @@
 #include "power.h"
 #include "projectile.h"
 #include "loadsave.h"
-#include "src/world_map_state.h"
+#include "world_map_state.h"
 #include "text.h"
 #include "message.h"
 #include "hci.h"
@@ -3023,7 +3023,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		//load in the map file
 		aFileName[fileExten] = '\0';
 		strcat(aFileName, "mission.map");
-		if (!mapLoad(aFileName))
+		if (!mapLoad(aFileName, gameWorld.map))
 		{
 			debug(LOG_ERROR, "Failed with: %s", aFileName);
 			return false;
@@ -3155,7 +3155,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 			syncDebug("crc(droids) = 0x%08x", data->crcSumDroids(0));
 			syncDebug("crc(features) = 0x%08x", data->crcSumFeatures(0));
 		}
-		if (!mapLoadFromWzMapData(mapData))
+		if (!mapLoadFromWzMapData(mapData, gameWorld.map))
 		{
 			debug(LOG_ERROR, "Failed to process map data from path: %s", aFileName);
 			return false;
@@ -3174,7 +3174,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 			strcat(aFileName, "fxstate.json");
 
 			// load the fx data from the file
-			if (!readFXData(aFileName))
+			if (!readFXData(aFileName, gameWorld.map))
 			{
 				debug(LOG_ERROR, "Failed with: %s", aFileName);
 				goto error;
@@ -3314,7 +3314,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		ASSERT(data != nullptr, "Expecting WzMap::Map instance");
 		if (game.type != LEVEL_TYPE::CAMPAIGN)
 		{
-			freeAllFlagPositions();		//clear any flags put in during level loads
+			freeAllFlagPositions(gameWorld.objects);		//clear any flags put in during level loads
 		}
 		if (!loadWzMapStructure(*(data.get()), fixedMapIdToGeneratedId, moduleToBuilding))
 		{
@@ -6440,7 +6440,7 @@ static bool loadSaveStructure2(const char *pFileName, GameWorld& world)
 	}
 	WzConfig ini(WzString::fromUtf8(pFileName), WzConfig::ReadOnly);
 
-	freeAllFlagPositions();		//clear any flags put in during level loads
+	freeAllFlagPositions(world.objects);		//clear any flags put in during level loads
 
 	std::vector<WzString> list = ini.childGroups();
 	for (size_t i = 0; i < list.size(); ++i)

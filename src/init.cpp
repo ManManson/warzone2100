@@ -1604,7 +1604,7 @@ bool stageTwoShutDown()
 	freeAllStructs(gameWorld);
 	freeAllDroids(gameWorld);
 	freeAllFeatures(gameWorld);
-	freeAllFlagPositions();
+	freeAllFlagPositions(gameWorld.objects);
 
 	if (!messageShutdown())
 	{
@@ -1899,7 +1899,7 @@ bool saveGameReset()
 	freeAllStructs(gameWorld);
 	freeAllDroids(gameWorld);
 	freeAllFeatures(gameWorld);
-	freeAllFlagPositions();
+	freeAllFlagPositions(gameWorld.objects);
 	initMission();
 	initTransporters();
 
