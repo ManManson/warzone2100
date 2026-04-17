@@ -151,6 +151,11 @@ GATEWAY_LIST &gwGetGateways(WorldMapState& mapState)
 	return mapState.gateways;
 }
 
+const GATEWAY_LIST &gwGetGateways(const WorldMapState& mapState)
+{
+	return mapState.gateways;
+}
+
 // Release a gateway
 static void gwFreeGateway(WorldMapState& mapState, GATEWAY *psDel)
 {

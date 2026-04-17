@@ -1199,10 +1199,10 @@ static bool afterMapLoad()
 }
 
 /* Save the map data */
-bool mapSaveToWzMapData(WzMap::MapData& output)
+bool mapSaveToWzMapData(WzMap::MapData& output, const WorldMapState& mapState)
 {
-	output.width = gameWorld.map.width;
-	output.height = gameWorld.map.height;
+	output.width = mapState.width;
+	output.height = mapState.height;
 
 	// Write out the map tile data
 	uint32_t numMapTiles = output.width * output.height;
@@ -1211,22 +1211,22 @@ bool mapSaveToWzMapData(WzMap::MapData& output)
 	for (uint32_t i = 0; i < numMapTiles; i++)
 	{
 		WzMap::MapData::MapTile mapDataTile = {};
-		mapDataTile.texture = gameWorld.map.tiles[i].texture;
-		if (terrainType(&gameWorld.map.tiles[i]) == TER_WATER)
+		mapDataTile.texture = mapState.tiles[i].texture;
+		if (terrainType(&mapState.tiles[i]) == TER_WATER)
 		{
-			mapDataTile.height = (gameWorld.map.tiles[i].waterLevel + world_coord(1) / 3); // this magic number stuff should match afterMapLoad()'s handling of water tiles (??)
+			mapDataTile.height = (mapState.tiles[i].waterLevel + world_coord(1) / 3); // this magic number stuff should match afterMapLoad()'s handling of water tiles (??)
 		}
 		else
 		{
-			mapDataTile.height = gameWorld.map.tiles[i].height;
+			mapDataTile.height = mapState.tiles[i].height;
 		}
 		output.mMapTiles.push_back(std::move(mapDataTile));
 	}
 
 	// Write out the gateway data
 	output.mGateways.clear();
-	output.mGateways.reserve(gwNumGateways(gameWorld.map));
-	for (auto psCurrGate : gwGetGateways(gameWorld.map))
+	output.mGateways.reserve(gwNumGateways(mapState));
+	for (const auto* psCurrGate : gwGetGateways(mapState))
 	{
 		WzMap::MapData::Gateway gw = {};
 		gw.x1 = psCurrGate->x1;
@@ -1235,7 +1235,7 @@ bool mapSaveToWzMapData(WzMap::MapData& output)
 		gw.y2 = psCurrGate->y2;
 		ASSERT(gw.x1 == gw.x2 || gw.y1 == gw.y2, "Invalid gateway coordinates (%d, %d, %d, %d)",
 			   gw.x1, gw.y1, gw.x2, gw.y2);
-		ASSERT(gw.x1 < gameWorld.map.width && gw.y1 < gameWorld.map.height && gw.x2 < gameWorld.map.width && gw.y2 < gameWorld.map.height,
+		ASSERT(gw.x1 < mapState.width && gw.y1 < mapState.height && gw.x2 < mapState.width && gw.y2 < mapState.height,
 			   "Bad gateway dimensions for savegame");
 		output.mGateways.push_back(std::move(gw));
 	}
@@ -1749,7 +1749,7 @@ void getTileMaxMin(const WorldMapState& mapState, int x, int y, int *pMax, int *
 
 // -----------------------------------------------------------------------------------
 /* This will save out the visibility data */
-bool writeVisibilityData(const char *fileName)
+bool writeVisibilityData(const char *fileName, const WorldMapState& mapState)
 {
 	unsigned int i;
 	VIS_SAVEHEADER fileHeader;
@@ -1782,9 +1782,9 @@ bool writeVisibilityData(const char *fileName)
 
 	for (unsigned plane = 0; plane < planes; ++plane)
 	{
-		for (i = 0; i < gameWorld.map.width * gameWorld.map.height; ++i)
+		for (i = 0; i < mapState.width * mapState.height; ++i)
 		{
-			if (!PHYSFS_writeUBE8(fileHandle, gameWorld.map.tiles[i].tileExploredBits >> (plane * 8)))
+			if (!PHYSFS_writeUBE8(fileHandle, mapState.tiles[i].tileExploredBits >> (plane * 8)))
 			{
 				debug(LOG_ERROR, "writeVisibilityData: could not write to %s; PHYSFS error: %s", fileName, WZ_PHYSFS_getLastError());
 				PHYSFS_close(fileHandle);
@@ -1800,7 +1800,7 @@ bool writeVisibilityData(const char *fileName)
 
 // -----------------------------------------------------------------------------------
 /* This will read in the visibility data */
-bool readVisibilityData(const char *fileName)
+bool readVisibilityData(const char *fileName, WorldMapState& mapState)
 {
 	VIS_SAVEHEADER fileHeader;
 	unsigned int expectedFileSize, fileSize;
@@ -1841,7 +1841,7 @@ bool readVisibilityData(const char *fileName)
 	int planes = (game.maxPlayers + 7) / 8;
 
 	// Validate the filesize
-	expectedFileSize = sizeof(fileHeader.aFileType) + sizeof(fileHeader.version) + gameWorld.map.width * gameWorld.map.height * planes;
+	expectedFileSize = sizeof(fileHeader.aFileType) + sizeof(fileHeader.version) + mapState.width * mapState.height * planes;
 	fileSize = PHYSFS_fileLength(fileHandle);
 	if (fileSize != expectedFileSize)
 	{
@@ -1852,13 +1852,13 @@ bool readVisibilityData(const char *fileName)
 	}
 
 	// For every tile...
-	for (i = 0; i < gameWorld.map.width * gameWorld.map.height; i++)
+	for (i = 0; i < mapState.width * mapState.height; i++)
 	{
-		gameWorld.map.tiles[i].tileExploredBits = 0;
+		mapState.tiles[i].tileExploredBits = 0;
 	}
 	for (unsigned plane = 0; plane < planes; ++plane)
 	{
-		for (i = 0; i < gameWorld.map.width * gameWorld.map.height; i++)
+		for (i = 0; i < mapState.width * mapState.height; i++)
 		{
 			/* Get the visibility data */
 			uint8_t val = 0;
@@ -1868,7 +1868,7 @@ bool readVisibilityData(const char *fileName)
 				PHYSFS_close(fileHandle);
 				return false;
 			}
-			gameWorld.map.tiles[i].tileExploredBits |= val << (plane * 8);
+			mapState.tiles[i].tileExploredBits |= val << (plane * 8);
 		}
 	}
 

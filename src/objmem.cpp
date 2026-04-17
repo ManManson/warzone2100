@@ -603,9 +603,9 @@ static void freeAllEntitiesImpl(PerPlayerObjectLists<Entity, PlayerCount>& entit
 }
 
 /* Remove all droids */
-void freeAllDroids()
+void freeAllDroids(GameWorld& world)
 {
-	freeAllEntitiesImpl<DROID, MAX_PLAYERS>(gameWorld.objects.droids);
+	freeAllEntitiesImpl<DROID, MAX_PLAYERS>(world.objects.droids);
 }
 
 /*Remove a single Droid from a list*/
@@ -637,12 +637,6 @@ void removeDroid(DROID* psDroidToRemove, GameWorld& world)
 			removeObjectFromFuncList(mission.gameWorld.objects.sensors, (BASE_OBJECT*)psDroidToRemove, 0);
 		}
 	}
-}
-
-/*Removes all droids that may be stored in the mission lists*/
-void freeAllMissionDroids()
-{
-	freeAllEntitiesImpl<DROID, MAX_PLAYERS>(mission.gameWorld.objects.droids);
 }
 
 /*Removes all droids that may be stored in the limbo lists*/
@@ -730,9 +724,9 @@ void killStruct(STRUCTURE *psBuilding)
 }
 
 /* Remove heapall structures */
-void freeAllStructs()
+void freeAllStructs(GameWorld& world)
 {
-	freeAllEntitiesImpl<STRUCTURE, MAX_PLAYERS>(gameWorld.objects.structures);
+	freeAllEntitiesImpl<STRUCTURE, MAX_PLAYERS>(world.objects.structures);
 }
 
 /*Remove a single Structure from a list*/
@@ -788,9 +782,9 @@ void killFeature(FEATURE *psDel)
 }
 
 /* Remove all features */
-void freeAllFeatures()
+void freeAllFeatures(GameWorld& world)
 {
-	freeAllEntitiesImpl<FEATURE, 1>(gameWorld.objects.features);
+	freeAllEntitiesImpl<FEATURE, 1>(world.objects.features);
 }
 
 /**************************  FLAG_POSITION ********************************/

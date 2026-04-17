@@ -395,7 +395,7 @@ public:
 };
 
 /* Save the map data */
-bool mapSaveToWzMapData(WzMap::MapData& output);
+bool mapSaveToWzMapData(WzMap::MapData& output, const WorldMapState& mapState);
 
 /** Return a pointer to the tile structure at x,y in map coordinates */
 static inline WZ_DECL_PURE MAPTILE *mapTile(WorldMapState& mapState, int32_t x, int32_t y)
@@ -550,8 +550,8 @@ bool mapObjIsAboveGround(const SIMPLE_OBJECT *psObj);
    in tile coords */
 void getTileMaxMin(const WorldMapState& mapState, int x, int y, int *pMax, int *pMin);
 
-bool readVisibilityData(const char *fileName);
-bool writeVisibilityData(const char *fileName);
+bool readVisibilityData(const char *fileName, WorldMapState& mapState);
+bool writeVisibilityData(const char *fileName, const WorldMapState& mapState);
 
 void mapFloodFillContinents(WorldMapState& mapState);
 

@@ -51,5 +51,6 @@ size_t gwNumGateways(const WorldMapState& mapState);
 
 /// Get the gateway list.
 GATEWAY_LIST &gwGetGateways(WorldMapState& mapState);
+const GATEWAY_LIST &gwGetGateways(const WorldMapState& mapState);
 
 #endif // __INCLUDED_SRC_GATEWAY_H__

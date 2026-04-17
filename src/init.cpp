@@ -1601,9 +1601,9 @@ bool stageTwoShutDown()
 
 	cdAudio_Stop();
 
-	freeAllStructs();
-	freeAllDroids();
-	freeAllFeatures();
+	freeAllStructs(gameWorld);
+	freeAllDroids(gameWorld);
+	freeAllFeatures(gameWorld);
 	freeAllFlagPositions();
 
 	if (!messageShutdown())
@@ -1896,9 +1896,9 @@ bool saveGameReset()
 
 	cdAudio_Stop();
 
-	freeAllStructs();
-	freeAllDroids();
-	freeAllFeatures();
+	freeAllStructs(gameWorld);
+	freeAllDroids(gameWorld);
+	freeAllFeatures(gameWorld);
 	freeAllFlagPositions();
 	initMission();
 	initTransporters();

@@ -2246,7 +2246,7 @@ static bool loadMainFile(const std::string &fileName);
 static bool loadMainFileFinal(const std::string &fileName);
 static bool writeMainFile(const std::string &fileName, SDWORD saveType);
 static bool writeGameFile(const char *fileName, SDWORD saveType);
-static bool writeMapFile(const char *fileName);
+static bool writeMapFile(const char *fileName, const WorldMapState& mapState);
 
 static bool loadWzMapDroidInit(WzMap::Map &wzMap, std::unordered_map<UDWORD, UDWORD>& fixedMapIdToGeneratedId);
 
@@ -2690,9 +2690,9 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		//clear out the audio
 		audio_StopAll();
 
-		freeAllDroids();
-		freeAllStructs();
-		freeAllFeatures();
+		freeAllDroids(gameWorld);
+		freeAllStructs(gameWorld);
+		freeAllFeatures(gameWorld);
 
 		//clear all the messages?
 		releaseAllProxDisp();
@@ -3034,7 +3034,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		strcat(aFileName, "misvis.bjo");
 
 		// Load in the visibility data from the chosen file
-		if (!readVisibilityData(aFileName))
+		if (!readVisibilityData(aFileName, gameWorld.map))
 		{
 			debug(LOG_ERROR, "Failed with: %s", aFileName);
 			goto error;
@@ -3378,7 +3378,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 			strcat(aFileName, "visstate.bjo");
 
 			// Load in the visibility data from the chosen file
-			if (!readVisibilityData(aFileName))
+			if (!readVisibilityData(aFileName, gameWorld.map))
 			{
 				debug(LOG_ERROR, "Failed with: %s", aFileName);
 				goto error;
@@ -3537,9 +3537,9 @@ error:
 	      keepObjects ? "true" : "false", freeMem ? "true" : "false", UserSaveGame ? "true" : "false");
 
 	/* Clear all the objects off the map and free up the map memory */
-	freeAllDroids();
-	freeAllStructs();
-	freeAllFeatures();
+	freeAllDroids(gameWorld);
+	freeAllStructs(gameWorld);
+	freeAllFeatures(gameWorld);
 	droidTemplateShutDown();
 	gameWorld.map.tiles = nullptr;
 
@@ -3583,7 +3583,7 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 	//save the map file
 	strcat(CurrentFileName, "/game.map");
 	/* Write the data to the file */
-	if (!writeMapFile(CurrentFileName))
+	if (!writeMapFile(CurrentFileName, gameWorld.map))
 	{
 		debug(LOG_ERROR, "saveGame: writeMapFile(\"%s\") failed", CurrentFileName);
 		goto error;
@@ -3701,7 +3701,7 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 	CurrentFileName[fileExtension] = '\0';
 	strcat(CurrentFileName, "visstate.bjo");
 	/*Write the data to the file*/
-	if (!writeVisibilityData(CurrentFileName))
+	if (!writeVisibilityData(CurrentFileName, gameWorld.map))
 	{
 		debug(LOG_ERROR, "saveGame: writeVisibilityData(\"%s\") failed", CurrentFileName);
 		goto error;
@@ -3801,7 +3801,7 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 		CurrentFileName[fileExtension] = '\0';
 		strcat(CurrentFileName, "mission.map");
 		/* Write the data to the file */
-		if (!writeMapFile(CurrentFileName))
+		if (!writeMapFile(CurrentFileName, gameWorld.map))
 		{
 			debug(LOG_ERROR, "saveGame: writeMapFile(\"%s\") failed", CurrentFileName);
 			goto error;
@@ -3811,7 +3811,7 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 		CurrentFileName[fileExtension] = '\0';
 		strcat(CurrentFileName, "misvis.bjo");
 		/* Write the data to the file */
-		if (!writeVisibilityData(CurrentFileName))
+		if (!writeVisibilityData(CurrentFileName, gameWorld.map))
 		{
 			debug(LOG_ERROR, "saveGame: writeVisibilityData(\"%s\") failed", CurrentFileName);
 			goto error;
@@ -3861,13 +3861,13 @@ error:
 }
 
 // -----------------------------------------------------------------------------------------
-static bool writeMapFile(const char *fileName)
+static bool writeMapFile(const char *fileName, const WorldMapState& mapState)
 {
 	ASSERT_OR_RETURN(false, fileName != nullptr, "filename is null");
 
 	/* Get the save data */
 	WzMap::MapData mapData;
-	bool status = mapSaveToWzMapData(mapData);
+	bool status = mapSaveToWzMapData(mapData, mapState);
 	if (!status)
 	{
 		return false;

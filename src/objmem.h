@@ -29,6 +29,8 @@
 
 #include <list>
 
+struct GameWorld;
+
 /* The list of destroyed objects */
 using DestroyedObjectsList = std::list<BASE_OBJECT*>;
 extern DestroyedObjectsList psDestroyedObj;
@@ -59,13 +61,10 @@ void addDroidToLimboLists(DROID *psDroidToAdd, PerPlayerDroidLists& limboLists);
 void killDroid(DROID *psDel);
 
 /* Remove all droids */
-void freeAllDroids();
+void freeAllDroids(GameWorld& world);
 
 /*Remove a single Droid from its list*/
 void removeDroid(DROID *psDroidToRemove, GameWorld& world);
-
-/*Removes all droids that may be stored in the mission lists*/
-void freeAllMissionDroids();
 
 /*Removes all droids that may be stored in the limbo lists*/
 void freeAllLimboDroids();
@@ -77,7 +76,7 @@ void addStructure(STRUCTURE *psStructToAdd, GameWorld& world);
 void killStruct(STRUCTURE *psDel);
 
 /* Remove all structures */
-void freeAllStructs();
+void freeAllStructs(GameWorld& world);
 
 /*Remove a single Structure from a list*/
 void removeStructure(STRUCTURE *psStructToRemove, GameWorld& world);
@@ -89,7 +88,7 @@ void addFeature(FEATURE *psFeatureToAdd, GameWorld& world);
 void killFeature(FEATURE *psDel);
 
 /* Remove all features */
-void freeAllFeatures();
+void freeAllFeatures(GameWorld& world);
 
 /* Create a new Flag Position */
 bool createFlagPosition(FLAG_POSITION **ppsNew, UDWORD player);

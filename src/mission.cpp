@@ -315,7 +315,7 @@ void initMission()
 void releaseMission()
 {
 	/* mission.apsDroidLists may contain some droids that have been transferred from one campaign to the next */
-	freeAllMissionDroids();
+	freeAllDroids(mission.gameWorld);
 
 	/* apsLimboDroids may contain some droids that have been saved at the end of one mission and not yet used */
 	freeAllLimboDroids();
@@ -330,9 +330,9 @@ bool missionShutDown()
 		//clear out the audio
 		audio_StopAll();
 
-		freeAllDroids();
-		freeAllStructs();
-		freeAllFeatures();
+		freeAllDroids(gameWorld);
+		freeAllStructs(gameWorld);
+		freeAllFeatures(gameWorld);
 		freeAllFlagPositions();
 		releaseAllProxDisp();
 		gwShutDown(gameWorld.map);
@@ -840,9 +840,9 @@ void restoreMissionData()
 
 	//clear all the lists
 	proj_FreeAllProjectiles();
-	freeAllDroids();
-	freeAllStructs();
-	freeAllFeatures();
+	freeAllDroids(gameWorld);
+	freeAllStructs(gameWorld);
+	freeAllFeatures(gameWorld);
 	freeAllFlagPositions();
 	gwShutDown(gameWorld.map);
 	if (game.type != LEVEL_TYPE::CAMPAIGN)
@@ -1158,8 +1158,8 @@ void saveCampaignData()
 	audio_StopAll();
 
 	//clear all other memory
-	freeAllStructs();
-	freeAllFeatures();
+	freeAllStructs(gameWorld);
+	freeAllFeatures(gameWorld);
 }
 
 
