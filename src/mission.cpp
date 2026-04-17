@@ -337,36 +337,7 @@ bool missionShutDown()
 		releaseAllProxDisp();
 		gwShutDown(gameWorld.map);
 
-		for (int inc = 0; inc < MAX_PLAYERS; inc++)
-		{
-			gameWorld.objects.droids[inc] = std::move(mission.gameWorld.objects.droids[inc]);
-			mission.gameWorld.objects.droids[inc].clear();
-			gameWorld.objects.structures[inc] = std::move(mission.gameWorld.objects.structures[inc]);
-			mission.gameWorld.objects.structures[inc].clear();
-			gameWorld.objects.flags[inc] = std::move(mission.gameWorld.objects.flags[inc]);
-			mission.gameWorld.objects.flags[inc].clear();
-			gameWorld.objects.extractors[inc] = std::move(mission.gameWorld.objects.extractors[inc]);
-			mission.gameWorld.objects.extractors[inc].clear();
-		}
-		gameWorld.objects.features[0] = std::move(mission.gameWorld.objects.features[0]);
-		gameWorld.objects.sensors[0] = std::move(mission.gameWorld.objects.sensors[0]);
-		gameWorld.objects.oils[0] = std::move(mission.gameWorld.objects.oils[0]);
-		mission.gameWorld.objects.features[0].clear();
-		mission.gameWorld.objects.sensors[0].clear();
-		mission.gameWorld.objects.oils[0].clear();
-
-		gameWorld.map.tiles = std::move(mission.gameWorld.map.tiles);
-		gameWorld.map.width = mission.gameWorld.map.width;
-		gameWorld.map.height = mission.gameWorld.map.height;
-		for (int i = 0; i < ARRAY_SIZE(mission.gameWorld.map.blockMap); ++i)
-		{
-			gameWorld.map.blockMap[i] = std::move(mission.gameWorld.map.blockMap[i]);
-		}
-		for (int i = 0; i < ARRAY_SIZE(mission.gameWorld.map.auxMap); ++i)
-		{
-			gameWorld.map.auxMap[i] = std::move(mission.gameWorld.map.auxMap[i]);
-		}
-		std::swap(mission.gameWorld.map.gateways, gwGetGateways(gameWorld.map));
+		gameWorld = std::move(mission.gameWorld);
 		// FIXME: temporary hack until we have a proper solution for managing active/non-active worlds
 		// without moving/swapping them.
 		fixupAllOwningWorldLists(gameWorld);
