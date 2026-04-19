@@ -2255,7 +2255,7 @@ static bool writeDroidFile(const char *pFileName, const PerPlayerDroidLists& pps
 
 static bool loadSaveStructure(char *pFileData, UDWORD filesize, GameWorld& world);
 static bool loadSaveStructure2(const char *pFileName, GameWorld& world);
-static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDWORD>& fixedMapIdToGeneratedId, std::array<std::unordered_map<UDWORD, UDWORD>, MAX_PLAYER_SLOTS>& moduleToBuilding);
+static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDWORD>& fixedMapIdToGeneratedId, std::array<std::unordered_map<UDWORD, UDWORD>, MAX_PLAYER_SLOTS>& moduleToBuilding, GameWorld& world);
 static bool loadSaveStructurePointers(const WzString& filename, PerPlayerStructureLists *ppList);
 static bool writeStructFile(const char *pFileName, const WorldObjectState& objState);
 
@@ -3304,7 +3304,7 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 		{
 			freeAllFlagPositions(gameWorld.objects);		//clear any flags put in during level loads
 		}
-		if (!loadWzMapStructure(*(data.get()), fixedMapIdToGeneratedId, moduleToBuilding))
+		if (!loadWzMapStructure(*(data.get()), fixedMapIdToGeneratedId, moduleToBuilding, gameWorld))
 		{
 			aFileName[fileExten] = '\0';
 			debug(LOG_ERROR, "Failed to load map structure init from map directory: %s", aFileName);
@@ -5908,11 +5908,11 @@ static bool loadSaveDroid(const char *pFileName, GameWorld& world, PerPlayerDroi
 		if (psDroid->sMove.Status == MOVEWAITROUTE)
 		{
 			psDroid->sMove.Status = MOVEINACTIVE;
-			fpathDroidRoute(psDroid, psDroid->sMove.destination.x, psDroid->sMove.destination.y, FMT_MOVE);
+			fpathDroidRoute(psDroid, world.map, psDroid->sMove.destination.x, psDroid->sMove.destination.y, FMT_MOVE);
 			psDroid->sMove.Status = MOVEWAITROUTE;
 
 			// Droid might be on a mission, so finish pathfinding now, in case pointers swap and map size changes.
-			FPATH_RETVAL dr = fpathDroidRoute(psDroid, psDroid->sMove.destination.x, psDroid->sMove.destination.y, FMT_MOVE);
+			FPATH_RETVAL dr = fpathDroidRoute(psDroid, world.map, psDroid->sMove.destination.x, psDroid->sMove.destination.y, FMT_MOVE);
 			if (dr == FPR_OK)
 			{
 				psDroid->sMove.Status = MOVENAVIGATE;
@@ -6268,7 +6268,7 @@ bool loadSaveStructure(char *pFileData, UDWORD filesize, GameWorld& world)
 		psStructure->status = (STRUCT_STATES)psSaveStructure->status;
 		if (psStructure->status == SS_BUILT)
 		{
-			buildingComplete(psStructure);
+			buildingComplete(psStructure, world);
 		}
 		if (psStructure->pStructureType->type == REF_HQ)
 		{
@@ -6304,7 +6304,7 @@ static UDWORD getResearchIdFromName(const WzString &name)
 	return NULL_ID;
 }
 
-static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDWORD>& fixedMapIdToGeneratedId, std::array<std::unordered_map<UDWORD, UDWORD>, MAX_PLAYER_SLOTS>& moduleToBuilding)
+static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDWORD>& fixedMapIdToGeneratedId, std::array<std::unordered_map<UDWORD, UDWORD>, MAX_PLAYER_SLOTS>& moduleToBuilding, GameWorld& world)
 {
 	uint32_t NumberOfSkippedStructures = 0;
 	auto pStructures = wzMap.mapStructures();
@@ -6323,7 +6323,7 @@ static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDW
 		//for modules - need to check the base structure exists
 		if (IsStatExpansionModule(psStats))
 		{
-			STRUCTURE *psStructure = getTileStructure(gameWorld.map, map_coord(structure.position.x), map_coord(structure.position.y));
+			STRUCTURE *psStructure = getTileStructure(world.map, map_coord(structure.position.x), map_coord(structure.position.y));
 			if (psStructure == nullptr)
 			{
 				debug(LOG_ERROR, "No owning structure for module - %s for player - %d", structure.name.c_str(), structure.player);
@@ -6331,8 +6331,8 @@ static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDW
 			}
 		}
 		//check not trying to build too near the edge
-		if (map_coord(structure.position.x) < TOO_NEAR_EDGE || map_coord(structure.position.x) > gameWorld.map.width - TOO_NEAR_EDGE
-		 || map_coord(structure.position.y) < TOO_NEAR_EDGE || map_coord(structure.position.y) > gameWorld.map.height - TOO_NEAR_EDGE)
+		if (map_coord(structure.position.x) < TOO_NEAR_EDGE || map_coord(structure.position.x) > world.map.width - TOO_NEAR_EDGE
+		 || map_coord(structure.position.y) < TOO_NEAR_EDGE || map_coord(structure.position.y) > world.map.height - TOO_NEAR_EDGE)
 		{
 			debug(LOG_ERROR, "Structure %s, coord too near the edge of the map", structure.name.c_str());
 			continue; // skip it
@@ -6360,7 +6360,7 @@ static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDW
 				debug(LOG_ERROR, "Found duplicate hard-coded object ID in map data: %" PRIu32 "", structure.id.value());
 			}
 		}
-		psStructure = buildStructureDir(gameWorld, psStats, structure.position.x, structure.position.y, structure.direction, player, true, newID);
+		psStructure = buildStructureDir(world, psStats, structure.position.x, structure.position.y, structure.direction, player, true, newID);
 		if (psStructure == nullptr)
 		{
 			debug(LOG_ERROR, "Structure %s couldn't be built (probably on top of another structure).", structure.name.c_str());
@@ -6392,10 +6392,10 @@ static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDW
 			}
 			for (int i = 0; i < structure.modules; ++i)
 			{
-				buildStructure(gameWorld, moduleStat, structure.position.x, structure.position.y, player, true);
+				buildStructure(world, moduleStat, structure.position.x, structure.position.y, player, true);
 			}
 		}
-		buildingComplete(psStructure);
+		buildingComplete(psStructure, world);
 		if (psStructure->pStructureType->type == REF_HQ)
 		{
 			scriptSetStartPos(player, psStructure->pos.x, psStructure->pos.y);
@@ -6630,10 +6630,10 @@ static bool loadSaveStructure2(const char *pFileName, GameWorld& world)
 			switch (psStructure->pStructureType->type)
 			{
 			case REF_POWER_GEN:
-				checkForResExtractors(psStructure);
+				checkForResExtractors(psStructure, world.objects);
 				break;
 			case REF_RESOURCE_EXTRACTOR:
-				checkForPowerGen(psStructure);
+				checkForPowerGen(psStructure, world.objects);
 				break;
 			default:
 				//do nothing for factories etc
@@ -6654,7 +6654,7 @@ static bool loadSaveStructure2(const char *pFileName, GameWorld& world)
 		psStructure->status = (STRUCT_STATES)ini.value("status", SS_BUILT).toInt();
 		if (psStructure->status == SS_BUILT)
 		{
-			buildingComplete(psStructure);
+			buildingComplete(psStructure, world);
 		}
 		ini.endGroup();
 	}
@@ -7055,7 +7055,7 @@ bool loadSaveFeature(char *pFileData, UDWORD filesize, GameWorld& world)
 			continue;
 		}
 		//create the Feature
-		pFeature = buildFeature(world.map, psStats, psSaveFeature->x, psSaveFeature->y, true, psSaveFeature->id);
+		pFeature = buildFeature(world, psStats, psSaveFeature->x, psSaveFeature->y, true, psSaveFeature->id);
 		if (!pFeature)
 		{
 			debug(LOG_ERROR, "Unable to create feature %s", psSaveFeature->name);
@@ -7112,7 +7112,7 @@ static bool loadWzMapFeature(WzMap::Map &wzMap, std::unordered_map<UDWORD, UDWOR
 				debug(LOG_ERROR, "Found duplicate hard-coded object ID in map data: %" PRIu32 "", feature.id.value());
 			}
 		}
-		pFeature = buildFeature(gameWorld.map, &*psStats, feature.position.x, feature.position.y, true, newID);
+		pFeature = buildFeature(gameWorld, &*psStats, feature.position.x, feature.position.y, true, newID);
 		if (!pFeature)
 		{
 			debug(LOG_ERROR, "Unable to create feature %s", feature.name.c_str());
@@ -7172,11 +7172,11 @@ bool loadSaveFeature2(const char *pFileName, GameWorld& world)
 		int id = ini.value("id", -1).toInt();
 		if (id > 0)
 		{
-			pFeature = buildFeature(world.map, psStats, pos.x, pos.y, true, id);
+			pFeature = buildFeature(world, psStats, pos.x, pos.y, true, id);
 		}
 		else
 		{
-			pFeature = buildFeature(world.map, psStats, pos.x, pos.y, true);
+			pFeature = buildFeature(world, psStats, pos.x, pos.y, true);
 		}
 		if (!pFeature)
 		{

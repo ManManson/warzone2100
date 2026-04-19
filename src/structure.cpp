@@ -134,14 +134,14 @@ static		UBYTE	satUplinkExists[MAX_PLAYERS];
 //flag for when the player has one built - either completely or partially
 static		UBYTE	lasSatExists[MAX_PLAYERS];
 
-static bool setFunctionality(STRUCTURE *psBuilding, STRUCTURE_TYPE functionType);
+static bool setFunctionality(STRUCTURE *psBuilding, STRUCTURE_TYPE functionType, GameWorld& world);
 static void setFlagPositionInc(FUNCTIONALITY *pFunctionality, UDWORD player, UBYTE factoryType);
 static void informPowerGen(STRUCTURE *psStruct);
 static bool electronicReward(STRUCTURE *psStructure, UBYTE attackPlayer);
 static void factoryReward(UBYTE losingPlayer, UBYTE rewardPlayer);
 static void repairFacilityReward(UBYTE losingPlayer, UBYTE rewardPlayer);
 static void findAssemblyPointPosition(GameWorld& world, UDWORD *pX, UDWORD *pY, UDWORD player);
-static void removeStructFromMap(STRUCTURE *psStruct);
+static void removeStructFromMap(STRUCTURE *psStruct, WorldMapState& mapState);
 static void resetResistanceLag(STRUCTURE *psBuilding);
 static int structureTotalReturn(const STRUCTURE *psStruct);
 static void parseFavoriteStructs();
@@ -162,7 +162,7 @@ static std::vector<WzString> favoriteStructs;
 
 #define MAX_UNIT_MESSAGE_PAUSE 40000
 
-static void auxStructureNonblocking(STRUCTURE *psStructure)
+static void auxStructureNonblocking(STRUCTURE *psStructure, WorldMapState& mapState)
 {
 	StructureBounds b = getStructureBounds(psStructure);
 
@@ -172,10 +172,10 @@ static void auxStructureNonblocking(STRUCTURE *psStructure)
 		{
 			int x = b.map.x + i;
 			int y = b.map.y + j;
-			MAPTILE *psTile = mapTile(gameWorld.map, x, y);
+			MAPTILE *psTile = mapTile(mapState, x, y);
 			if (psTile->psObject == psStructure)
 			{
-				auxClearAll(gameWorld.map, x, y, AUXBITS_BLOCKING | AUXBITS_OUR_BUILDING | AUXBITS_NONPASSABLE);
+				auxClearAll(mapState, x, y, AUXBITS_BLOCKING | AUXBITS_OUR_BUILDING | AUXBITS_NONPASSABLE);
 			}
 			else
 			{
@@ -186,7 +186,7 @@ static void auxStructureNonblocking(STRUCTURE *psStructure)
 	}
 }
 
-static void auxStructureBlocking(STRUCTURE *psStructure)
+static void auxStructureBlocking(STRUCTURE *psStructure, WorldMapState& mapState)
 {
 	StructureBounds b = getStructureBounds(psStructure);
 
@@ -194,8 +194,8 @@ static void auxStructureBlocking(STRUCTURE *psStructure)
 	{
 		for (int j = 0; j < b.size.y; j++)
 		{
-			auxSetAllied(gameWorld.map, b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_OUR_BUILDING);
-			auxSetAll(gameWorld.map, b.map.x + i, b.map.y + j, AUXBITS_BLOCKING | AUXBITS_NONPASSABLE);
+			auxSetAllied(mapState, b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_OUR_BUILDING);
+			auxSetAll(mapState, b.map.x + i, b.map.y + j, AUXBITS_BLOCKING | AUXBITS_NONPASSABLE);
 		}
 	}
 }
@@ -213,7 +213,7 @@ static void auxStructureOpenGate(STRUCTURE *psStructure)
 	}
 }
 
-static void auxStructureClosedGate(STRUCTURE *psStructure)
+static void auxStructureClosedGate(STRUCTURE *psStructure, WorldMapState& mapState)
 {
 	StructureBounds b = getStructureBounds(psStructure);
 
@@ -221,8 +221,8 @@ static void auxStructureClosedGate(STRUCTURE *psStructure)
 	{
 		for (int j = 0; j < b.size.y; j++)
 		{
-			auxSetEnemy(gameWorld.map, b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_NONPASSABLE);
-			auxSetAll(gameWorld.map, b.map.x + i, b.map.y + j, AUXBITS_BLOCKING);
+			auxSetEnemy(mapState, b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_NONPASSABLE);
+			auxSetAll(mapState, b.map.x + i, b.map.y + j, AUXBITS_BLOCKING);
 		}
 	}
 }
@@ -868,7 +868,7 @@ int32_t structureDamage(STRUCTURE *psStructure, PROJECTILE *psProjectile, unsign
 	if (relativeDamage < 0)
 	{
 		debug(LOG_ATTACK, "Structure (id %d) DESTROYED", psStructure->id);
-		destroyStruct(psStructure, impactTime);
+		destroyStruct(psStructure, impactTime, gameWorld);
 	}
 	else
 	{
@@ -968,7 +968,7 @@ void structureBuild(STRUCTURE *psStruct, DROID *psDroid, int buildPoints, int bu
 	//check if structure is built
 	if (buildPoints > 0 && psStruct->currentBuildPts >= structureBuildPointsToCompletion(*psStruct))
 	{
-		buildingComplete(psStruct);
+		buildingComplete(psStruct, gameWorld);
 
 		//only play the sound if selected player
 		if (psDroid &&
@@ -1037,10 +1037,10 @@ void structureBuild(STRUCTURE *psStruct, DROID *psDroid, int buildPoints, int bu
 				break;
 			}
 			case REF_POWER_GEN:
-				releasePowerGen(psStruct);
+				releasePowerGen(psStruct, gameWorld.objects);
 				break;
 			case REF_RESOURCE_EXTRACTOR:
-				releaseResExtractor(psStruct);
+				releaseResExtractor(psStruct, gameWorld.objects);
 				break;
 			case REF_REPAIR_FACILITY:
 			{
@@ -1080,7 +1080,7 @@ void structureBuild(STRUCTURE *psStruct, DROID *psDroid, int buildPoints, int bu
 	if (buildPoints < 0 && psStruct->currentBuildPts == 0)
 	{
 		triggerEvent(TRIGGER_OBJECT_RECYCLED, psStruct);
-		removeStruct(psStruct, true);
+		removeStruct(psStruct, true, gameWorld);
 	}
 
 	if (checkResearchButton)
@@ -1416,7 +1416,7 @@ static int foundationHeight(const STRUCTURE *psStruct)
 }
 
 
-static void buildFlatten(STRUCTURE *pStructure, int h)
+static void buildFlatten(STRUCTURE *pStructure, WorldMapState& mapState, int h)
 {
 	StructureBounds b = getStructureBounds(pStructure);
 
@@ -1424,11 +1424,11 @@ static void buildFlatten(STRUCTURE *pStructure, int h)
 	{
 		for (int width = 0; width <= b.size.x; ++width)
 		{
-			setTileHeight(gameWorld.map, b.map.x + width, b.map.y + breadth, h);
+			setTileHeight(mapState, b.map.x + width, b.map.y + breadth, h);
 			// We need to raise features on raised tiles to the new height
-			if (TileHasFeature(mapTile(gameWorld.map, b.map.x + width, b.map.y + breadth)))
+			if (TileHasFeature(mapTile(mapState, b.map.x + width, b.map.y + breadth)))
 			{
-				getTileFeature(gameWorld.map, b.map.x + width, b.map.y + breadth)->pos.z = h;
+				getTileFeature(mapState, b.map.x + width, b.map.y + breadth)->pos.z = h;
 			}
 		}
 	}
@@ -1440,14 +1440,14 @@ static bool isPulledToTerrain(const STRUCTURE *psBuilding)
 	return type == REF_DEFENSE || type == REF_GATE || type == REF_WALL || type == REF_WALLCORNER || type == REF_REARM_PAD;
 }
 
-void alignStructure(STRUCTURE *psBuilding)
+void alignStructure(STRUCTURE *psBuilding, WorldMapState& mapState)
 {
 	/* DEFENSIVE structures are pulled to the terrain */
 	if (!isPulledToTerrain(psBuilding))
 	{
 		int mapH = foundationHeight(psBuilding);
 
-		buildFlatten(psBuilding, mapH);
+		buildFlatten(psBuilding, mapState, mapH);
 		psBuilding->pos.z = mapH;
 		psBuilding->foundationDepth = psBuilding->pos.z;
 
@@ -1458,10 +1458,10 @@ void alignStructure(STRUCTURE *psBuilding)
 		{
 			for (int width = -1; width <= b.size.x; ++width)
 			{
-				STRUCTURE *neighbourStructure = castStructure(mapTile(gameWorld.map, b.map.x + width, b.map.y + breadth)->psObject);
+				STRUCTURE *neighbourStructure = castStructure(mapTile(mapState, b.map.x + width, b.map.y + breadth)->psObject);
 				if (neighbourStructure != nullptr && isPulledToTerrain(neighbourStructure))
 				{
-					alignStructure(neighbourStructure);  // Recursive call, but will go to the else case, so will not re-recurse.
+					alignStructure(neighbourStructure, mapState);  // Recursive call, but will go to the else case, so will not re-recurse.
 				}
 			}
 		}
@@ -1480,10 +1480,10 @@ void alignStructure(STRUCTURE *psBuilding)
 		Vector2i p1{s->max.x * dir.y - s->max.z * dir.x, s->max.x * dir.x + s->max.z * dir.y};
 		Vector2i p2{s->min.x * dir.y - s->min.z * dir.x, s->min.x * dir.x + s->min.z * dir.y};
 
-		int h1 = map_Height(gameWorld.map, psBuilding->pos.x + p1.x, psBuilding->pos.y + p2.y);
-		int h2 = map_Height(gameWorld.map, psBuilding->pos.x + p1.x, psBuilding->pos.y + p1.y);
-		int h3 = map_Height(gameWorld.map, psBuilding->pos.x + p2.x, psBuilding->pos.y + p1.y);
-		int h4 = map_Height(gameWorld.map, psBuilding->pos.x + p2.x, psBuilding->pos.y + p2.y);
+		int h1 = map_Height(mapState, psBuilding->pos.x + p1.x, psBuilding->pos.y + p2.y);
+		int h2 = map_Height(mapState, psBuilding->pos.x + p1.x, psBuilding->pos.y + p1.y);
+		int h3 = map_Height(mapState, psBuilding->pos.x + p2.x, psBuilding->pos.y + p1.y);
+		int h4 = map_Height(mapState, psBuilding->pos.x + p2.x, psBuilding->pos.y + p2.y);
 		int minH = std::min({h1, h2, h3, h4});
 		int maxH = std::max({h1, h2, h3, h4});
 		psBuilding->pos.z = std::max(psBuilding->pos.z, maxH);
@@ -1595,7 +1595,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 				}
 				// remove it from the map
 				turnOffMultiMsg(true); // don't send this one!
-				removeFeature(psFeature);
+				removeFeature(psFeature, world);
 				turnOffMultiMsg(false);
 			}
 		}
@@ -1610,7 +1610,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 				 * of walls, you see. This is not the place to test whether we own it! */
 				if (isBuildableOnWalls(pStructureType->type) && TileHasWall(psTile))
 				{
-					removeStruct((STRUCTURE *)psTile->psObject, true);
+					removeStruct((STRUCTURE *)psTile->psObject, true, world);
 				}
 				else if (TileHasStructure(psTile) && !wzapi::scriptIsObjectQueuedForRemoval(psTile->psObject))
 				{
@@ -1652,7 +1652,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		case REF_REARM_PAD:
 			break;  // Not blocking.
 		default:
-			auxStructureBlocking(psBuilding);
+			auxStructureBlocking(psBuilding, world.map);
 			break;
 		}
 
@@ -1673,7 +1673,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		psBuilding->status = SS_BEING_BUILT;
 		psBuilding->currentBuildPts = 0;
 
-		alignStructure(psBuilding);
+		alignStructure(psBuilding, world.map);
 
 		/* Store the weapons */
 		psBuilding->numWeaps = 0;
@@ -1749,9 +1749,9 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 			// NOTE: resizeRadar() may be required here, since we change scroll limits?
 		}
 		//set the functionality dependent on the type of structure
-		if (!setFunctionality(psBuilding, pStructureType->type))
+		if (!setFunctionality(psBuilding, pStructureType->type, world))
 		{
-			removeStructFromMap(psBuilding);
+			removeStructFromMap(psBuilding, world.map);
 			objmemDestroy(psBuilding, false);
 			//better reset these if you couldn't build the structure!
 			if (FromSave && player == selectedPlayer && missionLimboExpand())
@@ -1792,7 +1792,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		psBuilding->expectedDamage = 0;  // Begin life optimistically.
 
 		//add the structure to the list - this enables it to be drawn whilst being built
-		addStructure(psBuilding);
+		addStructure(psBuilding, world.objects);
 
 		asStructureStats[max].curCount[player]++;
 
@@ -1917,7 +1917,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 				bUpgraded = true;
 
 				//need to inform any res Extr associated that not digging until complete
-				releasePowerGen(psBuilding);
+				releasePowerGen(psBuilding, gameWorld.objects);
 			}
 		}
 
@@ -1969,7 +1969,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 	}
 
 	/* why is this necessary - it makes tiles under the structure visible */
-	setUnderTilesVis(psBuilding, player);
+	setUnderTilesVis(psBuilding, world.map, player);
 
 	psBuilding->prevTime = gameTime - deltaGameTime;  // Structure hasn't been updated this tick, yet.
 	psBuilding->time = psBuilding->prevTime - 1;      // -1, so the times are different, even before updating.
@@ -2075,7 +2075,7 @@ static Vector2i defaultAssemblyPointPos(STRUCTURE *psBuilding)
 	return {};  // Unreachable.
 }
 
-static bool setFunctionality(STRUCTURE *psBuilding, STRUCTURE_TYPE functionType)
+static bool setFunctionality(STRUCTURE *psBuilding, STRUCTURE_TYPE functionType, GameWorld& world)
 {
 	ASSERT_OR_RETURN(false, psBuilding != nullptr, "Invalid pointer");
 	CHECK_STRUCTURE(psBuilding);
@@ -2123,10 +2123,10 @@ static bool setFunctionality(STRUCTURE *psBuilding, STRUCTURE_TYPE functionType)
 
 			// Set the assembly point
 			Vector2i pos = defaultAssemblyPointPos(psBuilding);
-			setAssemblyPoint(gameWorld, psFactory->psAssemblyPoint, pos.x, pos.y, psBuilding->player, true);
+			setAssemblyPoint(world, psFactory->psAssemblyPoint, pos.x, pos.y, psBuilding->player, true);
 
 			// Add the flag to the list
-			addFlagPosition(psFactory->psAssemblyPoint);
+			addFlagPosition(psFactory->psAssemblyPoint, world.objects);
 			switch (functionType)
 			{
 			case REF_FACTORY:
@@ -2171,10 +2171,10 @@ static bool setFunctionality(STRUCTURE *psBuilding, STRUCTURE_TYPE functionType)
 
 			// Set the assembly point
 			Vector2i pos = defaultAssemblyPointPos(psBuilding);
-			setAssemblyPoint(gameWorld, psRepairFac->psDeliveryPoint, pos.x, pos.y, psBuilding->player, true);
+			setAssemblyPoint(world, psRepairFac->psDeliveryPoint, pos.x, pos.y, psBuilding->player, true);
 
 			// Add the flag (triangular marker on the ground) at the delivery point
-			addFlagPosition(psRepairFac->psDeliveryPoint);
+			addFlagPosition(psRepairFac->psDeliveryPoint, world.objects);
 			setFlagPositionInc(psBuilding->pFunctionality, psBuilding->player, REPAIR_FLAG);
 			break;
 		}
@@ -2357,11 +2357,11 @@ void assignFactoryCommandDroid(STRUCTURE *psStruct, DROID *psCommander)
 		//syncDebug("Removed commander from factory %d", psStruct->id);
 		if (!missionIsOffworld())
 		{
-			addFlagPosition(psFact->psAssemblyPoint);	// add the assembly point back into the list
+			addFlagPosition(psFact->psAssemblyPoint, gameWorld.objects);	// add the assembly point back into the list
 		}
 		else
 		{
-			addFlagPositionToList(psFact->psAssemblyPoint, mission.gameWorld.objects.flags);
+			addFlagPosition(psFact->psAssemblyPoint, mission.gameWorld.objects);
 		}
 	}
 
@@ -3347,11 +3347,11 @@ static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
 					psReArmPad->timeStarted = ACTION_START_TIME;
 					psReArmPad->timeLastUpdated = 0;
 				}
-				auxStructureBlocking(psStructure);
+				auxStructureBlocking(psStructure, gameWorld.map);
 			}
 			else
 			{
-				auxStructureNonblocking(psStructure);
+				auxStructureNonblocking(psStructure, gameWorld.map);
 			}
 			break;
 		}
@@ -3638,7 +3638,7 @@ static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
 					//clear the rearm pad
 					psDroid->action = DACTION_NONE;
 					psReArmPad->psObj = nullptr;
-					auxStructureNonblocking(psStructure);
+					auxStructureNonblocking(psStructure, gameWorld.map);
 					triggerEventDroidIdle(psDroid);
 					objTrace(psDroid->id, "VTOL happy and ready for action!");
 				}
@@ -3808,7 +3808,7 @@ void structureUpdate(STRUCTURE *psBuilding, bool bMission)
 			if (!found)	// no droids on our tile, safe to close
 			{
 				psBuilding->state = SAS_CLOSING;
-				auxStructureClosedGate(psBuilding);     // closed
+				auxStructureClosedGate(psBuilding, gameWorld.map);     // closed
 				psBuilding->lastStateTime = gameTime;	// reset timer
 			}
 		}
@@ -3888,7 +3888,7 @@ void structureUpdate(STRUCTURE *psBuilding, bool bMission)
 
 			if (psBuilding->currentBuildPts == 0)
 			{
-				removeStruct(psBuilding, true);  // If giving up on building something, remove the structure (and remove it from the power queue).
+				removeStruct(psBuilding, true, gameWorld);  // If giving up on building something, remove the structure (and remove it from the power queue).
 			}
 		}
 		psBuilding->lastBuildRate = psBuilding->buildRate;
@@ -4543,9 +4543,9 @@ bool validLocation(GameWorld& world, BASE_STATS *psStats, Vector2i pos, uint16_t
 
 
 //remove a structure from the map
-static void removeStructFromMap(STRUCTURE *psStruct)
+static void removeStructFromMap(STRUCTURE *psStruct, WorldMapState& mapState)
 {
-	auxStructureNonblocking(psStruct);
+	auxStructureNonblocking(psStruct, mapState);
 
 	/* set tiles drawing */
 	StructureBounds b = getStructureBounds(psStruct);
@@ -4553,11 +4553,11 @@ static void removeStructFromMap(STRUCTURE *psStruct)
 	{
 		for (int i = 0; i < b.size.x; ++i)
 		{
-			MAPTILE *psTile = mapTile(gameWorld.map, b.map.x + i, b.map.y + j);
+			MAPTILE *psTile = mapTile(mapState, b.map.x + i, b.map.y + j);
 			if (psTile->psObject == psStruct)
 			{
 				psTile->psObject = nullptr;
-				auxClearBlocking(gameWorld.map, b.map.x + i, b.map.y + j, AIR_BLOCKED);
+				auxClearBlocking(mapState, b.map.x + i, b.map.y + j, AIR_BLOCKED);
 			}
 		}
 	}
@@ -4566,7 +4566,7 @@ static void removeStructFromMap(STRUCTURE *psStruct)
 // remove a structure from a game without any visible effects
 // bDestroy = true if the object is to be destroyed
 // (for example used to change the type of wall at a location)
-bool removeStruct(STRUCTURE *psDel, bool bDestroy)
+bool removeStruct(STRUCTURE *psDel, bool bDestroy, GameWorld& world)
 {
 	bool		resourceFound = false;
 	FLAG_POSITION	*psAssemblyPoint = nullptr;
@@ -4577,7 +4577,7 @@ bool removeStruct(STRUCTURE *psDel, bool bDestroy)
 
 	if (bDestroy)
 	{
-		removeStructFromMap(psDel);
+		removeStructFromMap(psDel, world.map);
 	}
 
 	if (bDestroy)
@@ -4587,7 +4587,7 @@ bool removeStruct(STRUCTURE *psDel, bool bDestroy)
 		HOW MUCH IS THERE && NOT RES EXTRACTORS */
 		if (psDel->pStructureType->type == REF_RESOURCE_EXTRACTOR)
 		{
-			FEATURE *psOil = buildFeature(gameWorld.map, oilResFeature, psDel->pos.x, psDel->pos.y, false);
+			FEATURE *psOil = buildFeature(world, oilResFeature, psDel->pos.x, psDel->pos.y, false);
 			memcpy(psOil->seenThisTick, psDel->visible, sizeof(psOil->seenThisTick));
 			resourceFound = true;
 		}
@@ -4596,15 +4596,15 @@ bool removeStruct(STRUCTURE *psDel, bool bDestroy)
 	if (psDel->pStructureType->type == REF_RESOURCE_EXTRACTOR)
 	{
 		//tell associated Power Gen
-		releaseResExtractor(psDel);
+		releaseResExtractor(psDel, world.objects);
 		//tell keybind that this is going away (to prevent dangling pointer in kf_JumpToResourceExtractor)
-		keybindInformResourceExtractorRemoved(psDel);
+		keybindInformResourceExtractorRemoved(psDel, world.objects);
 	}
 
 	if (psDel->pStructureType->type == REF_POWER_GEN)
 	{
 		//tell associated Res Extractors
-		releasePowerGen(psDel);
+		releasePowerGen(psDel, world.objects);
 	}
 
 	//check for a research topic currently under way
@@ -4666,7 +4666,7 @@ bool removeStruct(STRUCTURE *psDel, bool bDestroy)
 	if (bDestroy)
 	{
 		debug(LOG_DEATH, "Killing off %s id %d (%p)", objInfo(psDel), psDel->id, static_cast<void *>(psDel));
-		killStruct(psDel);
+		killStruct(psDel, world.objects);
 	}
 
 	if (psDel->player == selectedPlayer)
@@ -4682,7 +4682,7 @@ bool removeStruct(STRUCTURE *psDel, bool bDestroy)
 }
 
 /* Remove a structure */
-bool destroyStruct(STRUCTURE *psDel, unsigned impactTime)
+bool destroyStruct(STRUCTURE *psDel, unsigned impactTime, GameWorld& world)
 {
 	UDWORD			widthScatter, breadthScatter, heightScatter;
 
@@ -4726,7 +4726,7 @@ bool destroyStruct(STRUCTURE *psDel, unsigned impactTime)
 		/* Get coordinates for everybody! */
 		pos.x = psDel->pos.x;
 		pos.z = psDel->pos.y;  // z = y [sic] intentional
-		pos.y = map_Height(gameWorld.map, pos.x, pos.z);
+		pos.y = map_Height(world.map, pos.x, pos.z);
 
 		// Set off a fire, provide dimensions for the fire
 		if (bMinor)
@@ -4796,9 +4796,9 @@ bool destroyStruct(STRUCTURE *psDel, unsigned impactTime)
 	}
 
 	// Actually set the tiles on fire - even if the effect is not visible.
-	tileSetFire(gameWorld.map, psDel->pos.x, psDel->pos.y, burnDuration);
+	tileSetFire(world.map, psDel->pos.x, psDel->pos.y, burnDuration);
 
-	const bool resourceFound = removeStruct(psDel, true);
+	const bool resourceFound = removeStruct(psDel, true, world);
 	psDel->died = impactTime;
 
 	// Leave burn marks in the ground where building once stood
@@ -4809,7 +4809,7 @@ bool destroyStruct(STRUCTURE *psDel, unsigned impactTime)
 		{
 			for (int width = 0; width < b.size.x; ++width)
 			{
-				MAPTILE *psTile = mapTile(gameWorld.map, b.map.x + width, b.map.y + breadth);
+				MAPTILE *psTile = mapTile(world.map, b.map.x + width, b.map.y + breadth);
 				if (TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(psTile))
 				{
 					psTile->illumination /= 2;
@@ -5178,7 +5178,7 @@ bool calcStructureMuzzleLocation(const STRUCTURE *psStructure, Vector3i *muzzle,
 
 /*Looks through the list of structures to see if there are any inactive
 resource extractors*/
-void checkForResExtractors(STRUCTURE *psBuilding)
+void checkForResExtractors(STRUCTURE *psBuilding, WorldObjectState& objState)
 {
 	ASSERT_OR_RETURN(, psBuilding->pStructureType->type == REF_POWER_GEN, "invalid structure type");
 
@@ -5187,7 +5187,7 @@ void checkForResExtractors(STRUCTURE *psBuilding)
 	typedef std::vector<Derrick> Derricks;
 	Derricks derricks;
 	derricks.reserve(NUM_POWER_MODULES + 1);
-	for (STRUCTURE *currExtractor : gameWorld.objects.extractors[psBuilding->player])
+	for (STRUCTURE *currExtractor : objState.extractors[psBuilding->player])
 	{
 		RES_EXTRACTOR *resExtractor = &currExtractor->pFunctionality->resourceExtractor;
 
@@ -5257,7 +5257,7 @@ uint16_t countPlayerUnusedDerricks(const WorldObjectState& objState)
 
 /*Looks through the list of structures to see if there are any Power Gens
 with available slots for the new Res Ext*/
-void checkForPowerGen(STRUCTURE *psBuilding)
+void checkForPowerGen(STRUCTURE *psBuilding, WorldObjectState& objState)
 {
 	ASSERT_OR_RETURN(, psBuilding->pStructureType->type == REF_RESOURCE_EXTRACTOR, "invalid structure type");
 
@@ -5270,7 +5270,7 @@ void checkForPowerGen(STRUCTURE *psBuilding)
 	// Find a power generator, if possible with a power module.
 	STRUCTURE *bestPowerGen = nullptr;
 	int bestSlot = 0;
-	for (STRUCTURE *psCurr : gameWorld.objects.structures[psBuilding->player])
+	for (STRUCTURE *psCurr : objState.structures[psBuilding->player])
 	{
 		if (psCurr->pStructureType->type == REF_POWER_GEN && psCurr->status == SS_BUILT)
 		{
@@ -5334,7 +5334,7 @@ void informPowerGen(STRUCTURE *psStruct)
 /*called when a Res extractor is destroyed or runs out of power or is disconnected
 adjusts the owning Power Gen so that it can link to a different Res Extractor if one
 is available*/
-void releaseResExtractor(STRUCTURE *psRelease)
+void releaseResExtractor(STRUCTURE *psRelease, WorldObjectState& objState)
 {
 	if (psRelease->pStructureType->type != REF_RESOURCE_EXTRACTOR)
 	{
@@ -5351,12 +5351,12 @@ void releaseResExtractor(STRUCTURE *psRelease)
 	psRelease->pFunctionality->resourceExtractor.psPowerGen = nullptr;
 
 	//there may be spare resource extractors
-	for (STRUCTURE* psCurr : gameWorld.objects.extractors[psRelease->player])
+	for (STRUCTURE* psCurr : objState.extractors[psRelease->player])
 	{
 		//check not connected and power left and built!
 		if (psCurr != psRelease && psCurr->pFunctionality->resourceExtractor.psPowerGen == nullptr && psCurr->status == SS_BUILT)
 		{
-			checkForPowerGen(psCurr);
+			checkForPowerGen(psCurr, objState);
 		}
 	}
 }
@@ -5365,7 +5365,7 @@ void releaseResExtractor(STRUCTURE *psRelease)
 /*called when a Power Gen is destroyed or is disconnected
 adjusts the associated Res Extractors so that they can link to different Power
 Gens if any are available*/
-void releasePowerGen(STRUCTURE *psRelease)
+void releasePowerGen(STRUCTURE *psRelease, WorldObjectState& objState)
 {
 	POWER_GEN	*psPowerGen;
 	UDWORD		i;
@@ -5387,19 +5387,19 @@ void releasePowerGen(STRUCTURE *psRelease)
 		}
 	}
 	//may have a power gen with spare capacity
-	for (STRUCTURE* psCurr : gameWorld.objects.structures[psRelease->player])
+	for (STRUCTURE* psCurr : objState.structures[psRelease->player])
 	{
 		if (psCurr->pStructureType->type == REF_POWER_GEN &&
 		    psCurr != psRelease && psCurr->status == SS_BUILT)
 		{
-			checkForResExtractors(psCurr);
+			checkForResExtractors(psCurr, objState);
 		}
 	}
 }
 
 
 /*this is called whenever a structure has finished building*/
-void buildingComplete(STRUCTURE *psBuilding)
+void buildingComplete(STRUCTURE *psBuilding, GameWorld& world)
 {
 	CHECK_STRUCTURE(psBuilding);
 
@@ -5412,7 +5412,7 @@ void buildingComplete(STRUCTURE *psBuilding)
 	psBuilding->currentBuildPts = structureBuildPointsToCompletion(*psBuilding);
 	psBuilding->status = SS_BUILT;
 
-	visTilesUpdate(psBuilding, gameWorld.map);
+	visTilesUpdate(psBuilding, world.map);
 
 	if (psBuilding->prebuiltImd != nullptr)
 	{
@@ -5426,10 +5426,10 @@ void buildingComplete(STRUCTURE *psBuilding)
 	switch (psBuilding->pStructureType->type)
 	{
 	case REF_POWER_GEN:
-		checkForResExtractors(psBuilding);
+		checkForResExtractors(psBuilding, world.objects);
 		break;
 	case REF_RESOURCE_EXTRACTOR:
-		checkForPowerGen(psBuilding);
+		checkForPowerGen(psBuilding, world.objects);
 		break;
 	case REF_RESEARCH:
 		//this deals with research facilities that are upgraded whilst mid-research
@@ -5443,11 +5443,11 @@ void buildingComplete(STRUCTURE *psBuilding)
 		releaseProduction(psBuilding, ModeImmediate);
 		break;
 	case REF_SAT_UPLINK:
-		revealAll(gameWorld.map, psBuilding->player);
+		revealAll(world.map, psBuilding->player);
 		break;
 	case REF_GATE:
-		auxStructureNonblocking(psBuilding);  // Clear outdated flags.
-		auxStructureClosedGate(psBuilding);  // Don't block for the sake of allied pathfinding.
+		auxStructureNonblocking(psBuilding, world.map);  // Clear outdated flags.
+		auxStructureClosedGate(psBuilding, world.map);  // Don't block for the sake of allied pathfinding.
 		break;
 	default:
 		//do nothing
@@ -6563,7 +6563,7 @@ void checkDeliveryPoints(GameWorld& world, UDWORD version)
 								ASSERT(!"can't create new delivery point for repair facility", "unable to create new delivery point for repair facility");
 								return;
 							}
-							addFlagPosition(psRepair->psDeliveryPoint);
+							addFlagPosition(psRepair->psDeliveryPoint, gameWorld.objects);
 							setFlagPositionInc(psStruct->pFunctionality, psStruct->player, REPAIR_FLAG);
 							//initialise the assembly point position
 							x = map_coord(psStruct->pos.x + 256);
@@ -6902,7 +6902,7 @@ STRUCTURE *giftSingleStructure(STRUCTURE *psStructure, UBYTE attackPlayer, bool 
 		{
 			originalPlayer = psStructure->player;
 			//tell the system the structure no longer exists
-			(void)removeStruct(psStructure, false);
+			(void)removeStruct(psStructure, false, gameWorld);
 
 			// remove structure from one list
 			removeStructureFromList(psStructure, gameWorld.objects.structures);
@@ -6916,7 +6916,7 @@ STRUCTURE *giftSingleStructure(STRUCTURE *psStructure, UBYTE attackPlayer, bool 
 			psStructure->resistance = (UWORD)structureResistance(psStructure->pStructureType, psStructure->player);
 
 			// add to other list.
-			addStructure(psStructure);
+			addStructure(psStructure, gameWorld.objects);
 
 			// increment structure count for new owner
 			UDWORD max = psStructure->pStructureType - asStructureStats;
@@ -6955,7 +6955,7 @@ STRUCTURE *giftSingleStructure(STRUCTURE *psStructure, UBYTE attackPlayer, bool 
 
 			if (psStructure->status == SS_BUILT)
 			{
-				buildingComplete(psStructure);
+				buildingComplete(psStructure, gameWorld);
 			}
 			//since the structure isn't being rebuilt, the visibility code needs to be adjusted
 			//make sure this structure is visible to selectedPlayer
@@ -6980,7 +6980,7 @@ STRUCTURE *giftSingleStructure(STRUCTURE *psStructure, UBYTE attackPlayer, bool 
 	//check module not attached
 	psModule = getModuleStat(psStructure);
 	//get rid of the structure
-	(void)removeStruct(psStructure, true);
+	(void)removeStruct(psStructure, true, gameWorld);
 
 	//make sure power is not used to build
 	bPowerOn = powerCalculated;
@@ -7021,7 +7021,7 @@ STRUCTURE *giftSingleStructure(STRUCTURE *psStructure, UBYTE attackPlayer, bool 
 		else
 		{
 			psNewStruct->status = SS_BUILT;
-			buildingComplete(psNewStruct);
+			buildingComplete(psNewStruct, gameWorld);
 			triggerEventStructBuilt(psNewStruct, nullptr);
 			checkPlayerBuiltHQ(psNewStruct);
 		}

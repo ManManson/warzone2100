@@ -2872,7 +2872,7 @@ void missionDestroyObjects()
 
 			mutating_list_iterate(gameWorld.objects.droids[Player], [](DROID* d)
 			{
-				removeDroidBase(d);
+				removeDroidBase(d, gameWorld.objects);
 				return IterationResult::CONTINUE_ITERATION;
 			});
 
@@ -2883,14 +2883,14 @@ void missionDestroyObjects()
 			{
 				//make sure its died flag is not set since we've swapped the apsDroidList pointers over
 				psDroid->died = false;
-				removeDroidBase(psDroid);
+				removeDroidBase(psDroid, gameWorld.objects);
 				return IterationResult::CONTINUE_ITERATION;
 			});
 			mission.gameWorld.objects.droids[Player].clear();
 
 			mutating_list_iterate(gameWorld.objects.structures[Player], [](STRUCTURE* s)
 			{
-				removeStruct(s, true);
+				removeStruct(s, true, gameWorld);
 				return IterationResult::CONTINUE_ITERATION;
 			});
 		}

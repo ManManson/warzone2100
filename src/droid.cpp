@@ -38,6 +38,7 @@
 
 #include "objects.h"
 #include "loop.h"
+#include "world_object_state.h"
 #include "visibility.h"
 #include "map.h"
 #include "droid.h"
@@ -382,12 +383,12 @@ int32_t droidDamage(DROID *psDroid, PROJECTILE *psProjectile, unsigned damage, W
 		if (bMultiPlayer && !bMultiMessages)
 		{
 			bMultiMessages = true;
-			destroyDroid(psDroid, impactTime);
+			destroyDroid(psDroid, impactTime, gameWorld);
 			bMultiMessages = false;
 		}
 		else
 		{
-			destroyDroid(psDroid, impactTime);
+			destroyDroid(psDroid, impactTime, gameWorld);
 		}
 	}
 
@@ -532,7 +533,7 @@ void recycleDroid(DROID *psDroid)
 }
 
 
-bool removeDroidBase(DROID *psDel)
+bool removeDroidBase(DROID *psDel, WorldObjectState& objState)
 {
 	CHECK_DROID(psDel);
 
@@ -563,14 +564,14 @@ bool removeDroidBase(DROID *psDel)
 		if (psDel->psGroup)
 		{
 			//free all droids associated with this Transporter
-			mutating_list_iterate(psDel->psGroup->psList, [psDel](DROID* psCurr)
+			mutating_list_iterate(psDel->psGroup->psList, [psDel, &objState](DROID* psCurr)
 			{
 				if (psCurr == psDel)
 				{
 					return IterationResult::BREAK_ITERATION;
 				}
 				/* add droid to droid list then vanish it - hope this works! - GJ */
-				addDroid(psCurr, gameWorld.objects.droids);
+				addDroid(psCurr, objState.droids);
 				vanishDroid(psCurr);
 
 				return IterationResult::CONTINUE_ITERATION;
@@ -588,7 +589,7 @@ bool removeDroidBase(DROID *psDel)
 	/* Put Deliv. Pts back into world when a command droid dies */
 	if (psDel->droidType == DROID_COMMAND)
 	{
-		for (auto psStruct : gameWorld.objects.structures[psDel->player])
+		for (auto psStruct : objState.structures[psDel->player])
 		{
 			// alexl's stab at a right answer.
 			if (psStruct && psStruct->isFactory()
@@ -628,7 +629,7 @@ bool removeDroidBase(DROID *psDel)
 		intRefreshScreen();
 	}
 
-	killDroid(psDel);
+	killDroid(psDel, objState);
 	return true;
 }
 
@@ -678,7 +679,7 @@ static void removeDroidFX(DROID *psDel, unsigned impactTime)
 	}
 }
 
-bool destroyDroid(DROID *psDel, unsigned impactTime)
+bool destroyDroid(DROID *psDel, unsigned impactTime, GameWorld& world)
 {
 	ASSERT(gameTime - deltaGameTime <= impactTime, "Expected %u <= %u, gameTime = %u, bad impactTime", gameTime - deltaGameTime, impactTime, gameTime);
 
@@ -693,7 +694,7 @@ bool destroyDroid(DROID *psDel, unsigned impactTime)
 		{
 			for (breadth = mapY - 1; breadth <= mapY + 1; breadth++)
 			{
-				psTile = mapTile(gameWorld.map, width, breadth);
+				psTile = mapTile(world.map, width, breadth);
 				if (TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(psTile))
 				{
 					psTile->illumination /= 2;
@@ -704,14 +705,14 @@ bool destroyDroid(DROID *psDel, unsigned impactTime)
 	}
 
 	removeDroidFX(psDel, impactTime);
-	removeDroidBase(psDel);
+	removeDroidBase(psDel, world.objects);
 	psDel->died = impactTime;
 	return true;
 }
 
 void vanishDroid(DROID *psDel)
 {
-	removeDroidBase(psDel);
+	removeDroidBase(psDel, gameWorld.objects);
 }
 
 static size_t droidCancelRepairers(DROID *psDroid, PerPlayerDroidLists& pList)
