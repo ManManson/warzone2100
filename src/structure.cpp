@@ -2849,7 +2849,7 @@ bool IsPlayerDroidLimitReached(int player)
 }
 
 // Check for max number of units reached and halt production.
-static bool checkHaltOnMaxUnitsReached(STRUCTURE *psStructure, bool isMission)
+static bool checkHaltOnMaxUnitsReached(STRUCTURE *psStructure, const WorldObjectState& objState)
 {
 	CHECK_STRUCTURE(psStructure);
 
@@ -2870,7 +2870,6 @@ static bool checkHaltOnMaxUnitsReached(STRUCTURE *psStructure, bool isMission)
 		{
 		case DROID_COMMAND:
 		{
-			const WorldObjectState& objState = isMission ? mission.gameWorld.objects : gameWorld.objects;
 			if (!structureExists(objState, player, REF_COMMAND_CONTROL, true))
 			{
 				isLimit = true;
@@ -3060,7 +3059,7 @@ void aiUpdateRepairStation(STRUCTURE &station)
 	aiUpdateRepair_handleState(station);
 }
 
-static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
+static void aiUpdateStructure(STRUCTURE *psStructure, GameWorld& world)
 {
 	UDWORD structureMode = 0;
 	DROID *psDroid;
@@ -3071,6 +3070,8 @@ static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
 	WEAPON_STATS *psWStats;
 	bool bDirect = false;
 	TARGET_ORIGIN tmpOrigin = ORIGIN_UNKNOWN;
+
+	const bool isMission = &world == &mission.gameWorld;
 
 	CHECK_STRUCTURE(psStructure);
 
@@ -3288,7 +3289,7 @@ static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
 			if (psChosenObj == nullptr)
 			{
 				objTrace(psStructure->id, "Rearm pad idle - look for victim");
-				for (DROID* psCurr : gameWorld.objects.droids[psStructure->player])
+				for (DROID* psCurr : world.objects.droids[psStructure->player])
 				{
 					// move next droid waiting on ground to rearm pad
 					if (vtolReadyToRearm(psCurr, psStructure) &&
@@ -3304,7 +3305,7 @@ static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
 				{
 					if (aiCheckAlliances(i, psStructure->player) && i != psStructure->player)
 					{
-						for (DROID* psCurr : gameWorld.objects.droids[i])
+						for (DROID* psCurr : world.objects.droids[i])
 						{
 							// move next droid waiting on ground to rearm pad
 							if (vtolReadyToRearm(psCurr, psStructure))
@@ -3347,11 +3348,11 @@ static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
 					psReArmPad->timeStarted = ACTION_START_TIME;
 					psReArmPad->timeLastUpdated = 0;
 				}
-				auxStructureBlocking(psStructure, gameWorld.map);
+				auxStructureBlocking(psStructure, world.map);
 			}
 			else
 			{
-				auxStructureNonblocking(psStructure, gameWorld.map);
+				auxStructureNonblocking(psStructure, world.map);
 			}
 			break;
 		}
@@ -3498,7 +3499,7 @@ static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
 				// also need to check if a command droid's group is full
 
 				// If the factory commanders group is full - return
-				if (IsFactoryCommanderGroupFull(psFactory) || checkHaltOnMaxUnitsReached(psStructure, isMission))
+				if (IsFactoryCommanderGroupFull(psFactory) || checkHaltOnMaxUnitsReached(psStructure, world.objects))
 				{
 					return;
 				}
@@ -3523,7 +3524,7 @@ static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
 			}
 
 			//check for manufacture to be complete
-			if (psFactory->buildPointsRemaining <= 0 && !IsFactoryCommanderGroupFull(psFactory) && !checkHaltOnMaxUnitsReached(psStructure, isMission))
+			if (psFactory->buildPointsRemaining <= 0 && !IsFactoryCommanderGroupFull(psFactory) && !checkHaltOnMaxUnitsReached(psStructure, world.objects))
 			{
 				if (isMission)
 				{
@@ -3638,7 +3639,7 @@ static void aiUpdateStructure(STRUCTURE *psStructure, bool isMission)
 					//clear the rearm pad
 					psDroid->action = DACTION_NONE;
 					psReArmPad->psObj = nullptr;
-					auxStructureNonblocking(psStructure, gameWorld.map);
+					auxStructureNonblocking(psStructure, world.map);
 					triggerEventDroidIdle(psDroid);
 					objTrace(psDroid->id, "VTOL happy and ready for action!");
 				}
@@ -3777,18 +3778,20 @@ int gateCurrentOpenHeight(const STRUCTURE *psStructure, uint32_t time, int minim
 }
 
 /* The main update routine for all Structures */
-void structureUpdate(STRUCTURE *psBuilding, bool bMission)
+void structureUpdate(STRUCTURE *psBuilding, GameWorld& world)
 {
 	UDWORD widthScatter, breadthScatter;
 	UDWORD emissionInterval, iPointsToAdd, iPointsRequired;
 	Vector3i dv;
 	int i;
 
+	const bool bMission = &world == &mission.gameWorld;
+
 	syncDebugStructure(psBuilding, '<');
 
 	if (psBuilding->flags.test(OBJECT_FLAG_DIRTY) && !bMission)
 	{
-		visTilesUpdate(psBuilding, gameWorld.map);
+		visTilesUpdate(psBuilding, world.map);
 		psBuilding->flags.set(OBJECT_FLAG_DIRTY, false);
 	}
 
@@ -3808,14 +3811,14 @@ void structureUpdate(STRUCTURE *psBuilding, bool bMission)
 			if (!found)	// no droids on our tile, safe to close
 			{
 				psBuilding->state = SAS_CLOSING;
-				auxStructureClosedGate(psBuilding, gameWorld.map);     // closed
+				auxStructureClosedGate(psBuilding, world.map);     // closed
 				psBuilding->lastStateTime = gameTime;	// reset timer
 			}
 		}
 		else if (psBuilding->state == SAS_OPENING && psBuilding->lastStateTime + SAS_OPEN_SPEED < gameTime)
 		{
 			psBuilding->state = SAS_OPEN;
-			auxStructureOpenGate(psBuilding, gameWorld.map);       // opened
+			auxStructureOpenGate(psBuilding, world.map);       // opened
 			psBuilding->lastStateTime = gameTime;	// reset timer
 		}
 		else if (psBuilding->state == SAS_CLOSING && psBuilding->lastStateTime + SAS_OPEN_SPEED < gameTime)
@@ -3865,7 +3868,7 @@ void structureUpdate(STRUCTURE *psBuilding, bool bMission)
 	//update the manufacture/research of the building once complete
 	if (psBuilding->status == SS_BUILT)
 	{
-		aiUpdateStructure(psBuilding, bMission);
+		aiUpdateStructure(psBuilding, world);
 	}
 
 	if (psBuilding->status != SS_BUILT)
@@ -3888,7 +3891,7 @@ void structureUpdate(STRUCTURE *psBuilding, bool bMission)
 
 			if (psBuilding->currentBuildPts == 0)
 			{
-				removeStruct(psBuilding, true, gameWorld);  // If giving up on building something, remove the structure (and remove it from the power queue).
+				removeStruct(psBuilding, true, world);  // If giving up on building something, remove the structure (and remove it from the power queue).
 			}
 		}
 		psBuilding->lastBuildRate = psBuilding->buildRate;
@@ -3992,7 +3995,7 @@ void structureUpdate(STRUCTURE *psBuilding, bool bMission)
 				realY = static_cast<SDWORD>(structHeightScale(psBuilding) * point->y);
 				position.y = psBuilding->pos.z + realY;
 				position.z = static_cast<int>(psBuilding->pos.y - point->z);
-				const auto psTile = mapTile(gameWorld.map, map_coord({position.x, position.y}));
+				const auto psTile = mapTile(world.map, map_coord({position.x, position.y}));
 				if (tileIsClearlyVisible(psTile))
 				{
 					effectSetSize(30);

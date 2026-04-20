@@ -117,7 +117,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 /// not heap-allocated and thus doesn't have a stable address!
 nonstd::optional<STRUCTURE> buildBlueprint(WorldMapState& mapState, STRUCTURE_STATS const *psStats, Vector3i xy, uint16_t direction, unsigned moduleIndex, STRUCT_STATES state, uint8_t ownerPlayer);
 /* The main update routine for all Structures */
-void structureUpdate(STRUCTURE *psBuilding, bool bMission);
+void structureUpdate(STRUCTURE *psBuilding, GameWorld& world);
 
 /* Remove a structure and free it's memory */
 bool destroyStruct(STRUCTURE *psDel, unsigned impactTime, GameWorld& world);
