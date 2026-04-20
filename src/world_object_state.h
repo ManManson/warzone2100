@@ -31,6 +31,14 @@
 /// </summary>
 struct WorldObjectState
 {
+	explicit WorldObjectState() = default;
+
+	explicit WorldObjectState(const WorldObjectState& other) = delete;
+	WorldObjectState& operator=(const WorldObjectState& other) = delete;
+
+	explicit WorldObjectState(WorldObjectState&& other) noexcept = default;
+	WorldObjectState& operator=(WorldObjectState&& other) noexcept = default;
+
 	PerPlayerDroidLists droids;
 	PerPlayerStructureLists structures;
 	PerPlayerFeatureLists features;

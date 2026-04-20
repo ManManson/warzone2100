@@ -33,6 +33,14 @@
 /// </summary>
 struct GameWorld
 {
+	explicit GameWorld() = default;
+
+	explicit GameWorld(const GameWorld& other) = delete;
+	GameWorld& operator=(const GameWorld& other) = delete;
+
+	explicit GameWorld(GameWorld&& other) noexcept = default;
+	GameWorld& operator=(GameWorld&& other) noexcept = default;
+
 	WorldMapState map;
 	WorldObjectState objects;
 	std::string name;

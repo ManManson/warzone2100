@@ -81,6 +81,46 @@ struct WorldScrollLimits
 /// </summary>
 struct WorldMapState
 {
+	explicit WorldMapState() = default;
+
+	explicit WorldMapState(const WorldMapState& other) = delete;
+	WorldMapState& operator=(const WorldMapState& other) = delete;
+
+	explicit WorldMapState(WorldMapState&& other) noexcept
+	: tiles(std::move(other.tiles))
+	, width(other.width)
+	, height(other.height)
+	, blockMap(std::move(other.blockMap))
+	, auxMap(std::move(other.auxMap))
+	, scroll(other.scroll)
+	, gateways(std::move(other.gateways))
+	{
+		// Clear the other object's fields to avoid references to stale data
+		other.width = 0;
+		other.height = 0;
+		other.scroll = {};
+	}
+
+	WorldMapState& operator=(WorldMapState&& other) noexcept
+	{
+		if (this == &other)
+		{
+			return *this;
+		}
+		tiles = std::move(other.tiles);
+		width = other.width;
+		height = other.height;
+		blockMap = std::move(other.blockMap);
+		auxMap = std::move(other.auxMap);
+		scroll = other.scroll;
+		gateways = std::move(other.gateways);
+		// Clear the other object's fields to avoid references to stale data
+		other.width = 0;
+		other.height = 0;
+		other.scroll = {};
+		return *this;
+	}
+
 	std::unique_ptr<MAPTILE[]> tiles;
 	int32_t width = 0;
 	int32_t height = 0;
