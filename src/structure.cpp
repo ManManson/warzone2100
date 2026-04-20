@@ -200,7 +200,7 @@ static void auxStructureBlocking(STRUCTURE *psStructure, WorldMapState& mapState
 	}
 }
 
-static void auxStructureOpenGate(STRUCTURE *psStructure)
+static void auxStructureOpenGate(STRUCTURE *psStructure, WorldMapState& mapState)
 {
 	StructureBounds b = getStructureBounds(psStructure);
 
@@ -208,7 +208,7 @@ static void auxStructureOpenGate(STRUCTURE *psStructure)
 	{
 		for (int j = 0; j < b.size.y; j++)
 		{
-			auxClearAll(gameWorld.map, b.map.x + i, b.map.y + j, AUXBITS_BLOCKING);
+			auxClearAll(mapState, b.map.x + i, b.map.y + j, AUXBITS_BLOCKING);
 		}
 	}
 }
@@ -1389,7 +1389,7 @@ static WallOrientation structChooseWallType(WorldMapState& mapState, unsigned pl
 /* For now all this does is work out what height the terrain needs to be set to
 An actual foundation structure may end up being placed down
 The x and y passed in are the CENTRE of the structure*/
-static int foundationHeight(const STRUCTURE *psStruct)
+static int foundationHeight(const STRUCTURE *psStruct, const WorldMapState& mapState)
 {
 	StructureBounds b = getStructureBounds(psStruct);
 
@@ -1406,7 +1406,7 @@ static int foundationHeight(const STRUCTURE *psStruct)
 	{
 		for (int width = 0; width <= b.size.x; width++)
 		{
-			int height = map_TileHeight(gameWorld.map, b.map.x + width, b.map.y + breadth);
+			int height = map_TileHeight(mapState, b.map.x + width, b.map.y + breadth);
 			foundationMin = std::min(foundationMin, height);
 			foundationMax = std::max(foundationMax, height);
 		}
@@ -1445,7 +1445,7 @@ void alignStructure(STRUCTURE *psBuilding, WorldMapState& mapState)
 	/* DEFENSIVE structures are pulled to the terrain */
 	if (!isPulledToTerrain(psBuilding))
 	{
-		int mapH = foundationHeight(psBuilding);
+		int mapH = foundationHeight(psBuilding, mapState);
 
 		buildFlatten(psBuilding, mapState, mapH);
 		psBuilding->pos.z = mapH;
@@ -3815,7 +3815,7 @@ void structureUpdate(STRUCTURE *psBuilding, bool bMission)
 		else if (psBuilding->state == SAS_OPENING && psBuilding->lastStateTime + SAS_OPEN_SPEED < gameTime)
 		{
 			psBuilding->state = SAS_OPEN;
-			auxStructureOpenGate(psBuilding);       // opened
+			auxStructureOpenGate(psBuilding, gameWorld.map);       // opened
 			psBuilding->lastStateTime = gameTime;	// reset timer
 		}
 		else if (psBuilding->state == SAS_CLOSING && psBuilding->lastStateTime + SAS_OPEN_SPEED < gameTime)
