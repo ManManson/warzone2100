@@ -519,7 +519,7 @@ void recycleDroid(DROID *psDroid)
 	}
 
 	triggerEvent(TRIGGER_OBJECT_RECYCLED, psDroid);
-	vanishDroid(psDroid);
+	vanishDroid(psDroid, gameWorld.objects);
 
 	Vector3i position = psDroid->pos.xzy();
 	const auto mapCoord = map_coord({psDroid->pos.x, psDroid->pos.y});
@@ -572,7 +572,7 @@ bool removeDroidBase(DROID *psDel, WorldObjectState& objState)
 				}
 				/* add droid to droid list then vanish it - hope this works! - GJ */
 				addDroid(psCurr, objState.droids);
-				vanishDroid(psCurr);
+				vanishDroid(psCurr, objState);
 
 				return IterationResult::CONTINUE_ITERATION;
 			});
@@ -710,9 +710,9 @@ bool destroyDroid(DROID *psDel, unsigned impactTime, GameWorld& world)
 	return true;
 }
 
-void vanishDroid(DROID *psDel)
+void vanishDroid(DROID *psDel, WorldObjectState& objState)
 {
-	removeDroidBase(psDel, gameWorld.objects);
+	removeDroidBase(psDel, objState);
 }
 
 static size_t droidCancelRepairers(DROID *psDroid, PerPlayerDroidLists& pList)
@@ -3524,7 +3524,7 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 		}
 		// make the old droid vanish (but is not deleted until next tick)
 		adjustDroidCount(psD, -1);
-		vanishDroid(psD);
+		vanishDroid(psD, gameWorld.objects);
 		// Pick coordinates of the new droid if damaged electronically
 		Position newPos = Position(psD->pos.x, psD->pos.y, 0);
 		if (electronic)

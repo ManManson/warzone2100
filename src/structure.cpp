@@ -6905,7 +6905,7 @@ STRUCTURE *giftSingleStructure(STRUCTURE *psStructure, UBYTE attackPlayer, bool 
 			(void)removeStruct(psStructure, false, gameWorld);
 
 			// remove structure from one list
-			removeStructureFromList(psStructure, gameWorld.objects.structures);
+			removeStructureFromList(psStructure, gameWorld.objects);
 
 			psStructure->selected = false;
 

@@ -714,21 +714,21 @@ void freeAllStructs(GameWorld& world)
 }
 
 /*Remove a single Structure from a list*/
-void removeStructureFromList(STRUCTURE *psStructToRemove, PerPlayerStructureLists& pList)
+void removeStructureFromList(STRUCTURE *psStructToRemove, WorldObjectState& objState)
 {
 	ASSERT(psStructToRemove->type == OBJ_STRUCTURE,
 	       "removeStructureFromList: pointer is not a structure");
 	ASSERT(psStructToRemove->player < MAX_PLAYERS,
 	       "removeStructureFromList: invalid player for structure");
-	removeObjectFromList(pList, psStructToRemove, psStructToRemove->player);
+	removeObjectFromList(objState.structures, psStructToRemove, psStructToRemove->player);
 	if (psStructToRemove->pStructureType->pSensor
 	    && psStructToRemove->pStructureType->pSensor->location == LOC_TURRET)
 	{
-		removeObjectFromFuncList(gameWorld.objects.sensors, (BASE_OBJECT *)psStructToRemove, 0);
+		removeObjectFromFuncList(objState.sensors, (BASE_OBJECT *)psStructToRemove, 0);
 	}
 	else if (psStructToRemove->pStructureType->type == REF_RESOURCE_EXTRACTOR)
 	{
-		removeObjectFromFuncList(gameWorld.objects.extractors, psStructToRemove, psStructToRemove->player);
+		removeObjectFromFuncList(objState.extractors, psStructToRemove, psStructToRemove->player);
 	}
 }
 

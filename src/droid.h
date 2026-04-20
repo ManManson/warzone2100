@@ -164,7 +164,7 @@ void recycleDroid(DROID *psDel);
 bool destroyDroid(DROID *psDel, unsigned impactTime, GameWorld& world);
 
 /* Same as destroy droid except no graphical effects */
-void vanishDroid(DROID *psDel);
+void vanishDroid(DROID *psDel, WorldObjectState& objState);
 
 /* Remove a droid from the apsDroidLists so doesn't update or get drawn etc*/
 //returns true if successfully removed from the list

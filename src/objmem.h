@@ -79,7 +79,7 @@ void killStruct(STRUCTURE *psDel, WorldObjectState& objState);
 void freeAllStructs(GameWorld& world);
 
 /*Remove a single Structure from a list*/
-void removeStructureFromList(STRUCTURE *psStructToRemove, PerPlayerStructureLists& pList);
+void removeStructureFromList(STRUCTURE *psStructToRemove, WorldObjectState& objState);
 
 /* add the feature to the Feature Lists */
 void addFeature(FEATURE *psFeatureToAdd, WorldObjectState& objState);
