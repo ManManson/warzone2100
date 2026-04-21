@@ -649,7 +649,7 @@ DROID *IdToDroid(const WorldObjectState& objState, UDWORD id, UDWORD player)
 	{
 		for (int i = 0; i < MAX_PLAYERS; i++)
 		{
-			DROID* d = (DROID*)getBaseObjFromId(gameWorld.objects.droids[i], id);
+			DROID* d = (DROID*)getBaseObjFromId(objState.droids[i], id);
 			if (d)
 			{
 				return d;
@@ -658,7 +658,7 @@ DROID *IdToDroid(const WorldObjectState& objState, UDWORD id, UDWORD player)
 	}
 	else if (player < MAX_PLAYERS)
 	{
-		DROID* d = (DROID*)getBaseObjFromId(gameWorld.objects.droids[player], id);
+		DROID* d = (DROID*)getBaseObjFromId(objState.droids[player], id);
 		if (d)
 		{
 			return d;
