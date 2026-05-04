@@ -57,6 +57,7 @@
 #include "mission.h"
 #include "campaigninfo.h"
 #include "qtscript.h"
+#include "steering/arrival_constants.h"
 #include "steering/steering.h"
 #include "steering/collision_avoidance_behavior.h"
 #include "steering/seek_arrival_behavior.h"
@@ -86,9 +87,6 @@
 
 // How far out from an obstruction to start avoiding it
 #define AVOID_DIST		(TILE_UNITS*2)
-
-// Speed to approach a final way point, if possible.
-#define MIN_END_SPEED		60
 
 // how long to pause after firing a FOM_NO weapon
 #define FOM_MOVEPAUSE		1500
@@ -1313,7 +1311,9 @@ static void moveCalcDroidSlide(DROID *psDroid, int *pmx, int *pmy)
 	CHECK_DROID(psDroid);
 }
 
-//! Set move heading and requested speed from steering (seek/arrival + collision blend).
+//! Desired heading and speed for active movement: blended planar velocity from steering.
+//! Final waypoint slowdown lives in `SeekArrivalBehavior` (replacing legacy `moveCheckFinalWaypoint`).
+//! \post \c *pMoveSpeed <= terrain cruise (`moveCalcDroidSpeed`), capped by `hypot(combined velocity)`.
 static void moveComputeMoveDirSpeed(DROID *psDroid, uint16_t *pMoveDir, SDWORD *pMoveSpeed)
 {
 	const SDWORD cruise = moveCalcDroidSpeed(psDroid);
@@ -1449,9 +1449,9 @@ SDWORD moveCalcDroidSpeed(DROID *psDroid)
 	// slow down shuffling VTOLs
 	if (psDroid->isVtol() &&
 	    (psDroid->sMove.Status == MOVESHUFFLE) &&
-	    (speed > MIN_END_SPEED))
+	    (speed > steering::ARRIVAL_MIN_END_SPEED))
 	{
-		speed = MIN_END_SPEED;
+		speed = steering::ARRIVAL_MIN_END_SPEED;
 	}
 
 	CHECK_DROID(psDroid);

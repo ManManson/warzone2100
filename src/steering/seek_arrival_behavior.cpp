@@ -23,10 +23,10 @@
  */
 
 #include "seek_arrival_behavior.h"
+#include "arrival_constants.h"
 
 #include "lib/framework/trig.h"
 #include "lib/framework/vector.h"
-#include "lib/wzmaplib/include/wzmaplib/map.h"
 
 #include "src/actiondef.h"
 #include "src/droid.h"
@@ -40,10 +40,6 @@ namespace steering
 
 namespace
 {
-
-// Match move.cpp moveCheckFinalWaypoint / MIN_END_SPEED / END_SPEED_RANGE.
-constexpr int32_t MIN_END_SPEED = 60;
-constexpr int32_t END_SPEED_RANGE = 3 * TILE_UNITS;
 
 static bool isPersonOrCyborg(const DROID* droid)
 {
@@ -102,10 +98,10 @@ SteeringForce SeekArrivalBehavior::calculate(const SteeringContext& ctx)
 	if (arrivalSlowdownActive(ctx))
 	{
 		const int32_t distSq = dot(toTarget, toTarget);
-		const int64_t rangeSq = static_cast<int64_t>(END_SPEED_RANGE) * END_SPEED_RANGE;
+		const int64_t rangeSq = static_cast<int64_t>(ARRIVAL_SLOWDOWN_RANGE) * ARRIVAL_SLOWDOWN_RANGE;
 		if (distSq < rangeSq)
 		{
-			const int32_t minEndSpeed = std::min((speedMag + 2) / 3, MIN_END_SPEED);
+			const int32_t minEndSpeed = std::min((speedMag + 2) / 3, ARRIVAL_MIN_END_SPEED);
 			speedMag = static_cast<int32_t>((static_cast<int64_t>(speedMag - minEndSpeed) * distSq) / rangeSq + minEndSpeed);
 		}
 	}

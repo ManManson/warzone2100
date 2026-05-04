@@ -143,9 +143,8 @@ struct SteeringMoveIntent
 /// <summary>
 /// Manager class for combining multiple steering behaviors.
 ///
-/// The `SteeringManager` owns a collection of steering behaviors
-/// and combines their forces using weighted summation. The final
-/// result is a direction vector that can be used for movement.
+/// The `SteeringManager` owns steering behaviors and combines locomotion + modifiers
+/// into a planar velocity (world speed units, same scale as `moveCalcDroidSpeed`).
 /// </summary>
 class SteeringManager
 {
@@ -173,19 +172,21 @@ public:
 	/// using weighted summation.
 	/// </summary>
 	/// <param name="ctx">The steering context</param>
-	/// <returns>Combined steering vector in fixed-point precision</returns>
+	/// <returns>Combined planar velocity (world speed units)</returns>
 	Vector2i calculateSteering(const SteeringContext& ctx);
 
 	/// <summary>
 	/// Calculate combined steering as a direction angle.
-	/// Same as `calculateSteering()` but returns the result as an
-	/// angle suitable for use with the current movement system.
+	/// Delegates to `calculateMoveIntent()` (weighted velocity blend).
 	/// </summary>
 	/// <param name="ctx">The steering context</param>
 	/// <returns>Direction angle (0-65535 = 0-360 degrees)</returns>
 	uint16_t calculateSteeringDirection(const SteeringContext& ctx);
 
-	/// Locomotion behaviors first (sets `ctx.desiredSpeedForAvoidance`), then modifiers; weighted blend.
+	/// <summary>
+	/// Locomotion phase then modifiers: runs category `Locomotion` (sets `ctx.desiredSpeedForAvoidance`),
+	/// then each `Modifier`, and returns the weighted average velocity (`combineForcesImpl`).
+	/// </summary>
 	SteeringMoveIntent calculateMoveIntent(SteeringContext& ctx);
 
 private:

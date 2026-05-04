@@ -62,8 +62,8 @@ public:
 	/// Radius to scan for obstacles (world units)
 	static constexpr int32_t OBSTACLE_SCAN_RADIUS = TILE_UNITS * 2;
 
-	/// Blend weight vs locomotion (`SeekArrivalBehavior::WEIGHT`).
-	static constexpr int32_t BLEND_WEIGHT = PRECISION;
+	/// Blend weight vs locomotion (`SeekArrivalBehavior::WEIGHT`). Higher ⇒ stronger avoidance in the weighted sum.
+	static constexpr int32_t BLEND_WEIGHT = PRECISION * 2;
 
 	// Calculate collision avoidance force for the given context.
 	SteeringForce calculate(const SteeringContext& ctx) override;
