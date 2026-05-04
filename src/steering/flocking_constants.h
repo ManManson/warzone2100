@@ -43,4 +43,9 @@ constexpr int32_t COHESION_MAX_SPEED_FRAC_NUM = 1;
 constexpr int32_t COHESION_MAX_SPEED_FRAC_DEN = 4;
 constexpr int32_t COHESION_BLEND_WEIGHT = PRECISION / 4;
 
+/// Alignment: steer toward neighbors' average velocity minus own velocity.
+constexpr int32_t ALIGNMENT_MAX_SPEED_FRAC_NUM = 1;
+constexpr int32_t ALIGNMENT_MAX_SPEED_FRAC_DEN = 4;
+constexpr int32_t ALIGNMENT_BLEND_WEIGHT = PRECISION / 4;
+
 } // namespace steering

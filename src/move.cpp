@@ -61,6 +61,7 @@
 #include "steering/steering.h"
 #include "steering/collision_avoidance_behavior.h"
 #include "steering/seek_arrival_behavior.h"
+#include "steering/alignment_behavior.h"
 #include "steering/cohesion_behavior.h"
 #include "steering/separation_behavior.h"
 #include "combat.h"
@@ -113,6 +114,7 @@ static steering::SteeringManager& moveSteeringManager()
 		inst.addBehavior(std::make_unique<CollisionAvoidanceBehavior>());
 		inst.addBehavior(std::make_unique<SeparationBehavior>());
 		inst.addBehavior(std::make_unique<CohesionBehavior>());
+		inst.addBehavior(std::make_unique<AlignmentBehavior>());
 		return inst;
 	}();
 	return instance;
