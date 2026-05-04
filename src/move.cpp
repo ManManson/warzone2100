@@ -61,6 +61,7 @@
 #include "steering/steering.h"
 #include "steering/collision_avoidance_behavior.h"
 #include "steering/seek_arrival_behavior.h"
+#include "steering/separation_behavior.h"
 #include "combat.h"
 
 /* max and min vtol heights above terrain */
@@ -109,6 +110,7 @@ static steering::SteeringManager& moveSteeringManager()
 		SteeringManager inst;
 		inst.addBehavior(std::make_unique<SeekArrivalBehavior>());
 		inst.addBehavior(std::make_unique<CollisionAvoidanceBehavior>());
+		inst.addBehavior(std::make_unique<SeparationBehavior>());
 		return inst;
 	}();
 	return instance;
