@@ -38,4 +38,9 @@ constexpr int32_t SEPARATION_BLEND_WEIGHT = PRECISION / 4;
 /// Squared distance floor when weighting separation (avoids huge impulses when overlapping).
 constexpr int32_t SEPARATION_DIST_SQ_FLOOR = (TILE_UNITS / 8) * (TILE_UNITS / 8);
 
+/// Cohesion: steer toward centroid of flock mates, capped like separation.
+constexpr int32_t COHESION_MAX_SPEED_FRAC_NUM = 1;
+constexpr int32_t COHESION_MAX_SPEED_FRAC_DEN = 4;
+constexpr int32_t COHESION_BLEND_WEIGHT = PRECISION / 4;
+
 } // namespace steering
