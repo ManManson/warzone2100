@@ -148,16 +148,25 @@ SteeringForce CollisionAvoidanceBehavior::calculate(const SteeringContext& ctx)
 	// Calculate blend ratio based on proximity
 	int32_t ratio = std::min(distTotal * ctx.radius / 2, PRECISION);
 
-	// Blend destination and avoid vectors
-	Vector2i result = destNorm * (PRECISION - ratio) + avoidNorm * ratio;
+	// Blend destination and avoid vectors (normalized-ish components before scaling).
+	Vector2i rawBlend = destNorm * (PRECISION - ratio) + avoidNorm * ratio;
 
-	int32_t weight = PRECISION; // currently 1.0 magnitude to keep existing behavior
-	// Maybe calculate weight based on threat level?
-	// // Maximum avoidance weight (cap to prevent over-reaction)
-	// static constexpr int32_t MAX_AVOIDANCE_WEIGHT = 49152; // 0.75 in fixed-point
-	// int32_t weight = std::min(ratio, MAX_AVOIDANCE_WEIGHT);
+	const int32_t ds = ctx.desiredSpeedForAvoidance;
+	if (ds <= 0)
+	{
+		return SteeringForce(Vector2i(0, 0), 0);
+	}
+	const int32_t blendHypot = iHypot(rawBlend);
+	if (blendHypot <= 0)
+	{
+		return SteeringForce(Vector2i(0, 0), 0);
+	}
 
-	return SteeringForce(result, weight);
+	const int64_t scaledX = static_cast<int64_t>(rawBlend.x) * ds / blendHypot;
+	const int64_t scaledY = static_cast<int64_t>(rawBlend.y) * ds / blendHypot;
+	const Vector2i scaledVel(static_cast<int32_t>(scaledX), static_cast<int32_t>(scaledY));
+
+	return SteeringForce(scaledVel, BLEND_WEIGHT);
 }
 
 bool CollisionAvoidanceBehavior::isEnabled(const SteeringContext& ctx) const

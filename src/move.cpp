@@ -59,6 +59,7 @@
 #include "qtscript.h"
 #include "steering/steering.h"
 #include "steering/collision_avoidance_behavior.h"
+#include "steering/seek_arrival_behavior.h"
 #include "combat.h"
 
 /* max and min vtol heights above terrain */
@@ -89,9 +90,6 @@
 // Speed to approach a final way point, if possible.
 #define MIN_END_SPEED		60
 
-// distance from final way point to start slowing
-#define END_SPEED_RANGE		(3 * TILE_UNITS)
-
 // how long to pause after firing a FOM_NO weapon
 #define FOM_MOVEPAUSE		1500
 
@@ -111,6 +109,7 @@ static steering::SteeringManager& moveSteeringManager()
 	using namespace steering;
 	static SteeringManager instance = [] {
 		SteeringManager inst;
+		inst.addBehavior(std::make_unique<SeekArrivalBehavior>());
 		inst.addBehavior(std::make_unique<CollisionAvoidanceBehavior>());
 		return inst;
 	}();
@@ -1314,14 +1313,11 @@ static void moveCalcDroidSlide(DROID *psDroid, int *pmx, int *pmy)
 	CHECK_DROID(psDroid);
 }
 
-/*!
- * Get a direction for a droid to avoid obstacles etc.
- * \param psDroid Which droid to examine
- * \return The normalised direction vector
- */
-static uint16_t moveGetDirection(DROID *psDroid)
+//! Set move heading and requested speed from steering (seek/arrival + collision blend).
+static void moveComputeMoveDirSpeed(DROID *psDroid, uint16_t *pMoveDir, SDWORD *pMoveSpeed)
 {
-	// Build steering context
+	const SDWORD cruise = moveCalcDroidSpeed(psDroid);
+
 	steering::SteeringContext ctx;
 	ctx.droid = psDroid;
 	ctx.currentPos = psDroid->pos.xy();
@@ -1331,9 +1327,12 @@ static uint16_t moveGetDirection(DROID *psDroid)
 	ctx.speed = psDroid->sMove.speed;
 	ctx.maxSpeed = psDroid->getPropulsionStats()->maxSpeed;
 	ctx.radius = moveObjRadius(psDroid);
+	ctx.cruiseSpeed = cruise;
+	ctx.desiredSpeedForAvoidance = 0;
 
-	// Calculate steering direction
-	return moveSteeringManager().calculateSteeringDirection(ctx);
+	const steering::SteeringMoveIntent intent = moveSteeringManager().calculateMoveIntent(ctx);
+	*pMoveDir = intent.direction(ctx);
+	*pMoveSpeed = std::min(cruise, static_cast<SDWORD>(intent.speedScalar()));
 }
 
 // Check if a droid has got to a way point
@@ -1584,30 +1583,6 @@ static void moveGetDroidPosDiffs(DROID *psDroid, int32_t *pDX, int32_t *pDY)
 	*pDY = iCosR(psDroid->sMove.moveDir, move);
 }
 
-// see if the droid is close to the final way point
-static void moveCheckFinalWaypoint(DROID *psDroid, SDWORD *pSpeed)
-{
-	int minEndSpeed = (*pSpeed + 2) / 3;
-	minEndSpeed = std::min(minEndSpeed, MIN_END_SPEED);
-
-	// don't do this for VTOLs doing attack runs
-	if (psDroid->isVtol() && (psDroid->action == DACTION_VTOLATTACK))
-	{
-		return;
-	}
-
-	if (psDroid->sMove.Status != MOVESHUFFLE &&
-	    psDroid->sMove.pathIndex == (int)psDroid->sMove.asPath.size())
-	{
-		Vector2i diff = psDroid->pos.xy() - psDroid->sMove.target;
-		int distSq = dot(diff, diff);
-		if (distSq < END_SPEED_RANGE * END_SPEED_RANGE)
-		{
-			*pSpeed = (*pSpeed - minEndSpeed) * distSq / (END_SPEED_RANGE * END_SPEED_RANGE) + minEndSpeed;
-		}
-	}
-}
-
 static void moveUpdateDroidPos(DROID *psDroid, int32_t dx, int32_t dy)
 {
 	CHECK_DROID(psDroid);
@@ -1671,8 +1646,6 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 	spinSpeed = psDroid->baseSpeed * psPropStats->spinSpeed;
 	turnSpeed = psDroid->baseSpeed * psPropStats->turnSpeed;
 	spinAngle = DEG(psPropStats->spinAngle);
-
-	moveCheckFinalWaypoint(psDroid, &speed);
 
 	moveUpdateDroidDirection(psDroid, &speed, direction, spinAngle, spinSpeed, turnSpeed, &iDroidDir);
 
@@ -1830,8 +1803,6 @@ static void moveUpdateVtolModel(DROID *psDroid, SDWORD speed, uint16_t direction
 	psPropStats = psDroid->getPropulsionStats();
 	spinSpeed = DEG(psPropStats->spinSpeed);
 	turnSpeed = DEG(psPropStats->turnSpeed);
-
-	moveCheckFinalWaypoint(psDroid, &speed);
 
 	if (psDroid->isTransporter())
 	{
@@ -2224,10 +2195,7 @@ void moveUpdateDroid(DROID *psDroid)
 		}
 		else
 		{
-			// Calculate a target vector
-			moveDir = moveGetDirection(psDroid);
-
-			moveSpeed = moveCalcDroidSpeed(psDroid);
+			moveComputeMoveDirSpeed(psDroid, &moveDir, &moveSpeed);
 		}
 		break;
 	case MOVEWAITROUTE:
@@ -2330,8 +2298,7 @@ void moveUpdateDroid(DROID *psDroid)
 //			}
 		}
 
-		moveDir = moveGetDirection(psDroid);
-		moveSpeed = moveCalcDroidSpeed(psDroid);
+		moveComputeMoveDirSpeed(psDroid, &moveDir, &moveSpeed);
 
 		if ((psDroid->sMove.bumpTime != 0) &&
 		    (psDroid->sMove.pauseTime + psDroid->sMove.bumpTime + BLOCK_PAUSETIME < gameTime))

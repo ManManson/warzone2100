@@ -27,11 +27,43 @@
 #include "utils.h" // for PRECISION
 
 #include "lib/framework/trig.h"
+#include "lib/framework/vector.h"
 
 namespace steering
 {
 
+namespace
+{
+
+static SteeringForce fallbackLocomotion(const SteeringContext& ctx)
+{
+	Vector2i toTarget = ctx.targetPos - ctx.currentPos;
+	if (iHypot(toTarget) == 0 || ctx.cruiseSpeed <= 0)
+	{
+		return SteeringForce(Vector2i(0, 0), 0);
+	}
+	const uint16_t dir = iAtan2(toTarget);
+	return SteeringForce(iSinCosR(dir, ctx.cruiseSpeed), PRECISION);
+}
+
+} // namespace
+
 SteeringManager::~SteeringManager() = default;
+
+uint16_t SteeringMoveIntent::direction(const SteeringContext& ctx) const
+{
+	if (velocity.x != 0 || velocity.y != 0)
+	{
+		return iAtan2(velocity);
+	}
+	const Vector2i toTarget = ctx.targetPos - ctx.currentPos;
+	return iAtan2(toTarget);
+}
+
+int32_t SteeringMoveIntent::speedScalar() const
+{
+	return iHypot(velocity);
+}
 
 void SteeringManager::addBehavior(std::unique_ptr<ISteeringBehavior> behavior)
 {
@@ -39,37 +71,68 @@ void SteeringManager::addBehavior(std::unique_ptr<ISteeringBehavior> behavior)
 	_forces.reserve(_behaviors.size());
 }
 
-Vector2i SteeringManager::calculateSteering(const SteeringContext& ctx)
+SteeringMoveIntent SteeringManager::calculateMoveIntent(SteeringContext& ctx)
 {
+	ctx.desiredSpeedForAvoidance = 0;
 	_forces.clear();
+
+	SteeringForce locomotion;
+	bool gotLocomotion = false;
+	for (const auto& behavior : _behaviors)
+	{
+		if (behavior->category() != SteeringBehaviorCategory::Locomotion)
+		{
+			continue;
+		}
+		if (!behavior->isEnabled(ctx))
+		{
+			continue;
+		}
+		locomotion = behavior->calculate(ctx);
+		gotLocomotion = true;
+		break;
+	}
+	if (!gotLocomotion || locomotion.isZero())
+	{
+		locomotion = fallbackLocomotion(ctx);
+	}
+	if (!locomotion.isZero())
+	{
+		ctx.desiredSpeedForAvoidance = iHypot(locomotion.force);
+		_forces.push_back(locomotion);
+	}
 
 	for (const auto& behavior : _behaviors)
 	{
-		if (behavior->isEnabled(ctx))
+		if (behavior->category() != SteeringBehaviorCategory::Modifier)
 		{
-			SteeringForce force = behavior->calculate(ctx);
-			if (!force.isZero())
-			{
-				_forces.push_back(force);
-			}
+			continue;
+		}
+		if (!behavior->isEnabled(ctx))
+		{
+			continue;
+		}
+		SteeringForce force = behavior->calculate(ctx);
+		if (!force.isZero())
+		{
+			_forces.push_back(force);
 		}
 	}
 
-	return combineForcesImpl(_forces);
+	return SteeringMoveIntent{combineForcesImpl(_forces)};
+}
+
+Vector2i SteeringManager::calculateSteering(const SteeringContext& ctx)
+{
+	SteeringContext ctxMut = ctx;
+	return calculateMoveIntent(ctxMut).velocity;
 }
 
 uint16_t SteeringManager::calculateSteeringDirection(const SteeringContext& ctx)
 {
-	Vector2i steering = calculateSteering(ctx);
-
-	// If no steering force, use direction to target
-	if (steering.x == 0 && steering.y == 0)
-	{
-		Vector2i toTarget = ctx.targetPos - ctx.currentPos;
-		return iAtan2(toTarget);
-	}
-
-	return iAtan2(steering);
+	SteeringContext ctxMut = ctx;
+	const SteeringMoveIntent intent = calculateMoveIntent(ctxMut);
+	return intent.direction(ctxMut);
 }
 
 Vector2i SteeringManager::combineForcesImpl(const std::vector<SteeringForce>& forces)
@@ -79,16 +142,12 @@ Vector2i SteeringManager::combineForcesImpl(const std::vector<SteeringForce>& fo
 		return Vector2i(0, 0);
 	}
 
-	// Calculate weighted sum of forces
 	int64_t totalX = 0;
 	int64_t totalY = 0;
 	int64_t totalWeight = 0;
 
 	for (const auto& f : forces)
 	{
-		// Weight the force by its weight value
-		// Force is already in fixed-point, weight is also fixed-point
-		// Result: force * weight / PRECISION
 		int64_t weightedX = static_cast<int64_t>(f.force.x) * f.weight / PRECISION;
 		int64_t weightedY = static_cast<int64_t>(f.force.y) * f.weight / PRECISION;
 
@@ -102,8 +161,6 @@ Vector2i SteeringManager::combineForcesImpl(const std::vector<SteeringForce>& fo
 		return Vector2i(0, 0);
 	}
 
-	// Normalize by total weight to get average direction
-	// Scale back to PRECISION units
 	int32_t resultX = static_cast<int64_t>(totalX) * PRECISION / totalWeight;
 	int32_t resultY = static_cast<int64_t>(totalY) * PRECISION / totalWeight;
 

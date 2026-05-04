@@ -38,16 +38,19 @@ struct DROID;
 namespace steering
 {
 
+/// Locomotion behaviors run first and set `desiredSpeedForAvoidance` for modifiers (e.g. collision scaling).
+enum class SteeringBehaviorCategory
+{
+	Locomotion,
+	Modifier,
+};
+
 /// <summary>
 /// Steering force vector with weight for blending.
-/// The force vector uses fixed-point precision where 65536 represents
-/// a magnitude of 1.0.
-///
-/// The weight is used when combining multiple steering forces together.
+/// On the movement hot path, `force` is a planar velocity in world speed units (same scale as `moveCalcDroidSpeed`).
 /// </summary>
 struct SteeringForce
 {
-	// Force vector in fixed-point precision
 	Vector2i force = {0, 0};
 	// Weight for blending (in PRECISION units, i.e. weight == 65536 acts as a 1.0 multiplier)
 	int32_t weight = 0;
@@ -83,6 +86,10 @@ struct SteeringContext
 	int32_t maxSpeed = 0;
 	// Droid collision radius
 	int32_t radius = 0;
+	// Terrain- and modifier-limited cruise speed from `moveCalcDroidSpeed()` for this tick.
+	int32_t cruiseSpeed = 0;
+	// Scratch: locomotion magnitude used to scale collision avoidance (filled by `SteeringManager`).
+	int32_t desiredSpeedForAvoidance = 0;
 };
 
 /// <summary>
@@ -120,6 +127,17 @@ public:
 	/// <param name="ctx">The steering context</param>
 	/// <returns>`true` if the behavior should be applied</returns>
 	virtual bool isEnabled(const SteeringContext& ctx) const { return true; }
+
+	virtual SteeringBehaviorCategory category() const { return SteeringBehaviorCategory::Modifier; }
+};
+
+/// Combined planar velocity from locomotion + modifiers (world speed units).
+struct SteeringMoveIntent
+{
+	Vector2i velocity = {0, 0};
+
+	uint16_t direction(const SteeringContext& ctx) const;
+	int32_t speedScalar() const;
 };
 
 /// <summary>
@@ -167,9 +185,12 @@ public:
 	/// <returns>Direction angle (0-65535 = 0-360 degrees)</returns>
 	uint16_t calculateSteeringDirection(const SteeringContext& ctx);
 
+	/// Locomotion behaviors first (sets `ctx.desiredSpeedForAvoidance`), then modifiers; weighted blend.
+	SteeringMoveIntent calculateMoveIntent(SteeringContext& ctx);
+
 private:
 
-	// Combine multiple forces using weighted average.
+	// Weighted average of force vectors (same units per summand).
 	static Vector2i combineForcesImpl(const std::vector<SteeringForce>& forces);
 
 	// Cached storage for calculated steering forces, used to reduce

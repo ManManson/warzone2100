@@ -31,6 +31,7 @@
 #pragma once
 
 #include "steering.h"
+#include "utils.h"
 #include "lib/framework/vector.h"
 #include "lib/wzmaplib/include/wzmaplib/map.h"  // For TILE_UNITS
 
@@ -61,11 +62,15 @@ public:
 	/// Radius to scan for obstacles (world units)
 	static constexpr int32_t OBSTACLE_SCAN_RADIUS = TILE_UNITS * 2;
 
+	/// Blend weight vs locomotion (`SeekArrivalBehavior::WEIGHT`).
+	static constexpr int32_t BLEND_WEIGHT = PRECISION;
 
 	// Calculate collision avoidance force for the given context.
 	SteeringForce calculate(const SteeringContext& ctx) override;
 
 	const char* name() const override { return "CollisionAvoidance"; }
+
+	SteeringBehaviorCategory category() const override { return SteeringBehaviorCategory::Modifier; }
 
 	// Disabled for transporters (they have their own movement logic).
 	bool isEnabled(const SteeringContext& ctx) const override;
