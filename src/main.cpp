@@ -192,6 +192,9 @@ static GS_GAMEMODE gameStatus = GS_TITLE_SCREEN;
 // Status of the gameloop
 static GAMECODE gameLoopStatus = GAMECODE_CONTINUE;
 static FOCUS_STATE focusState = FOCUS_IN;
+// Command-line bootstrap: run session load on first mainLoop() tick (after frameUpdate / SDL pump), not inside realmain.
+static bool pendingBootstrapCliSaveGameLoad = false;
+static bool pendingBootstrapCliStartGame = false;
 
 #if defined(WZ_OS_UNIX)
 static bool ignoredSIGPIPE = false;
@@ -1198,6 +1201,26 @@ void mainLoop()
 {
 	frameUpdate(); // General housekeeping
 
+	// Defer CLI "load save" / "start game" from realmain so the first pump runs before session IO, matching
+	// the normal event-loop-driven path. Session load still sets GS_LOADING / GS_NORMAL inside initSaveGameLoad / startGameLoop.
+	if (pendingBootstrapCliSaveGameLoad)
+	{
+		pendingBootstrapCliSaveGameLoad = false;
+		if (headlessGameMode())
+		{
+			fprintf(stdout, "Loading savegame ...\n");
+		}
+		(void)initSaveGameLoad();
+	}
+	else if (pendingBootstrapCliStartGame)
+	{
+		pendingBootstrapCliStartGame = false;
+		if (!startGameLoop())
+		{
+			wzQuit(EXIT_FAILURE);
+		}
+	}
+
 	pie_ScreenFrameRenderBegin();
 
 	// Screenshot key is now available globally
@@ -2126,19 +2149,10 @@ int realmain(int argc, char *argv[])
 		startTitleLoop(true);
 		break;
 	case GS_SAVEGAMELOAD:
-		if (headlessGameMode())
-		{
-			fprintf(stdout, "Loading savegame ...\n");
-		}
-		initSaveGameLoad();
+		pendingBootstrapCliSaveGameLoad = true;
 		break;
 	case GS_NORMAL:
-		if (!startGameLoop())
-		{
-			// Attempted to load straight into a game from the command-line, but starting the game loop (loading the map, etc) failed
-			// Treat this as a failure and queue an exit
-			wzQuit(EXIT_FAILURE);
-		}
+		pendingBootstrapCliStartGame = true;
 		break;
 	default:
 		debug(LOG_ERROR, "Weirdy game status, I'm afraid!!");
