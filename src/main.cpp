@@ -797,7 +797,7 @@ static bool startGameLoop()
 		NETadjustConnectedTimeoutForClients();
 	}
 
-	SetGameMode(GS_NORMAL);
+	SetGameMode(GS_LOADING);
 	initLoadingScreen(true);
 
 	ActivityManager::instance().startingGame();
@@ -841,6 +841,7 @@ static bool startGameLoop()
 		wzSetWindowIsResizable(false);
 	}
 
+	SetGameMode(GS_NORMAL);
 	// set a flag for the trigger/event system to indicate initialisation is complete
 	gameInitialised = true;
 
@@ -923,6 +924,7 @@ static void stopGameLoop()
 	if (gameLoopStatus != GAMECODE_NEWLEVEL)
 	{
 		clearBlueprints();
+		SetGameMode(GS_LOADING);
 		initLoadingScreen(true); // returning to f.e. do a loader.render not active
 		if (gameLoopStatus != GAMECODE_LOADGAME)
 		{
@@ -972,7 +974,7 @@ static void stopGameLoop()
 static bool initSaveGameLoad()
 {
 	// NOTE: always setGameMode correctly before *any* loading routines!
-	SetGameMode(GS_NORMAL);
+	SetGameMode(GS_LOADING);
 	initLoadingScreen(true);
 
 	// load up a save game
@@ -1009,20 +1011,28 @@ static bool initSaveGameLoad()
 		addMissionTimerInterface();
 	}
 
+	SetGameMode(GS_NORMAL);
 	// set a flag for the trigger/event system to indicate initialisation is complete
 	gameInitialised = true;
 
 	return true;
 }
 
-
 /*!
- * Run the code inside the gameloop
+ * Handles the deferred part of \c gameLoopStatus for quit-to-menu, in-game load, and mission / level reload.
+ *
+ * This work is intentionally split across two main-loop iterations: \c gameLoop() returns a code such as
+ * \c GAMECODE_QUITGAME, then on the following iteration \c stopGameLoop(), \c startTitleLoop(), or the
+ * load / restart path runs. That second step used to live only at the start of \c runGameLoop(). The same
+ * frame also moves to \c GS_LOADING and shows the loading screen so teardown and IO can stay responsive.
+ *
+ * When \c GetGameMode() is \c GS_LOADING, \c mainLoop() runs \c runLoadingFrame() instead of \c runGameLoop(),
+ * so the deferred handler would never run unless it is invoked from the \c GS_LOADING branch as well.
+ *
+ * \return True if a deferred branch ran: the caller must not call \c gameLoop() in the same frame.
  */
-static void runGameLoop()
+static bool tryRunDeferredGameLoopStatus()
 {
-	// Run the second half of a queued gameloopstatus change
-	// (This is needed so that the main loop completes once between initializing the loading screen and actually loading)
 	switch (gameLoopStatus)
 	{
 	case GAMECODE_QUITGAME:
@@ -1032,13 +1042,13 @@ static void runGameLoop()
 		stopGameLoop();
 		startTitleLoop(); // Restart into titleloop
 		gameLoopStatus = GAMECODE_CONTINUE;
-		return;
+		return true;
 	case GAMECODE_LOADGAME:
 		debug(LOG_MAIN, "GAMECODE_LOADGAME");
 		stopGameLoop();
 		initSaveGameLoad(); // Restart and load a savegame
 		gameLoopStatus = GAMECODE_CONTINUE;
-		return;
+		return true;
 	case GAMECODE_NEWLEVEL:
 		debug(LOG_MAIN, "GAMECODE_NEWLEVEL");
 		stopGameLoop();
@@ -1050,10 +1060,20 @@ static void runGameLoop()
 		{
 			debug(LOG_POPUP, _("Failed to load level data or map. Exiting to main menu."));
 		}
-		return;
+		return true;
 	default:
-		// ignore other values, and proceed with gameLoop
-		break;
+		return false;
+	}
+}
+
+/*!
+ * Run the code inside the gameloop
+ */
+static void runGameLoop()
+{
+	if (tryRunDeferredGameLoopStatus())
+	{
+		return;
 	}
 
 	gameLoopStatus = gameLoop();
@@ -1064,14 +1084,17 @@ static void runGameLoop()
 		break;
 	case GAMECODE_QUITGAME:
 		debug(LOG_MAIN, "GAMECODE_QUITGAME");
+		SetGameMode(GS_LOADING);
 		initLoadingScreen(true);
 		break;
 	case GAMECODE_LOADGAME:
 		debug(LOG_MAIN, "GAMECODE_LOADGAME");
+		SetGameMode(GS_LOADING);
 		initLoadingScreen(true);
 		break;
 	case GAMECODE_NEWLEVEL:
 		debug(LOG_MAIN, "GAMECODE_NEWLEVEL");
+		SetGameMode(GS_LOADING);
 		initLoadingScreen(true);
 		break;
 	// Never thrown:
@@ -1200,7 +1223,10 @@ void mainLoop()
 				// gameLoop handles pie_ScreenFrameRenderEnd()
 				break;
 			case GS_LOADING:
-				runLoadingFrame();
+				if (!tryRunDeferredGameLoopStatus())
+				{
+					runLoadingFrame();
+				}
 				pie_ScreenFrameRenderEnd();
 				break;
 			case GS_TITLE_SCREEN: // Run the titleloop code
@@ -1725,6 +1751,10 @@ void mainShutdown()
 		case GS_NORMAL:
 			// if running a game while quitting, stop the game loop
 			// (currently required for some cleanup) (should modelShutdown() be added to systemShutdown?)
+			stopGameLoop();
+			break;
+		case GS_LOADING:
+			// gameplay session load or teardown in progress
 			stopGameLoop();
 			break;
 		case GS_TITLE_SCREEN:
