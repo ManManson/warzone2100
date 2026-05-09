@@ -5605,7 +5605,7 @@ void handleAutoReadyRequest()
 		return; // no-op for host (currently)
 	}
 
-	if (GetGameMode() == GS_NORMAL)
+	if (IsActiveGameSession())
 	{
 		return; // don't bother sending anything - the game is starting / started...
 	}
@@ -5917,7 +5917,7 @@ optional<KickRedirectInfo> parseKickRedirectInfo(const std::string& redirectStri
 void WzMultiplayerOptionsTitleUI::handleKickRedirect(uint8_t kickerPlayerIdx, const std::string& redirectString)
 {
 	ASSERT_OR_RETURN(, !NetPlay.isHost, "Host shouldn't be processing kick redirect");
-	ASSERT_OR_RETURN(, (GetGameMode() != GS_NORMAL), "Game must not be started");
+	ASSERT_OR_RETURN(, !IsActiveGameSession(), "Game must not be started");
 
 	if (kickerPlayerIdx < NetPlay.players.size())
 	{

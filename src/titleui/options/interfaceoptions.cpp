@@ -100,10 +100,10 @@ std::shared_ptr<OptionsForm> makeInterfaceOptionsForm(bool inGame, const std::fu
 		auto optionInfo = OptionInfo("interface.language", N_("Language"), "");
 		optionInfo.addAvailabilityCondition(IsNotInGame);
 		// NOTE: By capturing a copy of pFlagsImages in the populate handler, we ensure it stays around until the OptionsDropdown is deleted
-		std::shared_ptr<IMAGEFILE> flagsImagesCopy = (GetGameMode() != GS_NORMAL) ? getFlagsImages() : nullptr;
+		std::shared_ptr<IMAGEFILE> flagsImagesCopy = !IsActiveGameSession() ? getFlagsImages() : nullptr;
 		auto valueChanger = OptionsDropdown<WzString>::make(
 			[flagsImagesCopy]() {
-				const bool bIsInGame = (GetGameMode() == GS_NORMAL);
+				const bool bIsInGame = IsActiveGameSession();
 				if (bIsInGame)
 				{
 					// shortcut to avoid loading and processing lots of strings - just populate with the currrent language (can't be changed in-game anyway)

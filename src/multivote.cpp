@@ -871,7 +871,7 @@ static void sendPlayerMultiOptPreferencesBuiltin(uint32_t playerIdx)
 {
 	ASSERT_OR_RETURN(, playerIdx < MAX_CONNECTED_PLAYERS, "Invalid player idx: %" PRIu32, playerIdx);
 	ASSERT_OR_RETURN(, whosResponsible(playerIdx) == selectedPlayer || NetPlay.isHost, "Sending unexpected player prefs: %" PRIu32, playerIdx);
-	ASSERT_OR_RETURN(, GetGameMode() != GS_NORMAL, "Trying to send multiopt preferences after game started?");
+	ASSERT_OR_RETURN(, !IsActiveGameSession(), "Trying to send multiopt preferences after game started?");
 
 	auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_VOTE);
 	NETuint32_t(w, selectedPlayer);

@@ -74,7 +74,7 @@ bool sendScoreCheck()
 	}
 	// Broadcast any changes in other players, but not in FRONTEND!!!
 	// Detection for this no longer uses title mode, but instead game mode, because that makes more sense
-	if (GetGameMode() == GS_NORMAL)
+	if (IsActiveGameSession())
 	{
 		uint8_t			i;
 

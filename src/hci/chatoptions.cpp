@@ -1025,7 +1025,7 @@ void WzChatOptionsForm::geometryChanged()
 		currentY0 = globalOptionsLabel->y() + globalOptionsLabel->height();
 
 		int lastButtonX1 = 0;
-		if (GetGameMode() != GS_NORMAL) // if not yet in a game
+		if (!IsActiveGameSession()) // if not yet in a game
 		{
 			joiningClientsButton->setGeometry(CHATOPT_FORM_EXTERNAL_PADDING, currentY0 + CHATOPT_FORM_INTERNAL_PADDING, joiningClientsButton->width(), joiningClientsButton->height());
 			lastButtonX1 = joiningClientsButton->x() + joiningClientsButton->width();

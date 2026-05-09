@@ -85,6 +85,7 @@
 #include "notifications.h"
 #include "scores.h"
 #include "clparse.h"
+#include "main.h"
 #include "gamehistorylogger.h"
 #include "profiling.h"
 #include "wzapi.h"
@@ -638,7 +639,7 @@ const Rational updateFraction = Rational(1) - renderFraction;
 unsigned lastRenderDelta = 0;
 void wz_emscripten_did_finish_render(unsigned int browserRenderDelta)
 {
-	if (GetGameMode() != GS_NORMAL)
+	if (!IsActiveGameSession())
 	{
 		return;
 	}

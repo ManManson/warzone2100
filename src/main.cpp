@@ -1746,7 +1746,7 @@ static void mainProcessCompatCheckResults(CompatCheckResults results)
 		{
 			// current terrain mode is not in supported list
 			// if not in a game, change the terrain shader quality back to default
-			if (GetGameMode() != GS_NORMAL)
+			if (!IsActiveGameSession())
 			{
 				setTerrainShaderQuality(TerrainShaderQuality::MEDIUM);
 			}
@@ -2193,6 +2193,11 @@ int realmain(int argc, char *argv[])
 GS_GAMEMODE GetGameMode()
 {
 	return gameStatus;
+}
+
+bool IsActiveGameSession()
+{
+	return GetGameMode() == GS_NORMAL && gameInitialised;
 }
 
 /*!

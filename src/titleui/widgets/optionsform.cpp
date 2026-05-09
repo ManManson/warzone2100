@@ -826,7 +826,7 @@ bool OptionInfo::requiresRestart() const
 OptionInfo::AvailabilityResult IsNotInGame(const OptionInfo&)
 {
 	OptionInfo::AvailabilityResult result;
-	result.available = GetGameMode() != GS_NORMAL;
+	result.available = !IsActiveGameSession();
 	result.localizedUnavailabilityReason = _("Not editable while in a game.");
 	return result;
 }

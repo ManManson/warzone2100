@@ -443,7 +443,8 @@ bool loadWeaponStats(WzConfig &ini)
 		//get the IMD for the component
 		psStats->pIMD = statsGetIMD(ini, psStats, "model");
 		psStats->pMountGraphic = statsGetIMD(ini, psStats, "mountModel");
-		if (GetGameMode() == GS_NORMAL)
+		// Extra weapon graphics load during session setup (GS_LOADING) as well as live play (GS_NORMAL).
+		if (GetGameMode() == GS_NORMAL || GetGameMode() == GS_LOADING)
 		{
 			psStats->pMuzzleGraphic = statsGetIMD(ini, psStats, "muzzleGfx");
 			psStats->pInFlightGraphic = statsGetIMD(ini, psStats, "flightGfx");

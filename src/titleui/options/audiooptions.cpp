@@ -257,6 +257,7 @@ static void doOpenMusicManager(const std::shared_ptr<W_SCREEN>& currentScreen)
 		break;
 	}
 	case GS_TITLE_SCREEN:
+	case GS_LOADING:
 		changeTitleUI(std::make_shared<WzMusicManagerTitleUI>(wzTitleUICurrent));
 		break;
 	default:

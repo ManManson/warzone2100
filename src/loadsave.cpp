@@ -45,6 +45,7 @@
 #include "loadsave.h"
 #include "multiplay.h"
 #include "game.h"
+#include "main.h"
 #include "lib/sound/audio_id.h"
 #include "lib/sound/audio.h"
 #include "frontend.h"
@@ -243,7 +244,7 @@ bool addLoadSave(LOADSAVE_MODE savemode, const char *title)
 		if (!bMultiPlayer || !NetPlay.bComms)
 		{
 			gameTimeStop();
-			if (GetGameMode() == GS_NORMAL)
+			if (IsActiveGameSession())
 			{
 				// just display the 3d, no interface
 				displayWorld();

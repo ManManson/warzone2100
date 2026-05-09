@@ -145,7 +145,7 @@ bool saveJSONToFile(const nlohmann::json& obj, const char* pFileName)
 
 void gameScreenSizeDidChange(unsigned int oldWidth, unsigned int oldHeight, unsigned int newWidth, unsigned int newHeight)
 {
-	if (GetGameMode() == GS_NORMAL && !gamePaused()) // if in match / game and not paused (i.e. no in-game menus open, etc)
+	if (IsActiveGameSession() && !gamePaused()) // if in match / game and not paused (i.e. no in-game menus open, etc)
 	{
 		// update mouse trap status if window properties changed
 		if (shouldTrapCursor())

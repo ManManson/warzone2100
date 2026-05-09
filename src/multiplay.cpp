@@ -793,7 +793,7 @@ const char *getPlayerName(uint32_t player, bool treatAsNonHost)
 {
 	const bool aiPlayer = (static_cast<size_t>(player) < NetPlay.players.size()) && (NetPlay.players[player].ai >= 0) && !NetPlay.players[player].allocated;
 
-	if (aiPlayer && GetGameMode() == GS_NORMAL && !challengeActive)
+	if (aiPlayer && IsActiveGameSession() && !challengeActive)
 	{
 		ASSERT_OR_RETURN("", player < MAX_PLAYERS, "invalid player: %d", player);
 		static char names[MAX_PLAYERS][StringSize];  // Must be static, since the getPlayerName() return value is used in tool tips... Long live the widget system.
@@ -1320,9 +1320,9 @@ HandleMessageAction getMessageHandlingAction(NETQUEUE& queue, uint8_t type)
 				break;
 			case NET_TEXTMSG:
 				// Normal chat messages are available to spectators in the game room / lobby chat, but *not* in-game
-				if (senderIsSpectator && GetGameMode() == GS_NORMAL)
+				if (senderIsSpectator && (GetGameMode() == GS_NORMAL || GetGameMode() == GS_LOADING))
 				{
-					if (gameInitialised && !bDisplayMultiJoiningStatus)
+					if (IsActiveGameSession() && !bDisplayMultiJoiningStatus)
 					{
 						// If the game is actually initialized and everyone has joined the game, treat this as a kickable offense
 						return HandleMessageAction::Disallow_And_Kick_Sender;
@@ -2093,7 +2093,7 @@ void sendInGameSystemMessage(const char *text)
 {
 	NetworkTextMessage message(SYSTEM_MESSAGE, text);
 	printInGameTextMessage(message);
-	if (NetPlay.isHost || !NetPlay.players[selectedPlayer].isSpectator || GetGameMode() != GS_NORMAL)
+	if (NetPlay.isHost || !NetPlay.players[selectedPlayer].isSpectator || !IsActiveGameSession())
 	{
 		// host + players can broadcast these at any time
 		// spectators can only broadcast in-game system messages before the game has started (i.e. in lobby)
@@ -2178,7 +2178,7 @@ bool receiveInGameTextMessage(NETQUEUE queue)
 	cmdInterfaceLogChatMsg(message, "WZCHATGAM");
 
 	// make some noise!
-	if (GetGameMode() != GS_NORMAL)
+	if (!IsActiveGameSession())
 	{
 		audio_PlayTrack(FE_AUDIO_MESSAGEEND);
 	}
@@ -2277,7 +2277,7 @@ bool recvSpecInGameTextMessage(NETQUEUE queue)
 	cmdInterfaceLogChatMsg(message, "WZCHATSPC");
 
 	// make some noise!
-	if (GetGameMode() != GS_NORMAL)
+	if (!IsActiveGameSession())
 	{
 		audio_PlayTrack(FE_AUDIO_MESSAGEEND);
 	}

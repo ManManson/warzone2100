@@ -61,7 +61,7 @@
 #include "intimage.h"
 #include "data.h"
 #include "activity.h"
-#include "main.h"					// for GetGameMode
+#include "main.h"					// for IsActiveGameSession
 
 #include "multimenu.h"
 #include "multiplay.h"
@@ -415,7 +415,7 @@ static void sendPlayerLeft(uint32_t playerIndex)
 
 static void addConsolePlayerLeftMessage(unsigned playerIndex)
 {
-	if (!NetPlay.isHost && isBlindSimpleLobby(game.blindMode) && (GetGameMode() != GS_NORMAL))
+	if (!NetPlay.isHost && isBlindSimpleLobby(game.blindMode) && !IsActiveGameSession())
 	{
 		return;
 	}
@@ -428,7 +428,7 @@ static void addConsolePlayerLeftMessage(unsigned playerIndex)
 
 static void addConsolePlayerJoinMessage(unsigned playerIndex)
 {
-	if (!NetPlay.isHost && isBlindSimpleLobby(game.blindMode) && (GetGameMode() != GS_NORMAL))
+	if (!NetPlay.isHost && isBlindSimpleLobby(game.blindMode) && !IsActiveGameSession())
 	{
 		return;
 	}
@@ -473,7 +473,7 @@ void recvPlayerLeft(NETQUEUE queue)
 	debug(LOG_INFO, "** player %u has dropped, in-game! (gameTime: %" PRIu32 ")", playerIndex, gameTime);
 
 	// fire script callback to reassign skirmish players.
-	if (GetGameMode() == GS_NORMAL)
+	if (IsActiveGameSession())
 	{
 		triggerEventPlayerLeft(playerIndex);
 	}
@@ -589,7 +589,7 @@ bool MultiPlayerJoin(UDWORD playerIndex, optional<EcKey::Key> verifiedJoinIdenti
 			return true;
 		}
 		ASSERT(NetPlay.playercount <= MAX_PLAYERS, "Too many players!");
-		ASSERT(GetGameMode() != GS_NORMAL, "A player joined after the game started??");
+		ASSERT(!IsActiveGameSession(), "A player joined after the game started??");
 
 		// setup data for this player, then broadcast it to the other players.
 		setupNewPlayer(playerIndex);						// setup all the guff for that player.

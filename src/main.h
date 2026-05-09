@@ -64,6 +64,8 @@ struct SaveGamePath_t
 
 GS_GAMEMODE GetGameMode() WZ_DECL_PURE;
 void SetGameMode(GS_GAMEMODE status);
+/// True when a match is running: \c GS_NORMAL with \c gameInitialised (not loading, not menus).
+bool IsActiveGameSession() WZ_DECL_PURE;
 void mainLoop();
 
 extern char SaveGamePath[PATH_MAX];

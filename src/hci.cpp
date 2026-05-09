@@ -938,7 +938,8 @@ bool intInitialise()
 
 	psWScreen = W_SCREEN::make();
 
-	if (GetGameMode() == GS_NORMAL)
+	// In-game HUD: needed during level load (GS_LOADING) before gameInitialised, not only after.
+	if (GetGameMode() == GS_NORMAL || GetGameMode() == GS_LOADING)
 	{
 		if (!intAddPower())
 		{
@@ -966,7 +967,7 @@ bool intInitialise()
 
 	BuildController::resetShowFavorites();
 
-	if (NETisReplay() && GetGameMode() == GS_NORMAL)
+	if (NETisReplay() && (GetGameMode() == GS_NORMAL || GetGameMode() == GS_LOADING))
 	{
 		createReplayControllerOverlay();
 	}

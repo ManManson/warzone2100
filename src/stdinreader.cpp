@@ -1734,7 +1734,7 @@ void wz_command_interface_output_room_status_json(bool queued)
 		return;
 	}
 
-	bool gameHasFiredUp = (GetGameMode() == GS_NORMAL);
+	bool gameHasFiredUp = IsActiveGameSession();
 
 	auto root = nlohmann::ordered_json::object();
 	root["ver"] = 1;

@@ -365,7 +365,7 @@ PIELIGHT getConsoleTextColor(int player)
 		if (selectedPlayer < MAX_PLAYERS)
 		{
 			// Don't use friend-foe colors in the lobby
-			if (bEnemyAllyRadarColor && (GetGameMode() == GS_NORMAL))
+			if (bEnemyAllyRadarColor && IsActiveGameSession())
 			{
 				if (aiCheckAlliances(player, selectedPlayer))
 				{
@@ -499,7 +499,7 @@ void	displayConsoleMessages()
 	{
 		int TextYpos = mainConsole.topY;
 		// Draw the blue background for the text (only in game, not lobby)
-		if (bTextBoxActive && GetGameMode() == GS_NORMAL)
+		if (bTextBoxActive && IsActiveGameSession())
 		{
 			iV_TransBoxFill(mainConsole.topX - CON_BORDER_WIDTH,
 							mainConsole.topY - mainConsole.textDepth - CON_BORDER_HEIGHT,

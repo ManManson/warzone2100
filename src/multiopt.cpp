@@ -75,7 +75,7 @@
 void sendOptions()
 {
 	ASSERT_HOST_ONLY(return);
-	ASSERT_OR_RETURN(, GetGameMode() != GS_NORMAL, "sendOptions shouldn't be called after the game has started");
+	ASSERT_OR_RETURN(, !IsActiveGameSession(), "sendOptions shouldn't be called after the game has started");
 
 	game.modHashes = getModHashList();
 
@@ -166,7 +166,7 @@ std::vector<MULTISTRUCTLIMITS> oldStructureLimits;
 bool recvOptions(NETQUEUE queue)
 {
 	ASSERT_OR_RETURN(true /* silently ignore */, queue.index == NetPlay.hostPlayer, "NET_OPTIONS received from unexpected player: %" PRIu8 " - ignoring", queue.index);
-	ASSERT_OR_RETURN(false, GetGameMode() != GS_NORMAL, "NET_OPTIONS received after the game has started??");
+	ASSERT_OR_RETURN(false, !IsActiveGameSession(), "NET_OPTIONS received after the game has started??");
 
 	unsigned int i;
 
@@ -773,7 +773,7 @@ static void informOnHostChatPermissionChanges(const std::array<bool, MAX_CONNECT
 			}
 			if (i == selectedPlayer)
 			{
-				if (GetGameMode() != GS_NORMAL)
+				if (!IsActiveGameSession())
 				{
 					// skip notices for self when in lobby - those are handled elsewhere
 					continue;

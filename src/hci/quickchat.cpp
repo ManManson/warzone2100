@@ -3034,7 +3034,7 @@ void sendQuickChat(WzQuickChatMessage message, uint32_t fromPlayer, WzQuickChatT
 		return;
 	}
 
-	bool isInGame = (GetGameMode() == GS_NORMAL);
+	bool isInGame = IsActiveGameSession();
 	auto senderTeam = checkedGetPlayerTeam(fromPlayer);
 	bool senderIsSpectator = NetPlay.players[fromPlayer].isSpectator;
 	bool senderCanUseSecuredMessages = realSelectedPlayer == NetPlay.hostPlayer || realSelectedPlayer < MAX_PLAYERS; // non-host spectator slots don't currently support / send secured messages
@@ -3256,7 +3256,7 @@ bool shouldProcessQuickChatMessage(const NETQUEUE& queue, bool isInGame, WzQuick
 
 bool recvQuickChat(NETQUEUE queue)
 {
-	bool isInGame = (GetGameMode() == GS_NORMAL);
+	bool isInGame = IsActiveGameSession();
 	bool senderCanUseSecuredMessages = queue.index == NetPlay.hostPlayer || queue.index < MAX_PLAYERS;
 	bool expectingSecuredMessage = isInGame && (realSelectedPlayer == NetPlay.hostPlayer || realSelectedPlayer < MAX_PLAYERS) && senderCanUseSecuredMessages; // spectator slots do not expect secured messages
 

@@ -374,7 +374,7 @@ bool multiStatsSetIdentity(uint32_t playerIndex, const EcKey::Key &identity, boo
 		}
 		if ((identity != prevIdentity) || identity.empty())
 		{
-			if (GetGameMode() == GS_NORMAL)
+			if (IsActiveGameSession())
 			{
 				debug(LOG_INFO, "Unexpected identity change after NET_FIREUP for: (player: %u, name: \"%s\", IP: %s)", playerIndex, getPlayerName(playerIndex), NetPlay.players[playerIndex].IPtextAddress);
 			}
