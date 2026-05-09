@@ -2306,6 +2306,19 @@ static char *getSaveStructNameV19(SAVE_STRUCTURE_V17 *psSaveStructure)
 	return (psSaveStructure->name);
 }
 
+bool finishReplayLoadWithScenarioLevel()
+{
+	ASSERT_OR_RETURN(false, NETisReplay(), "Not in replay mode");
+	// Same bootstrap as menu STARTGAME: resets bLimiterLoaded and runs changeTitleUI (see WzOldTitleUI::start/run).
+	changeTitleMode(STARTGAME);
+	if (!levLoadData(aLevelName, &game.hash, nullptr, GTYPE_SCENARIO_START))
+	{
+		debug(LOG_ERROR, "Replay: Failed to load level data / map: %s %s", aLevelName, (!game.hash.isZero()) ? game.hash.toString().c_str() : "");
+		return false;
+	}
+	return true;
+}
+
 /*This just loads up the .gam file to determine which level data to set up - split up
 so can be called in levLoadData when starting a game from a load save game*/
 
@@ -2348,7 +2361,8 @@ bool loadGameInit(const GameLoadDetails& gameToLoad)
 	{
 		ASSERT_OR_RETURN(false, (gameToLoad.loadType == GameLoadDetails::GameLoadType::UserSaveGame), "Invalid load type");
 
-		SetGameMode(GS_TITLE_SCREEN); // hack - the caller sets this to GS_NORMAL but we actually want to proceed with normal startGameLoop
+		// Caller (e.g. initSaveGameLoad) keeps GS_LOADING until the session is live. Do not flip to GS_TITLE_SCREEN here:
+		// that only masked mode checks and contradicted the loading-state model.
 
 		// if it ends in .wzrp, try to load the replay!
 		WZGameReplayOptionsHandler optionsHandler;
@@ -2359,7 +2373,7 @@ bool loadGameInit(const GameLoadDetails& gameToLoad)
 
 		bMultiPlayer = true;
 		bMultiMessages = true;
-		changeTitleMode(STARTGAME);
+		// Scenario / HUD: finishReplayLoadWithScenarioLevel() from initSaveGameLoad() (see game.h).
 	}
 	else if (!gameLoad(gameToLoad.filePath.c_str()))
 	{

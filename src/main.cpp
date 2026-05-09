@@ -995,6 +995,18 @@ static bool initSaveGameLoad()
 		return false;
 	}
 
+	// Replays only ingest the file in loadGameInit(); scenario + in-game HUD need the same levLoadData path as startGameLoop().
+	if (NETisReplay() && !finishReplayLoadWithScenarioLevel())
+	{
+		debug(LOG_ERROR, "Trying to load replay %s failed (scenario)!", saveGameName);
+		debug(LOG_POPUP, _("Failed to load replay scenario data.\n\nRestarting main menu."));
+		gameLoopStatus = GAMECODE_FASTEXIT;
+		stopGameLoop();
+		startTitleLoop();
+		SetGameMode(GS_TITLE_SCREEN);
+		return false;
+	}
+
 	ActivityManager::instance().startingSavedGame();
 
 	// set up CD audio for game mode

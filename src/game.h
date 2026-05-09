@@ -85,6 +85,11 @@ bool loadGame(const GameLoadDetails& gameToLoad, bool keepObjects, bool freeMem)
 so can be called in levLoadData when starting a game from a load save game*/
 bool loadGameInit(const GameLoadDetails& gameToLoad);
 
+/// Second phase for .wzrp loads: after \c loadGameInit() has read the replay file into queues/options,
+/// load the scenario with \c levLoadData() and apply the same title/bootstrap step as menu STARTGAME.
+/// Call from the session-entry path (e.g. \c initSaveGameLoad()) — not from \c startGameLoop(), which already runs \c levLoadData().
+bool finishReplayLoadWithScenarioLevel();
+
 bool loadMissionExtras(const char* pGameToLoad, LEVEL_TYPE levelType);
 
 // load the script state given a .gam name
