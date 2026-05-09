@@ -60,6 +60,8 @@ TITLECODE titleLoop();
 void initLoadingScreen(bool drawbdrop);
 void closeLoadingScreen();
 void loadingScreenCallback();
+/// One main-loop iteration while the gameplay loading screen is active (bar animation, pumps, frame boundaries).
+void runLoadingFrame();
 
 bool displayGameOver(bool success, bool showBackDrop);
 void setPlayerHasLost(bool val);

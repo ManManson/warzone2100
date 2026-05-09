@@ -281,6 +281,10 @@ TITLECODE titleLoop()
 //loadbar update
 void loadingScreenCallback()
 {
+	// Pump every time (including from res load) so the window stays responsive between bar redraws.
+	audio_Update();
+	wzPumpEventsWhileLoading();
+
 	const PIELIGHT loadingbar_background = WZCOL_LOADING_BAR_BACKGROUND;
 	const uint32_t currTick = wzGetTicks();
 	unsigned int i;
@@ -315,10 +319,11 @@ void loadingScreenCallback()
 
 	pie_ScreenFrameRenderEnd();
 	pie_ScreenFrameRenderBegin();
+}
 
-	audio_Update();
-
-	wzPumpEventsWhileLoading();
+void runLoadingFrame()
+{
+	loadingScreenCallback();
 }
 
 #if defined(__EMSCRIPTEN__)

@@ -1199,6 +1199,10 @@ void mainLoop()
 				runGameLoop();
 				// gameLoop handles pie_ScreenFrameRenderEnd()
 				break;
+			case GS_LOADING:
+				runLoadingFrame();
+				pie_ScreenFrameRenderEnd();
+				break;
 			case GS_TITLE_SCREEN: // Run the titleloop code
 				runTitleLoop();
 				pie_ScreenFrameRenderEnd();
