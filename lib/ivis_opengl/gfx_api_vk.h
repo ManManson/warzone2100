@@ -544,6 +544,8 @@ struct VkDepthMapImage final : public gfx_api::abstract_texture
 	VmaAllocation allocation = VK_NULL_HANDLE;
 
 	size_t layer_count;
+	vk::Format depthMapFormat = vk::Format::eUndefined;
+	uint32_t mapSize = 0;
 
 #if defined(WZ_DEBUG_GFX_API_LEAKS)
 	std::string debugName;
@@ -571,6 +573,10 @@ struct VkRenderedImage final : public gfx_api::abstract_texture
 	WZ_vk::UniqueImageView view;
 //	WZ_vk::UniqueDeviceMemory memory;
 	VmaAllocation allocation = VK_NULL_HANDLE;
+
+	vk::Format imageFormat = vk::Format::eUndefined;
+	uint32_t width = 0;
+	uint32_t height = 0;
 
 #if defined(WZ_DEBUG_GFX_API_LEAKS)
 	std::string debugName;
@@ -676,6 +682,18 @@ struct VkRoot final : gfx_api::context
 	const size_t DEPTH_RENDER_PASS_ID = 1;
 	const size_t SCENE_RENDER_PASS_ID = 2;
 	const size_t NUM_RENDERPASS_IDS = 3;
+
+	struct CustomPassLayoutKey
+	{
+		std::vector<vk::Format> colorFormats;
+		std::vector<bool> colorClear;
+		optional<vk::Format> depthFormat;
+		bool depthClear = false;
+		uint32_t width = 0;
+		uint32_t height = 0;
+
+		bool operator==(const CustomPassLayoutKey& other) const;
+	};
 
 	struct RenderPassDetails
 	{
@@ -838,6 +856,9 @@ public:
 	virtual gfx_api::abstract_texture* getSceneTexture() override;
 	virtual gfx_api::abstract_texture* acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height) override;
 	virtual void releaseTransientRenderTargets() override;
+	virtual optional<std::pair<uint32_t, uint32_t>> getRenderTargetDimensions(gfx_api::abstract_texture* texture) override;
+	virtual void beginCustomPass(gfx_api::RenderPassDesc& pass) override;
+	virtual void endCustomPass() override;
 	virtual void set_polygon_offset(const float& offset, const float& slope) override;
 	virtual void set_depth_range(const float& min, const float& max) override;
 private:
@@ -900,6 +921,11 @@ private:
 	const RenderPassDetails& currentRenderPass();
 	RenderPassDetails& defaultRenderpass() { return renderPasses[DEFAULT_RENDER_PASS_ID]; }
 	bool endRenderPass_RecreateSwapchain(const vk::Result& reason);
+	void ensureRenderPassPSOCapacity(size_t requiredCount);
+	size_t getOrCreateCustomRenderPassId(const CustomPassLayoutKey& key);
+	vk::Format getAttachmentVkFormat(gfx_api::abstract_texture* texture) const;
+	void resumeDefaultRenderPass();
+	void destroyCustomRenderPasses();
 private:
 	size_t depthPassCount = WZ_MAX_SHADOW_CASCADES;
 	std::string formattedRendererInfoString;
@@ -915,6 +941,14 @@ private:
 	optional<QueuedSwapModeChange> queuedSwapModeChange = nullopt;
 
 	gfx_api::TransientRenderTargetPool _transientRenderTargets;
+
+	std::vector<CustomPassLayoutKey> _customPassLayoutKeys;
+	bool _customPassActive = false;
+	bool _defaultPassInterrupted = false;
+	size_t _activeCustomRenderPassId = 0;
+	vk::Framebuffer _activeCustomFramebuffer;
+	uint32_t _customPassWidth = 0;
+	uint32_t _customPassHeight = 0;
 };
 
 #endif // defined(WZ_VULKAN_ENABLED)

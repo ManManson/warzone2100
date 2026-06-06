@@ -23,7 +23,8 @@ enum class RenderPassType
 {
 	Depth,    // Shadow map cascade
 	Scene,    // Offscreen 3D scene
-	Default   // Swapchain / compositing + UI
+	Default,  // Swapchain / compositing + UI
+	Custom    // Declarative attachments (color/depth/viewport on RenderPassDesc)
 };
 
 /// <summary>

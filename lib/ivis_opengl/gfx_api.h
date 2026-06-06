@@ -417,6 +417,10 @@ namespace gfx_api
 		virtual abstract_texture* acquireTransientRenderTarget(pixel_format format, uint32_t width, uint32_t height) { return nullptr; }
 		virtual void releaseTransientRenderTargets() {}
 
+		virtual optional<std::pair<uint32_t, uint32_t>> getRenderTargetDimensions(abstract_texture* texture) { return nullopt; }
+		virtual void beginCustomPass(RenderPassDesc& pass) {}
+		virtual void endCustomPass() {}
+
 		virtual void executeRenderGraph(std::vector<RenderPassDesc>& passes);
 		virtual void debugStringMarker(const char *str) = 0;
 		virtual void debugSceneBegin(const char *descr) = 0;

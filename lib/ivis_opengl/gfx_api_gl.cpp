@@ -2484,6 +2484,8 @@ gl_gpurendered_texture* gl_context::create_gpurendered_texture(GLenum internalFo
 	auto* new_texture = new gl_gpurendered_texture();
 	new_texture->gles = gles;
 	new_texture->_isArray = false;
+	new_texture->tex_width = static_cast<uint32_t>(width);
+	new_texture->tex_height = static_cast<uint32_t>(height);
 #if defined(WZ_DEBUG_GFX_API_LEAKS)
 	new_texture->debugName = filename;
 #endif
@@ -2510,6 +2512,8 @@ gl_gpurendered_texture* gl_context::create_gpurendered_texture_array(GLenum inte
 	auto* new_texture = new gl_gpurendered_texture();
 	new_texture->gles = gles;
 	new_texture->_isArray = true;
+	new_texture->tex_width = static_cast<uint32_t>(width);
+	new_texture->tex_height = static_cast<uint32_t>(height);
 #if defined(WZ_DEBUG_GFX_API_LEAKS)
 	new_texture->debugName = filename;
 #endif
@@ -4244,6 +4248,9 @@ void gl_context::beginPass(gfx_api::RenderPassType type, size_t index)
 #endif
 		defaultPassStarted = true;
 		break;
+	case gfx_api::RenderPassType::Custom:
+		ASSERT(false, "Use beginCustomPass() for Custom passes");
+		break;
 	}
 }
 
@@ -4261,6 +4268,9 @@ void gl_context::endPass()
 		break;
 	case gfx_api::RenderPassType::Default:
 		// Keep default pass open until submitFrame.
+		break;
+	case gfx_api::RenderPassType::Custom:
+		// Custom passes end via endCustomPass().
 		break;
 	}
 
@@ -5515,6 +5525,121 @@ gfx_api::abstract_texture* gl_context::acquireTransientRenderTarget(gfx_api::pix
 void gl_context::releaseTransientRenderTargets()
 {
 	_transientRenderTargets.releaseAll();
+}
+
+optional<std::pair<uint32_t, uint32_t>> gl_context::getRenderTargetDimensions(gfx_api::abstract_texture* texture)
+{
+	if (texture == nullptr)
+	{
+		return nullopt;
+	}
+	if (auto* gpuTexture = dynamic_cast<gl_gpurendered_texture*>(texture))
+	{
+		if (gpuTexture->tex_width > 0 && gpuTexture->tex_height > 0)
+		{
+			return std::make_pair(gpuTexture->tex_width, gpuTexture->tex_height);
+		}
+	}
+	if (texture == sceneTexture && sceneFramebufferWidth > 0 && sceneFramebufferHeight > 0)
+	{
+		return std::make_pair(sceneFramebufferWidth, sceneFramebufferHeight);
+	}
+	return nullopt;
+}
+
+void gl_context::beginCustomPass(gfx_api::RenderPassDesc& pass)
+{
+	ASSERT_OR_RETURN(, !_customPassActive, "beginCustomPass called while a custom pass is already active");
+	ASSERT_OR_RETURN(, !_customPassFBO, "Stale custom pass framebuffer");
+	ASSERT_OR_RETURN(, !pass.colorAttachments.empty(), "Custom pass requires at least one color attachment");
+
+	uint32_t passWidth = 0;
+	uint32_t passHeight = 0;
+	if (pass.viewportSize.has_value())
+	{
+		passWidth = pass.viewportSize->first;
+		passHeight = pass.viewportSize->second;
+	}
+	if (passWidth == 0 || passHeight == 0)
+	{
+		const auto dims = getRenderTargetDimensions(pass.colorAttachments.front().texture);
+		ASSERT_OR_RETURN(, dims.has_value(), "Custom pass requires viewportSize or inferrable attachment dimensions");
+		passWidth = dims->first;
+		passHeight = dims->second;
+	}
+
+	glGenFramebuffers(1, &_customPassFBO);
+	glBindFramebuffer(GL_FRAMEBUFFER, _customPassFBO);
+
+	std::vector<GLenum> drawBuffers;
+	drawBuffers.reserve(pass.colorAttachments.size());
+	for (size_t i = 0; i < pass.colorAttachments.size(); ++i)
+	{
+		const auto& attachment = pass.colorAttachments[i];
+		ASSERT_OR_RETURN(, attachment.texture != nullptr, "Unresolved color attachment in custom pass");
+		auto* gpuTexture = dynamic_cast<gl_gpurendered_texture*>(attachment.texture);
+		ASSERT_OR_RETURN(, gpuTexture != nullptr, "Custom pass color attachment must be a GPU-rendered texture");
+		const GLenum colorAttachment = GL_COLOR_ATTACHMENT0 + static_cast<GLenum>(i);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, colorAttachment, gpuTexture->target(), gpuTexture->id(), 0);
+		drawBuffers.push_back(colorAttachment);
+	}
+
+	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
+	{
+		auto* depthTexture = dynamic_cast<gl_gpurendered_texture*>(pass.depthAttachment->texture);
+		ASSERT_OR_RETURN(, depthTexture != nullptr, "Custom pass depth attachment must be a GPU-rendered texture");
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, depthTexture->target(), depthTexture->id(), 0);
+	}
+
+	if (drawBuffers.size() > 1)
+	{
+		glDrawBuffers(static_cast<GLsizei>(drawBuffers.size()), drawBuffers.data());
+	}
+
+	const GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+	ASSERT_OR_RETURN(, fboStatus == GL_FRAMEBUFFER_COMPLETE, "Custom pass framebuffer incomplete: %s", cbframebuffererror(fboStatus));
+
+	glViewport(0, 0, passWidth, passHeight);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_TRUE);
+
+	GLbitfield clearFlags = 0;
+	for (const auto& attachment : pass.colorAttachments)
+	{
+		if (attachment.clear)
+		{
+			clearFlags |= GL_COLOR_BUFFER_BIT;
+			break;
+		}
+	}
+	if (pass.depthAttachment.has_value() && pass.depthAttachment->clear)
+	{
+		clearFlags |= GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+	}
+	if (clearFlags != 0)
+	{
+		glClear(clearFlags);
+	}
+
+	_customPassActive = true;
+	hasActivePass = true;
+	activePassType = gfx_api::RenderPassType::Custom;
+}
+
+void gl_context::endCustomPass()
+{
+	ASSERT_OR_RETURN(, _customPassActive, "endCustomPass called without an active custom pass");
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	if (_customPassFBO != 0)
+	{
+		glDeleteFramebuffers(1, &_customPassFBO);
+		_customPassFBO = 0;
+	}
+	glViewport(0, 0, viewportWidth, viewportHeight);
+
+	_customPassActive = false;
+	hasActivePass = false;
 }
 
 #if defined(__EMSCRIPTEN__)

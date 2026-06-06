@@ -2127,8 +2127,8 @@ VkTexture::VkTexture(const VkRoot& root, const std::size_t& mipmap_count, const 
 #endif
 }
 
-VkDepthMapImage::VkDepthMapImage(const VkRoot& root, const std::size_t& _layer_count, const std::size_t& size, vk::Format depthMapFormat, const std::string& filename)
-	: dev(root.dev), layer_count(_layer_count)
+VkDepthMapImage::VkDepthMapImage(const VkRoot& root, const std::size_t& _layer_count, const std::size_t& size, vk::Format _depthMapFormat, const std::string& filename)
+	: dev(root.dev), layer_count(_layer_count), depthMapFormat(_depthMapFormat), mapSize(static_cast<uint32_t>(size))
 {
 	ASSERT(size > 0, "0 width/height textures are unsupported");
 	ASSERT(size <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()), "width (%zu) exceeds uint32_t max", size);
@@ -2138,7 +2138,7 @@ VkDepthMapImage::VkDepthMapImage(const VkRoot& root, const std::size_t& _layer_c
 #endif
 
 	auto imageCreateInfo = vk::ImageCreateInfo()
-		.setFormat(depthMapFormat)
+		.setFormat(_depthMapFormat)
 		.setArrayLayers(static_cast<uint32_t>(layer_count))
 		.setExtent(vk::Extent3D(static_cast<uint32_t>(size), static_cast<uint32_t>(size), 1))
 		.setImageType(vk::ImageType::e2D)
@@ -2171,7 +2171,7 @@ VkDepthMapImage::VkDepthMapImage(const VkRoot& root, const std::size_t& _layer_c
 	const auto imageViewCreateInfo = vk::ImageViewCreateInfo()
 		.setImage(object)
 		.setViewType(vk::ImageViewType::e2DArray)
-		.setFormat(depthMapFormat)
+		.setFormat(_depthMapFormat)
 		.setComponents(vk::ComponentMapping())
 		.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eDepth, 0, 1, 0, static_cast<uint32_t>(layer_count)));
 
@@ -2350,8 +2350,11 @@ size_t VkTexture::backend_internal_value() const
 
 // MARK: VkRenderedImage
 
-VkRenderedImage::VkRenderedImage(const VkRoot& root, size_t width, size_t height, vk::Format imageFormat, const std::string& filename)
+VkRenderedImage::VkRenderedImage(const VkRoot& root, size_t width, size_t height, vk::Format _imageFormat, const std::string& filename)
 	: dev(root.dev)
+	, imageFormat(_imageFormat)
+	, width(static_cast<uint32_t>(width))
+	, height(static_cast<uint32_t>(height))
 {
 	ASSERT(width > 0 && height > 0, "0 width/height textures are unsupported");
 	ASSERT(width <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()), "width (%zu) exceeds uint32_t max", width);
@@ -2367,7 +2370,7 @@ VkRenderedImage::VkRenderedImage(const VkRoot& root, size_t width, size_t height
 	.setImageType(vk::ImageType::e2D)
 	.setMipLevels(1)
 	.setTiling(vk::ImageTiling::eOptimal)
-	.setFormat(imageFormat)
+	.setFormat(_imageFormat)
 	.setUsage(vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment)
 	.setInitialLayout(vk::ImageLayout::eUndefined)
 	.setSamples(vk::SampleCountFlagBits::e1)
@@ -2396,7 +2399,7 @@ VkRenderedImage::VkRenderedImage(const VkRoot& root, size_t width, size_t height
 	const auto imageViewCreateInfo = vk::ImageViewCreateInfo()
 		.setImage(object)
 		.setViewType(vk::ImageViewType::e2D)
-		.setFormat(imageFormat)
+		.setFormat(_imageFormat)
 		.setComponents(vk::ComponentMapping())
 		.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
 
@@ -2697,7 +2700,7 @@ gfx_api::pipeline_state_object * VkRoot::build_pipeline(gfx_api::pipeline_state_
 	}
 	if (!psoID.has_value())
 	{
-		createdPipelines.emplace_back(createInfo, NUM_RENDERPASS_IDS);
+		createdPipelines.emplace_back(createInfo, renderPasses.size());
 		psoID = createdPipelines.size() - 1;
 		createdPipelines[psoID.value()].renderPassPSO[currentRenderPassId] = pipeline;
 	}
@@ -3910,6 +3913,7 @@ bool VkRoot::shouldDraw()
 void VkRoot::shutdown()
 {
 	_transientRenderTargets.clear();
+	destroyCustomRenderPasses();
 
 	destroySwapchainAndSwapchainSpecificStuff(true);
 
@@ -6073,6 +6077,364 @@ void VkRoot::releaseTransientRenderTargets()
 	_transientRenderTargets.releaseAll();
 }
 
+bool VkRoot::CustomPassLayoutKey::operator==(const CustomPassLayoutKey& other) const
+{
+	return colorFormats == other.colorFormats
+		&& colorClear == other.colorClear
+		&& depthFormat == other.depthFormat
+		&& depthClear == other.depthClear
+		&& width == other.width
+		&& height == other.height;
+}
+
+void VkRoot::ensureRenderPassPSOCapacity(size_t requiredCount)
+{
+	for (auto& pipelineInfo : createdPipelines)
+	{
+		if (pipelineInfo.renderPassPSO.size() < requiredCount)
+		{
+			pipelineInfo.renderPassPSO.resize(requiredCount, nullptr);
+		}
+	}
+}
+
+vk::Format VkRoot::getAttachmentVkFormat(gfx_api::abstract_texture* texture) const
+{
+	ASSERT_OR_RETURN(vk::Format::eUndefined, texture != nullptr, "Null attachment texture");
+	if (auto* renderedImage = dynamic_cast<VkRenderedImage*>(texture))
+	{
+		return renderedImage->imageFormat;
+	}
+	if (auto* depthImage = dynamic_cast<VkDepthMapImage*>(texture))
+	{
+		return depthImage->depthMapFormat;
+	}
+	debug(LOG_FATAL, "Unsupported attachment texture type for custom pass");
+	return vk::Format::eUndefined;
+}
+
+static vk::ImageView getAttachmentImageView(gfx_api::abstract_texture* texture)
+{
+	ASSERT_OR_RETURN(vk::ImageView(), texture != nullptr, "Null attachment texture");
+	if (auto* renderedImage = dynamic_cast<VkRenderedImage*>(texture))
+	{
+		return renderedImage->view.get();
+	}
+	if (auto* depthImage = dynamic_cast<VkDepthMapImage*>(texture))
+	{
+		return depthImage->view.get();
+	}
+	debug(LOG_FATAL, "Unsupported attachment texture type for custom pass");
+	return vk::ImageView();
+}
+
+size_t VkRoot::getOrCreateCustomRenderPassId(const CustomPassLayoutKey& key)
+{
+	for (size_t i = 0; i < _customPassLayoutKeys.size(); ++i)
+	{
+		if (_customPassLayoutKeys[i] == key)
+		{
+			return NUM_RENDERPASS_IDS + i;
+		}
+	}
+
+	const size_t renderPassId = renderPasses.size();
+	renderPasses.push_back(RenderPassDetails(renderPassId));
+
+	std::vector<vk::AttachmentDescription> attachments;
+	attachments.reserve(key.colorFormats.size() + (key.depthFormat.has_value() ? 1 : 0));
+
+	for (size_t i = 0; i < key.colorFormats.size(); ++i)
+	{
+		attachments.push_back(
+			vk::AttachmentDescription()
+				.setFormat(key.colorFormats[i])
+				.setSamples(vk::SampleCountFlagBits::e1)
+				.setLoadOp(key.colorClear[i] ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad)
+				.setStoreOp(vk::AttachmentStoreOp::eStore)
+				.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+				.setInitialLayout(vk::ImageLayout::eUndefined)
+				.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+		);
+	}
+
+	optional<vk::AttachmentReference> depthStencilAttachmentRef;
+	if (key.depthFormat.has_value())
+	{
+		const uint32_t depthAttachmentIndex = static_cast<uint32_t>(attachments.size());
+		attachments.push_back(
+			vk::AttachmentDescription()
+				.setFormat(key.depthFormat.value())
+				.setSamples(vk::SampleCountFlagBits::e1)
+				.setLoadOp(key.depthClear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad)
+				.setStoreOp(vk::AttachmentStoreOp::eDontCare)
+				.setStencilLoadOp(key.depthClear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad)
+				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+				.setInitialLayout(vk::ImageLayout::eUndefined)
+				.setFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
+		);
+		depthStencilAttachmentRef = vk::AttachmentReference()
+			.setAttachment(depthAttachmentIndex)
+			.setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
+	}
+
+	std::vector<vk::AttachmentReference> colorAttachmentRefs;
+	colorAttachmentRefs.reserve(key.colorFormats.size());
+	for (uint32_t i = 0; i < static_cast<uint32_t>(key.colorFormats.size()); ++i)
+	{
+		colorAttachmentRefs.push_back(
+			vk::AttachmentReference()
+				.setAttachment(i)
+				.setLayout(vk::ImageLayout::eColorAttachmentOptimal)
+		);
+	}
+
+	const auto subpasses = std::array<vk::SubpassDescription, 1> {
+		vk::SubpassDescription()
+			.setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
+			.setColorAttachmentCount(static_cast<uint32_t>(colorAttachmentRefs.size()))
+			.setPColorAttachments(colorAttachmentRefs.data())
+			.setPDepthStencilAttachment(depthStencilAttachmentRef.has_value() ? &depthStencilAttachmentRef.value() : nullptr)
+	};
+
+	const auto dependencies = std::array<vk::SubpassDependency, 1> {
+		vk::SubpassDependency()
+			.setSrcSubpass(VK_SUBPASS_EXTERNAL)
+			.setDstSubpass(0)
+			.setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests)
+			.setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests)
+			.setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite)
+			.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentRead)
+			.setDependencyFlags(vk::DependencyFlagBits::eByRegion)
+	};
+
+	auto createInfo = vk::RenderPassCreateInfo()
+		.setAttachmentCount(static_cast<uint32_t>(attachments.size()))
+		.setPAttachments(attachments.data())
+		.setSubpassCount(static_cast<uint32_t>(subpasses.size()))
+		.setPSubpasses(subpasses.data())
+		.setDependencyCount(static_cast<uint32_t>(dependencies.size()))
+		.setPDependencies(dependencies.data());
+
+	auto& renderPassDetails = renderPasses[renderPassId];
+	renderPassDetails.rp_compat_info = std::make_shared<VkhRenderPassCompat>(createInfo);
+	renderPassDetails.rp = dev.createRenderPass(createInfo, nullptr, vkDynLoader);
+	renderPassDetails.msaaSamples = vk::SampleCountFlagBits::e1;
+
+	_customPassLayoutKeys.push_back(key);
+	ensureRenderPassPSOCapacity(renderPasses.size());
+	return renderPassId;
+}
+
+void VkRoot::resumeDefaultRenderPass()
+{
+	const auto clearValue = std::array<vk::ClearValue, 2> {
+		vk::ClearValue(), vk::ClearValue(vk::ClearDepthStencilValue(1.f, 0u))
+	};
+	buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().beginRenderPass(
+		vk::RenderPassBeginInfo()
+			.setFramebuffer(defaultRenderpass().fbo[currentSwapchainIndex])
+			.setClearValueCount(static_cast<uint32_t>(clearValue.size()))
+			.setPClearValues(clearValue.data())
+			.setRenderPass(defaultRenderpass().rp)
+			.setRenderArea(vk::Rect2D(vk::Offset2D(), swapchainSize)),
+		vk::SubpassContents::eInline,
+		vkDynLoader);
+	const auto viewports = std::array<vk::Viewport, 1> {
+		vk::Viewport().setHeight(swapchainSize.height).setWidth(swapchainSize.width).setMinDepth(0.f).setMaxDepth(1.f)
+	};
+	buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().setViewport(0, viewports, vkDynLoader);
+	const auto scissors = std::array<vk::Rect2D, 1> {
+		vk::Rect2D().setExtent(swapchainSize)
+	};
+	buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().setScissor(0, scissors, vkDynLoader);
+
+	currentRenderPassId = DEFAULT_RENDER_PASS_ID;
+	currentPSO = nullptr;
+}
+
+void VkRoot::destroyCustomRenderPasses()
+{
+	if (!dev)
+	{
+		_customPassLayoutKeys.clear();
+		return;
+	}
+
+	for (size_t i = NUM_RENDERPASS_IDS; i < renderPasses.size(); ++i)
+	{
+		if (renderPasses[i].rp)
+		{
+			dev.destroyRenderPass(renderPasses[i].rp, nullptr, vkDynLoader);
+			renderPasses[i].rp = vk::RenderPass();
+		}
+	}
+	if (renderPasses.size() > NUM_RENDERPASS_IDS)
+	{
+		renderPasses.erase(renderPasses.begin() + static_cast<ptrdiff_t>(NUM_RENDERPASS_IDS), renderPasses.end());
+	}
+	_customPassLayoutKeys.clear();
+}
+
+optional<std::pair<uint32_t, uint32_t>> VkRoot::getRenderTargetDimensions(gfx_api::abstract_texture* texture)
+{
+	if (texture == nullptr)
+	{
+		return nullopt;
+	}
+	if (auto* renderedImage = dynamic_cast<VkRenderedImage*>(texture))
+	{
+		if (renderedImage->width > 0 && renderedImage->height > 0)
+		{
+			return std::make_pair(renderedImage->width, renderedImage->height);
+		}
+	}
+	if (auto* depthImage = dynamic_cast<VkDepthMapImage*>(texture))
+	{
+		if (depthImage->mapSize > 0)
+		{
+			return std::make_pair(depthImage->mapSize, depthImage->mapSize);
+		}
+	}
+	if (texture == pSceneImage && swapchainSize.width > 0 && swapchainSize.height > 0)
+	{
+		return std::make_pair(swapchainSize.width, swapchainSize.height);
+	}
+	return nullopt;
+}
+
+void VkRoot::beginCustomPass(gfx_api::RenderPassDesc& pass)
+{
+	ASSERT_OR_RETURN(, !_customPassActive, "beginCustomPass called while a custom pass is already active");
+	ASSERT_OR_RETURN(, !pass.colorAttachments.empty(), "Custom pass requires at least one color attachment");
+
+	uint32_t passWidth = 0;
+	uint32_t passHeight = 0;
+	if (pass.viewportSize.has_value())
+	{
+		passWidth = pass.viewportSize->first;
+		passHeight = pass.viewportSize->second;
+	}
+	if (passWidth == 0 || passHeight == 0)
+	{
+		const auto dims = getRenderTargetDimensions(pass.colorAttachments.front().texture);
+		ASSERT_OR_RETURN(, dims.has_value(), "Custom pass requires viewportSize or inferrable attachment dimensions");
+		passWidth = dims->first;
+		passHeight = dims->second;
+	}
+
+	CustomPassLayoutKey layoutKey;
+	layoutKey.width = passWidth;
+	layoutKey.height = passHeight;
+	for (const auto& colorAttachment : pass.colorAttachments)
+	{
+		ASSERT_OR_RETURN(, colorAttachment.texture != nullptr, "Unresolved color attachment in custom pass");
+		layoutKey.colorFormats.push_back(getAttachmentVkFormat(colorAttachment.texture));
+		layoutKey.colorClear.push_back(colorAttachment.clear);
+	}
+	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
+	{
+		layoutKey.depthFormat = getAttachmentVkFormat(pass.depthAttachment->texture);
+		layoutKey.depthClear = pass.depthAttachment->clear;
+	}
+
+	_activeCustomRenderPassId = getOrCreateCustomRenderPassId(layoutKey);
+	_customPassWidth = passWidth;
+	_customPassHeight = passHeight;
+
+	if (!startedRenderPass)
+	{
+		buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().begin(
+			vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
+	}
+	else if (currentRenderPassId == DEFAULT_RENDER_PASS_ID)
+	{
+		buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().endRenderPass(vkDynLoader);
+		_defaultPassInterrupted = true;
+		currentPSO = nullptr;
+	}
+
+	std::vector<vk::ImageView> fboAttachments;
+	fboAttachments.reserve(pass.colorAttachments.size() + (pass.depthAttachment.has_value() ? 1 : 0));
+	for (const auto& colorAttachment : pass.colorAttachments)
+	{
+		fboAttachments.push_back(getAttachmentImageView(colorAttachment.texture));
+	}
+	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
+	{
+		fboAttachments.push_back(getAttachmentImageView(pass.depthAttachment->texture));
+	}
+
+	_activeCustomFramebuffer = dev.createFramebuffer(
+		vk::FramebufferCreateInfo()
+			.setAttachmentCount(static_cast<uint32_t>(fboAttachments.size()))
+			.setPAttachments(fboAttachments.data())
+			.setWidth(passWidth)
+			.setHeight(passHeight)
+			.setLayers(1)
+			.setRenderPass(renderPasses[_activeCustomRenderPassId].rp),
+		nullptr, vkDynLoader);
+
+	std::vector<vk::ClearValue> clearValues;
+	clearValues.reserve(pass.colorAttachments.size() + 1);
+	for (const auto& colorAttachment : pass.colorAttachments)
+	{
+		clearValues.push_back(vk::ClearColorValue(std::array<float, 4> {0.f, 0.f, 0.f, 0.f}));
+		(void)colorAttachment;
+	}
+	if (pass.depthAttachment.has_value())
+	{
+		clearValues.push_back(vk::ClearDepthStencilValue(1.f, 0u));
+	}
+
+	buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().beginRenderPass(
+		vk::RenderPassBeginInfo()
+			.setFramebuffer(_activeCustomFramebuffer)
+			.setClearValueCount(static_cast<uint32_t>(clearValues.size()))
+			.setPClearValues(clearValues.data())
+			.setRenderPass(renderPasses[_activeCustomRenderPassId].rp)
+			.setRenderArea(vk::Rect2D(vk::Offset2D(), vk::Extent2D(passWidth, passHeight))),
+		vk::SubpassContents::eInline,
+		vkDynLoader);
+
+	const auto viewports = std::array<vk::Viewport, 1> {
+		vk::Viewport()
+			.setWidth(static_cast<float>(passWidth))
+			.setHeight(static_cast<float>(passHeight))
+			.setMinDepth(0.f)
+			.setMaxDepth(1.f)
+	};
+	buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().setViewport(0, viewports, vkDynLoader);
+	const auto scissors = std::array<vk::Rect2D, 1> {
+		vk::Rect2D().setExtent(vk::Extent2D(passWidth, passHeight))
+	};
+	buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().setScissor(0, scissors, vkDynLoader);
+
+	currentRenderPassId = _activeCustomRenderPassId;
+	currentPSO = nullptr;
+	_customPassActive = true;
+	hasActivePass = true;
+	activePassType = gfx_api::RenderPassType::Custom;
+}
+
+void VkRoot::endCustomPass()
+{
+	ASSERT_OR_RETURN(, _customPassActive, "endCustomPass called without an active custom pass");
+
+	buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().endRenderPass(vkDynLoader);
+	if (_activeCustomFramebuffer)
+	{
+		dev.destroyFramebuffer(_activeCustomFramebuffer, nullptr, vkDynLoader);
+		_activeCustomFramebuffer = vk::Framebuffer();
+	}
+
+	currentRenderPassId = DEFAULT_RENDER_PASS_ID;
+	currentPSO = nullptr;
+	_customPassActive = false;
+	hasActivePass = false;
+}
+
 bool VkRoot::endRenderPass_RecreateSwapchain(const vk::Result& reason)
 {
 	try {
@@ -6384,6 +6746,14 @@ void VkRoot::beginPass(gfx_api::RenderPassType type, size_t index)
 		{
 			startRenderPass();
 		}
+		else if (_defaultPassInterrupted)
+		{
+			resumeDefaultRenderPass();
+			_defaultPassInterrupted = false;
+		}
+		break;
+	case gfx_api::RenderPassType::Custom:
+		ASSERT(false, "Use beginCustomPass() for Custom passes");
 		break;
 	}
 }
@@ -6402,6 +6772,9 @@ void VkRoot::endPass()
 		break;
 	case gfx_api::RenderPassType::Default:
 		// Keep default render pass open until submitFrame().
+		break;
+	case gfx_api::RenderPassType::Custom:
+		// Custom passes end via endCustomPass().
 		break;
 	}
 

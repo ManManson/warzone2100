@@ -456,6 +456,15 @@ void null_context::releaseTransientRenderTargets()
 {
 }
 
+void null_context::beginCustomPass(gfx_api::RenderPassDesc& pass)
+{
+	(void)pass;
+}
+
+void null_context::endCustomPass()
+{
+}
+
 void null_context::handleWindowSizeChange(unsigned int oldWidth, unsigned int oldHeight, unsigned int newWidth, unsigned int newHeight)
 {
 	// no-op

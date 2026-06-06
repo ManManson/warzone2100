@@ -130,6 +130,8 @@ private:
 	GLuint _id;
 	bool gles = false;
 	bool _isArray = false;
+	uint32_t tex_width = 0;
+	uint32_t tex_height = 0;
 #if defined(WZ_DEBUG_GFX_API_LEAKS)
 	std::string debugName;
 #endif
@@ -335,6 +337,9 @@ struct gl_context final : public gfx_api::context
 	virtual gfx_api::abstract_texture* getSceneTexture() override;
 	virtual gfx_api::abstract_texture* acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height) override;
 	virtual void releaseTransientRenderTargets() override;
+	virtual optional<std::pair<uint32_t, uint32_t>> getRenderTargetDimensions(gfx_api::abstract_texture* texture) override;
+	virtual void beginCustomPass(gfx_api::RenderPassDesc& pass) override;
+	virtual void endCustomPass() override;
 	virtual void debugStringMarker(const char *str) override;
 	virtual void debugSceneBegin(const char *descr) override;
 	virtual void debugSceneEnd(const char *descr) override;
@@ -451,4 +456,7 @@ private:
 	size_t sceneFBOIdx = 0;
 
 	gfx_api::TransientRenderTargetPool _transientRenderTargets;
+
+	GLuint _customPassFBO = 0;
+	bool _customPassActive = false;
 };
