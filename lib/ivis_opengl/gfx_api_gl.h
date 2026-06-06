@@ -329,7 +329,6 @@ struct gl_context final : public gfx_api::context
 	virtual void endPass() override;
 	virtual void submitFrame() override;
 	virtual size_t getDepthPassDimensions(size_t idx) override;
-	void endCurrentDepthPass();
 	virtual gfx_api::abstract_texture* getDepthTexture() override;
 	virtual gfx_api::abstract_texture* getSceneTexture() override;
 	virtual gfx_api::abstract_texture* acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height) override;
@@ -383,12 +382,6 @@ private:
 	bool createDefaultTextures();
 	bool createSceneRenderpass();
 	void deleteSceneRenderpass();
-	void beginCustomPass(gfx_api::RenderPassDesc& pass);
-	void endCustomPass();
-	void beginSceneRenderPass(const gfx_api::RenderPassDesc& pass);
-	void endSceneRenderPass();
-	void beginDefaultPass(gfx_api::RenderPassDesc& pass);
-	void beginDepthPass(size_t idx, gfx_api::AttachmentLoadOp depthLoadOp);
 
 protected:
 	friend struct gl_pipeline_state_object;

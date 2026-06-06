@@ -841,13 +841,8 @@ public:
 	virtual void beginPass(gfx_api::RenderPassDesc& pass) override;
 	virtual void endPass() override;
 	virtual void submitFrame() override;
-	void beginDepthPass(size_t idx);
 	virtual size_t getDepthPassDimensions(size_t idx) override;
-	void endCurrentDepthPass();
 	virtual gfx_api::abstract_texture* getDepthTexture() override;
-
-	void beginSceneRenderPass(const gfx_api::RenderPassDesc& pass);
-	void endSceneRenderPass();
 	virtual gfx_api::abstract_texture* getSceneTexture() override;
 	virtual gfx_api::abstract_texture* acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height) override;
 	virtual void releaseTransientRenderTargets() override;
@@ -856,10 +851,6 @@ public:
 	virtual void set_polygon_offset(const float& offset, const float& slope) override;
 	virtual void set_depth_range(const float& min, const float& max) override;
 private:
-	void beginSwapchainRenderPass(gfx_api::AttachmentLoadOp loadOp);
-	void beginCustomPass(gfx_api::RenderPassDesc& pass);
-	void endCustomPass();
-
 	enum AcquireNextSwapchainImageResult
 	{
 		eSuccess,
