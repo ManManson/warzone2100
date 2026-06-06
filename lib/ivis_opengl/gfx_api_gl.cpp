@@ -5406,15 +5406,8 @@ void gl_context::beginSceneRenderPass(const gfx_api::RenderPassDesc& pass)
 			break;
 		}
 	}
-	// Scene FBO always has an internal depth/stencil renderbuffer (not yet exposed via AttachmentDesc).
-	if (pass.depthAttachment.has_value())
-	{
-		if (pass.depthAttachment->shouldClear())
-		{
-			clearFlags |= GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
-		}
-	}
-	else
+	// Scene FBO depth/stencil is backend-internal (AttachmentDesc::backendInternalDepth).
+	if (pass.depthAttachment.has_value() && pass.depthAttachment->shouldClear())
 	{
 		clearFlags |= GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
 	}

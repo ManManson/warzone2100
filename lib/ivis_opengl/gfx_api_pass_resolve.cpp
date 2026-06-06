@@ -109,24 +109,26 @@ void applyDepthPreset(RenderPassDesc& pass, gfx_api::context& ctx)
 
 void applyScenePreset(RenderPassDesc& pass, gfx_api::context& ctx)
 {
-	if (!pass.colorAttachments.empty())
+	if (pass.colorAttachments.empty())
 	{
-		return;
+		gfx_api::abstract_texture* sceneTexture = ctx.getSceneTexture();
+		if (sceneTexture == nullptr)
+		{
+			return;
+		}
+
+		pass.colorAttachments.push_back(AttachmentDesc::color(sceneTexture, AttachmentLoadOp::Clear));
+
+		const auto dims = ctx.getRenderTargetDimensions(sceneTexture);
+		if (dims.has_value())
+		{
+			pass.viewportSize = dims;
+		}
 	}
 
-	gfx_api::abstract_texture* sceneTexture = ctx.getSceneTexture();
-	if (sceneTexture == nullptr)
+	if (!pass.depthAttachment.has_value())
 	{
-		return;
-	}
-
-	pass.colorAttachments.push_back(AttachmentDesc::color(sceneTexture, AttachmentLoadOp::Clear));
-	// Note: scene depth/stencil is backend-internal until exposed here; backends must clear it on Scene pass begin.
-
-	const auto dims = ctx.getRenderTargetDimensions(sceneTexture);
-	if (dims.has_value())
-	{
-		pass.viewportSize = dims;
+		pass.depthAttachment = AttachmentDesc::backendInternalDepth(AttachmentLoadOp::Clear);
 	}
 }
 
@@ -214,6 +216,8 @@ bool resolvePassDescription(RenderPassDesc& pass, bool isFirstDefaultPassInFrame
 	case RenderPassType::Scene:
 		ASSERT_OR_RETURN(false, !pass.colorAttachments.empty(),
 			"Scene pass \"%s\" could not resolve scene color attachment", pass.debugName.c_str());
+		ASSERT_OR_RETURN(false, pass.depthAttachment.has_value(),
+			"Scene pass \"%s\" requires a depth attachment (explicit or backend-internal)", pass.debugName.c_str());
 		break;
 	case RenderPassType::Default:
 		break;

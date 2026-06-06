@@ -846,7 +846,7 @@ public:
 	void endCurrentDepthPass();
 	virtual gfx_api::abstract_texture* getDepthTexture() override;
 
-	void beginSceneRenderPass();
+	void beginSceneRenderPass(const gfx_api::RenderPassDesc& pass);
 	void endSceneRenderPass();
 	virtual gfx_api::abstract_texture* getSceneTexture() override;
 	virtual gfx_api::abstract_texture* acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height) override;

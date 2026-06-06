@@ -6069,7 +6069,7 @@ VkRoot::AcquireNextSwapchainImageResult VkRoot::acquireNextSwapchainImage(bool a
 	return AcquireNextSwapchainImageResult::eSuccess;
 }
 
-void VkRoot::beginSceneRenderPass()
+void VkRoot::beginSceneRenderPass(const gfx_api::RenderPassDesc& pass)
 {
 	buffering_mechanism::get_current_resources().ensureDrawCmdBufferBegun();
 	frameHasDrawCommands = true;
@@ -6078,8 +6078,12 @@ void VkRoot::beginSceneRenderPass()
 	// What actually swaps out is the FBO used in the call to beginRenderPass
 	auto& sceneRenderPass = renderPasses[SCENE_RENDER_PASS_ID];
 
+	const auto& depthClear = pass.depthAttachment.has_value()
+		? pass.depthAttachment->clearValue
+		: gfx_api::ClearValue::depthStencilClear();
 	const auto clearValue = std::array<vk::ClearValue, 2> {
-		vk::ClearValue(), vk::ClearValue(vk::ClearDepthStencilValue(1.f, 0u))
+		vk::ClearValue(),
+		vk::ClearValue(vk::ClearDepthStencilValue(depthClear.depth, depthClear.stencil))
 	};
 	buffering_mechanism::get_current_resources().drawCmdBuffer().beginRenderPass(
 		vk::RenderPassBeginInfo()
@@ -7052,7 +7056,7 @@ void VkRoot::beginPass(gfx_api::RenderPassDesc& pass)
 		beginDepthPass(pass.depthPassIndex);
 		break;
 	case gfx_api::RenderPassType::Scene:
-		beginSceneRenderPass();
+		beginSceneRenderPass(pass);
 		break;
 	case gfx_api::RenderPassType::Default:
 		ASSERT(!_swapchainRenderPassActive, "Default pass begin while swapchain render pass is already active");

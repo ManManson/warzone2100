@@ -54,6 +54,12 @@ struct AttachmentDesc
 		return loadOp == AttachmentLoadOp::Clear;
 	}
 
+	/// True when texture is nullptr — attachment is owned by the backend (e.g. scene depth RBO).
+	bool isBackendInternal() const
+	{
+		return texture == nullptr;
+	}
+
 	static AttachmentDesc color(abstract_texture* tex, AttachmentLoadOp op = AttachmentLoadOp::Clear,
 		ClearValue clear = ClearValue::colorClear())
 	{
@@ -69,6 +75,16 @@ struct AttachmentDesc
 	{
 		AttachmentDesc desc;
 		desc.texture = tex;
+		desc.loadOp = op;
+		desc.clearValue = clear;
+		return desc;
+	}
+
+	/// Backend-owned depth/stencil (no abstract_texture); resolved at pass begin by the backend.
+	static AttachmentDesc backendInternalDepth(AttachmentLoadOp op = AttachmentLoadOp::Clear,
+		ClearValue clear = ClearValue::depthStencilClear())
+	{
+		AttachmentDesc desc;
 		desc.loadOp = op;
 		desc.clearValue = clear;
 		return desc;
