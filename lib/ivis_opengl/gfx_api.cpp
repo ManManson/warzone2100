@@ -22,6 +22,7 @@
 #include "gfx_api_vk.h"
 #include "gfx_api_gl.h"
 #include "gfx_api_null.h"
+#include "gfx_api_pass_resolve.h"
 #include "gfx_api_image_compress_priv.h"
 #include "gfx_api_image_basis_priv.h"
 #include "gfx_api_mipmap_priv.h"
@@ -831,61 +832,6 @@ bool gfx_api::context::loadTextureArrayLayerFromBaseImages(gfx_api::texture_arra
 	return true;
 }
 
-static bool resolveCustomPassAttachments(gfx_api::RenderPassDesc& pass)
-{
-	ASSERT_OR_RETURN(false, !pass.colorAttachments.empty(), "Custom pass requires at least one color attachment");
-
-	auto& ctx = gfx_api::context::get();
-
-	uint32_t width = 0;
-	uint32_t height = 0;
-	if (pass.viewportSize.has_value())
-	{
-		width = pass.viewportSize->first;
-		height = pass.viewportSize->second;
-	}
-
-	auto tryInferDimensions = [&](gfx_api::abstract_texture* texture) {
-		if (width > 0 && height > 0)
-		{
-			return;
-		}
-		const auto dims = ctx.getRenderTargetDimensions(texture);
-		if (dims.has_value())
-		{
-			width = dims->first;
-			height = dims->second;
-		}
-	};
-
-	for (const auto& colorAttachment : pass.colorAttachments)
-	{
-		tryInferDimensions(colorAttachment.texture);
-	}
-	if (pass.depthAttachment.has_value())
-	{
-		tryInferDimensions(pass.depthAttachment->texture);
-	}
-
-	ASSERT_OR_RETURN(false, width > 0 && height > 0,
-		"Custom pass \"%s\" requires viewportSize or an attachment with known dimensions",
-		pass.debugName.c_str());
-
-	for (auto& colorAttachment : pass.colorAttachments)
-	{
-		if (colorAttachment.texture == nullptr)
-		{
-			colorAttachment.texture = ctx.acquireTransientRenderTarget(
-				gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8, width, height);
-			ASSERT_OR_RETURN(false, colorAttachment.texture != nullptr,
-				"Failed to acquire transient color attachment for pass \"%s\"",
-				pass.debugName.c_str());
-		}
-	}
-
-	return true;
-}
-
 void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 {
 	setRenderGraphExecuting(true);
@@ -895,6 +841,11 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 	for (auto& pass : passes)
 	{
 		debugStringMarker(pass.debugName.c_str());
+
+		if (!resolvePassDescription(pass))
+		{
+			continue;
+		}
 
 		switch (pass.type)
 		{
@@ -934,15 +885,12 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 				endPass();
 				defaultPassActive = false;
 			}
-			if (resolveCustomPassAttachments(pass))
+			beginCustomPass(pass);
+			if (pass.recordFunc)
 			{
-				beginCustomPass(pass);
-				if (pass.recordFunc)
-				{
-					pass.recordFunc();
-				}
-				endCustomPass();
+				pass.recordFunc();
 			}
+			endCustomPass();
 			break;
 		}
 	}

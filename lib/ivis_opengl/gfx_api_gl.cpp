@@ -5556,7 +5556,9 @@ void gl_context::beginCustomPass(gfx_api::RenderPassDesc& pass)
 {
 	ASSERT_OR_RETURN(, !_customPassActive, "beginCustomPass called while a custom pass is already active");
 	ASSERT_OR_RETURN(, !_customPassFBO, "Stale custom pass framebuffer");
-	ASSERT_OR_RETURN(, !pass.colorAttachments.empty(), "Custom pass requires at least one color attachment");
+	ASSERT_OR_RETURN(, !pass.colorAttachments.empty()
+		|| (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr),
+		"Custom pass requires at least one color or depth attachment");
 
 	uint32_t passWidth = 0;
 	uint32_t passHeight = 0;
@@ -5567,11 +5569,30 @@ void gl_context::beginCustomPass(gfx_api::RenderPassDesc& pass)
 	}
 	if (passWidth == 0 || passHeight == 0)
 	{
-		const auto dims = getRenderTargetDimensions(pass.colorAttachments.front().texture);
-		ASSERT_OR_RETURN(, dims.has_value(), "Custom pass requires viewportSize or inferrable attachment dimensions");
-		passWidth = dims->first;
-		passHeight = dims->second;
+		for (const auto& colorAttachment : pass.colorAttachments)
+		{
+			const auto dims = getRenderTargetDimensions(colorAttachment.texture);
+			if (dims.has_value())
+			{
+				passWidth = dims->first;
+				passHeight = dims->second;
+				break;
+			}
+		}
 	}
+	if (passWidth == 0 || passHeight == 0)
+	{
+		if (pass.depthAttachment.has_value())
+		{
+			const auto dims = getRenderTargetDimensions(pass.depthAttachment->texture);
+			if (dims.has_value())
+			{
+				passWidth = dims->first;
+				passHeight = dims->second;
+			}
+		}
+	}
+	ASSERT_OR_RETURN(, passWidth > 0 && passHeight > 0, "Custom pass requires viewportSize or inferrable attachment dimensions");
 
 	glGenFramebuffers(1, &_customPassFBO);
 	glBindFramebuffer(GL_FRAMEBUFFER, _customPassFBO);
@@ -5593,12 +5614,25 @@ void gl_context::beginCustomPass(gfx_api::RenderPassDesc& pass)
 	{
 		auto* depthTexture = dynamic_cast<gl_gpurendered_texture*>(pass.depthAttachment->texture);
 		ASSERT_OR_RETURN(, depthTexture != nullptr, "Custom pass depth attachment must be a GPU-rendered texture");
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, depthTexture->target(), depthTexture->id(), 0);
+		if (depthTexture->isArray())
+		{
+			glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, depthTexture->id(), 0,
+				static_cast<GLint>(pass.depthAttachment->arrayLayer));
+		}
+		else
+		{
+			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, depthTexture->target(), depthTexture->id(), 0);
+		}
 	}
 
 	if (drawBuffers.size() > 1)
 	{
 		glDrawBuffers(static_cast<GLsizei>(drawBuffers.size()), drawBuffers.data());
+	}
+	else if (drawBuffers.empty())
+	{
+		const GLenum none = GL_NONE;
+		glDrawBuffers(1, &none);
 	}
 
 	const GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
