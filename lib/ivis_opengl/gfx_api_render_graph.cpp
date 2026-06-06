@@ -14,12 +14,13 @@ void RenderGraph::addRenderPass(RenderPassDesc desc)
 }
 
 void RenderGraph::addRenderPass(RenderPassType type, const std::string& debugName,
-	RenderPassDesc::RecordFunc recordFunc)
+	RenderPassDesc::RecordFunc recordFunc, AttachmentLoadOp swapchainLoadOp)
 {
 	addRenderPass(
 		std::move(
 			RenderPassBuilder::create(debugName)
 				.type(type)
+				.swapchainLoadOp(swapchainLoadOp)
 				.record(std::move(recordFunc)))
 			.build());
 }
@@ -101,6 +102,13 @@ RenderPassBuilder& RenderPassBuilder::viewport(uint32_t w, uint32_t h)
 RenderPassBuilder& RenderPassBuilder::inputTexture(abstract_texture* tex)
 {
 	_desc.inputTextures.push_back(tex);
+	return *this;
+}
+
+RenderPassBuilder& RenderPassBuilder::swapchainLoadOp(AttachmentLoadOp loadOp)
+{
+	_desc.swapchainLoadOp = loadOp;
+	_desc.swapchainLoadOpExplicit = true;
 	return *this;
 }
 

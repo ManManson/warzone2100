@@ -132,20 +132,16 @@ void applyScenePreset(RenderPassDesc& pass, gfx_api::context& ctx)
 	}
 }
 
-void applyDefaultPreset(RenderPassDesc& pass, gfx_api::context& ctx, bool isFirstDefaultPassInFrame)
+void applyDefaultPreset(RenderPassDesc& pass, gfx_api::context& ctx)
 {
 	const auto drawable = ctx.getDrawableDimensions();
 	if (!pass.viewportSize.has_value() && drawable.first > 0 && drawable.second > 0)
 	{
 		pass.viewportSize = drawable;
 	}
-
-	pass.swapchainLoadOp = isFirstDefaultPassInFrame
-		? AttachmentLoadOp::Clear
-		: AttachmentLoadOp::Load;
 }
 
-void applyTypePreset(RenderPassDesc& pass, gfx_api::context& ctx, bool isFirstDefaultPassInFrame)
+void applyTypePreset(RenderPassDesc& pass, gfx_api::context& ctx)
 {
 	switch (pass.type)
 	{
@@ -156,7 +152,7 @@ void applyTypePreset(RenderPassDesc& pass, gfx_api::context& ctx, bool isFirstDe
 		applyScenePreset(pass, ctx);
 		break;
 	case RenderPassType::Default:
-		applyDefaultPreset(pass, ctx, isFirstDefaultPassInFrame);
+		applyDefaultPreset(pass, ctx);
 		break;
 	case RenderPassType::Custom:
 		break;
@@ -197,11 +193,11 @@ bool resolveTransientAttachments(RenderPassDesc& pass, gfx_api::context& ctx, ui
 
 } // namespace
 
-bool resolvePassDescription(RenderPassDesc& pass, bool isFirstDefaultPassInFrame)
+bool resolvePassDescription(RenderPassDesc& pass)
 {
 	auto& ctx = gfx_api::context::get();
 
-	applyTypePreset(pass, ctx, isFirstDefaultPassInFrame);
+	applyTypePreset(pass, ctx);
 
 	uint32_t width = 0;
 	uint32_t height = 0;
@@ -220,6 +216,8 @@ bool resolvePassDescription(RenderPassDesc& pass, bool isFirstDefaultPassInFrame
 			"Scene pass \"%s\" requires a depth attachment (explicit or backend-internal)", pass.debugName.c_str());
 		break;
 	case RenderPassType::Default:
+		ASSERT_OR_RETURN(false, pass.swapchainLoadOpExplicit,
+			"Default pass \"%s\" must set an explicit swapchainLoadOp", pass.debugName.c_str());
 		break;
 	case RenderPassType::Custom:
 		ASSERT_OR_RETURN(false, passHasResolvedAttachments(pass),

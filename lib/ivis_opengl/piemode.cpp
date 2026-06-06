@@ -111,7 +111,8 @@ void pie_ScreenFrameRenderBegin()
 			[]
 			{
 				screen_Display();
-			});
+			},
+			gfx_api::AttachmentLoadOp::Clear);
 	}
 }
 

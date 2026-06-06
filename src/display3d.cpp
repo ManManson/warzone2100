@@ -1054,6 +1054,7 @@ void draw3DScene()
 		std::move(
 			gfx_api::RenderPassBuilder::create("3DSceneOverlays")
 				.type(gfx_api::RenderPassType::Default)
+				.swapchainLoadOp(gfx_api::AttachmentLoadOp::Load)
 				.record([]
 	{
 	pie_BeginInterface();
@@ -1196,6 +1197,7 @@ void draw3DScene()
 		std::move(
 			gfx_api::RenderPassBuilder::create("3DSceneDebugOverlays")
 				.type(gfx_api::RenderPassType::Default)
+				.swapchainLoadOp(gfx_api::AttachmentLoadOp::Load)
 				.record([]
 	{
 	showDroidSensorRanges(); //shows sensor data for units/droids/whatever...-Q 5-10-05
@@ -1628,6 +1630,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 		std::move(
 			gfx_api::RenderPassBuilder::create("SceneBlit")
 				.type(gfx_api::RenderPassType::Default)
+				.swapchainLoadOp(screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear)
 				.record([customSceneCopyTarget, sceneTexture]
 	{
 		WZ_PROFILE_SCOPE(copyToFBO);

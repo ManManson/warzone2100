@@ -50,8 +50,9 @@ struct RenderPassDesc
 	optional<std::pair<uint32_t, uint32_t>> viewportSize;
 	std::vector<abstract_texture*> inputTextures;
 
-	// Default passes: swapchain color load op (first pass in frame typically Clear, rest Load).
+	// Default passes: swapchain color load op (Clear to establish frame content, Load to accumulate).
 	AttachmentLoadOp swapchainLoadOp = AttachmentLoadOp::Load;
+	bool swapchainLoadOpExplicit = false;
 };
 
 /// <summary>
@@ -80,6 +81,7 @@ public:
 
 	RenderPassBuilder& viewport(uint32_t w, uint32_t h);
 	RenderPassBuilder& inputTexture(abstract_texture* tex);
+	RenderPassBuilder& swapchainLoadOp(AttachmentLoadOp loadOp);
 	RenderPassBuilder& record(RenderPassDesc::RecordFunc func);
 
 	RenderPassDesc build() &&;
@@ -110,7 +112,8 @@ public:
 
 	// Convenience overload: add a pass with just a type, name, and record function.
 	void addRenderPass(RenderPassType type, const std::string& debugName,
-						RenderPassDesc::RecordFunc recordFunc);
+						RenderPassDesc::RecordFunc recordFunc,
+						AttachmentLoadOp swapchainLoadOp = AttachmentLoadOp::Load);
 
 	// Convenience overload for depth passes that need a cascade index.
 	void addDepthPass(size_t cascadeIndex, const std::string& debugName,

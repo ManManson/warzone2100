@@ -285,6 +285,7 @@ void screen_SetBackDropFromFile(const char *filename)
 	int maxTextureSize = gfx_api::context::get().get_context_value(gfx_api::context::context_value::MAX_TEXTURE_SIZE);
 	backdropGfx->loadTexture(filename, gfx_api::texture_type::user_interface, maxTextureSize, maxTextureSize);
 	backdropIsMapPreview = false;
+	bBackDrop = true;
 	// Generate coordinates and put them into VBOs
 	screen_GenerateCoordinatesAndVBOs();
 }
@@ -400,6 +401,7 @@ void screen_Upload(iV_Image&& newBackdropImage)
 	// Bitmap MUST be (BACKDROP_HACK_WIDTH * BACKDROP_HACK_HEIGHT) for now.
 	backdropGfx->loadTexture(std::move(newBackdropImage), gfx_api::texture_type::user_interface, "mem::generated_map_preview");
 	backdropIsMapPreview = true;
+	bBackDrop = true;
 
 	// Generate coordinates and put them into VBOs
 	screen_GenerateCoordinatesAndVBOs();

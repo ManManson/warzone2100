@@ -1282,7 +1282,8 @@ void mainLoop()
 				[]
 				{
 					videoLoop(); // Display the video if necessary
-				});
+				},
+				screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear);
 			pie_ScreenFrameRenderEnd();
 		}
 		else if (!frameEnded) switch (GetGameMode())

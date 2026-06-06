@@ -836,22 +836,15 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 {
 	setRenderGraphExecuting(true);
 
-	bool firstDefaultPassInFrame = true;
 	bool executedAnyPass = false;
 
 	for (auto& pass : passes)
 	{
 		debugStringMarker(pass.debugName.c_str());
 
-		const bool isFirstDefaultPass = pass.type == RenderPassType::Default && firstDefaultPassInFrame;
-		if (!resolvePassDescription(pass, isFirstDefaultPass))
+		if (!resolvePassDescription(pass))
 		{
 			continue;
-		}
-
-		if (pass.type == RenderPassType::Default)
-		{
-			firstDefaultPassInFrame = false;
 		}
 
 		executedAnyPass = true;

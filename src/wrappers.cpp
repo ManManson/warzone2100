@@ -223,7 +223,8 @@ TITLECODE titleLoop()
 			[]
 			{
 				screen_Display();
-			});
+			},
+			gfx_api::AttachmentLoadOp::Clear);
 	}
 	wzShowMouse(true);
 
@@ -301,7 +302,8 @@ TITLECODE titleLoop()
 			[currentForRender]
 			{
 				currentForRender->render();
-			});
+			},
+			screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear);
 	}
 
 	NETflush();  // Send any pending network data.
@@ -339,14 +341,16 @@ void presentLoadingScreenForCurrentFrame()
 			[]
 			{
 				screen_Display();
-			});
+			},
+			gfx_api::AttachmentLoadOp::Clear);
 	}
 
 	pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "LoadingScreen",
 		[]
 		{
 			renderLoadingScreenPass();
-		});
+		},
+		screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear);
 }
 
 #if defined(__EMSCRIPTEN__)

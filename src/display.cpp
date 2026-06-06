@@ -1368,7 +1368,8 @@ void displayWorld()
 				[]
 				{
 					fadeStartOfGame();
-				});
+				},
+				gfx_api::AttachmentLoadOp::Load);
 		}
 		else
 		{
