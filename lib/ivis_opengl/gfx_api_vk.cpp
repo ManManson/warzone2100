@@ -6048,6 +6048,10 @@ void VkRoot::endSceneRenderPass()
 
 	// Set up the buffering_mechanism resources state, so subsequent calls to currentDrawCmdBuffer() use the one for the default render pass
 	buffering_mechanism::get_current_resources().endScenePass();
+	if (pSceneImage != nullptr)
+	{
+		setImageLayout(pSceneImage, vk::ImageLayout::eShaderReadOnlyOptimal);
+	}
 	currentRenderPassId = DEFAULT_RENDER_PASS_ID;
 	currentPSO = nullptr;
 }
@@ -6066,15 +6070,154 @@ gfx_api::abstract_texture* VkRoot::acquireTransientRenderTarget(gfx_api::pixel_f
 	const gfx_api::TransientRenderTargetKey key{format, width, height};
 	const std::string debugName = "<transient_rt_" + std::to_string(transientTargetId++) + ">";
 
-	return _transientRenderTargets.acquire(key, [this, format, width, height, debugName]() -> std::unique_ptr<gfx_api::abstract_texture> {
+	gfx_api::abstract_texture* texture = _transientRenderTargets.acquire(key, [this, format, width, height, debugName]() -> std::unique_ptr<gfx_api::abstract_texture> {
 		const vk::Format vkFormat = get_format(format);
 		return std::unique_ptr<gfx_api::abstract_texture>(new VkRenderedImage(*this, width, height, vkFormat, debugName));
 	});
+	if (texture != nullptr)
+	{
+		setImageLayout(texture, vk::ImageLayout::eUndefined);
+	}
+	return texture;
 }
 
 void VkRoot::releaseTransientRenderTargets()
 {
 	_transientRenderTargets.releaseAll();
+	resetImageLayoutTracker();
+}
+
+void VkRoot::resetImageLayoutTracker()
+{
+	_imageLayoutTracker.clear();
+}
+
+void VkRoot::setImageLayout(gfx_api::abstract_texture* texture, vk::ImageLayout layout)
+{
+	if (texture != nullptr)
+	{
+		_imageLayoutTracker[texture] = layout;
+	}
+}
+
+vk::ImageLayout VkRoot::getImageLayout(gfx_api::abstract_texture* texture) const
+{
+	if (texture == nullptr)
+	{
+		return vk::ImageLayout::eUndefined;
+	}
+	const auto it = _imageLayoutTracker.find(texture);
+	if (it != _imageLayoutTracker.end())
+	{
+		return it->second;
+	}
+	return vk::ImageLayout::eShaderReadOnlyOptimal;
+}
+
+vk::Image VkRoot::getVkImageHandle(gfx_api::abstract_texture* texture) const
+{
+	ASSERT_OR_RETURN(vk::Image(), texture != nullptr, "Null texture for layout transition");
+	if (auto* renderedImage = dynamic_cast<VkRenderedImage*>(texture))
+	{
+		return renderedImage->object;
+	}
+	if (auto* depthImage = dynamic_cast<VkDepthMapImage*>(texture))
+	{
+		return depthImage->object;
+	}
+	if (auto* vkTexture = dynamic_cast<VkTexture*>(texture))
+	{
+		return vkTexture->object;
+	}
+	if (auto* vkTextureArray = dynamic_cast<VkTextureArray*>(texture))
+	{
+		return vkTextureArray->object;
+	}
+	debug(LOG_FATAL, "Unsupported texture type for layout transition");
+	return vk::Image();
+}
+
+vk::ImageAspectFlags VkRoot::getVkImageAspect(gfx_api::abstract_texture* texture) const
+{
+	if (dynamic_cast<VkDepthMapImage*>(texture) != nullptr)
+	{
+		return vk::ImageAspectFlagBits::eDepth;
+	}
+	return vk::ImageAspectFlagBits::eColor;
+}
+
+bool VkRoot::isDepthInputTexture(gfx_api::abstract_texture* texture) const
+{
+	return dynamic_cast<VkDepthMapImage*>(texture) != nullptr;
+}
+
+void VkRoot::transitionImageLayout(vk::CommandBuffer cmdBuffer, gfx_api::abstract_texture* texture, vk::ImageLayout newLayout,
+	vk::PipelineStageFlags srcStage, vk::PipelineStageFlags dstStage, vk::AccessFlags srcAccess, vk::AccessFlags dstAccess)
+{
+	ASSERT_OR_RETURN(, texture != nullptr, "Null texture for layout transition");
+
+	const vk::ImageLayout oldLayout = getImageLayout(texture);
+	if (oldLayout == newLayout)
+	{
+		return;
+	}
+
+	const auto barrier = vk::ImageMemoryBarrier()
+		.setImage(getVkImageHandle(texture))
+		.setOldLayout(oldLayout)
+		.setNewLayout(newLayout)
+		.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+		.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+		.setSubresourceRange(vk::ImageSubresourceRange(getVkImageAspect(texture), 0, 1, 0, 1))
+		.setSrcAccessMask(srcAccess)
+		.setDstAccessMask(dstAccess);
+
+	cmdBuffer.pipelineBarrier(srcStage, dstStage, vk::DependencyFlags(), nullptr, nullptr, barrier, vkDynLoader);
+	setImageLayout(texture, newLayout);
+}
+
+void VkRoot::transitionInputTextures(const gfx_api::RenderPassDesc& pass, vk::CommandBuffer cmdBuffer)
+{
+	for (gfx_api::abstract_texture* inputTexture : pass.inputTextures)
+	{
+		if (inputTexture == nullptr)
+		{
+			continue;
+		}
+
+		if (isDepthInputTexture(inputTexture))
+		{
+			transitionImageLayout(
+				cmdBuffer, inputTexture, vk::ImageLayout::eDepthStencilReadOnlyOptimal,
+				vk::PipelineStageFlagBits::eLateFragmentTests | vk::PipelineStageFlagBits::eFragmentShader,
+				vk::PipelineStageFlagBits::eFragmentShader,
+				vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eShaderRead,
+				vk::AccessFlagBits::eShaderRead);
+		}
+		else
+		{
+			transitionImageLayout(
+				cmdBuffer, inputTexture, vk::ImageLayout::eShaderReadOnlyOptimal,
+				vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eFragmentShader,
+				vk::PipelineStageFlagBits::eFragmentShader,
+				vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eShaderRead,
+				vk::AccessFlagBits::eShaderRead);
+		}
+	}
+}
+
+void VkRoot::trackCustomPassOutputLayouts()
+{
+	for (gfx_api::abstract_texture* colorOutput : _activeCustomColorOutputs)
+	{
+		setImageLayout(colorOutput, vk::ImageLayout::eShaderReadOnlyOptimal);
+	}
+	if (_activeCustomDepthOutput.has_value() && _activeCustomDepthOutput.value() != nullptr)
+	{
+		setImageLayout(_activeCustomDepthOutput.value(), vk::ImageLayout::eDepthStencilAttachmentOptimal);
+	}
+	_activeCustomColorOutputs.clear();
+	_activeCustomDepthOutput.reset();
 }
 
 bool VkRoot::CustomPassLayoutKey::operator==(const CustomPassLayoutKey& other) const
@@ -6154,7 +6297,7 @@ size_t VkRoot::getOrCreateCustomRenderPassId(const CustomPassLayoutKey& key)
 				.setStoreOp(vk::AttachmentStoreOp::eStore)
 				.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-				.setInitialLayout(vk::ImageLayout::eUndefined)
+				.setInitialLayout(key.colorClear[i] ? vk::ImageLayout::eUndefined : vk::ImageLayout::eShaderReadOnlyOptimal)
 				.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
 		);
 	}
@@ -6171,7 +6314,7 @@ size_t VkRoot::getOrCreateCustomRenderPassId(const CustomPassLayoutKey& key)
 				.setStoreOp(vk::AttachmentStoreOp::eDontCare)
 				.setStencilLoadOp(key.depthClear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad)
 				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-				.setInitialLayout(vk::ImageLayout::eUndefined)
+				.setInitialLayout(key.depthClear ? vk::ImageLayout::eUndefined : vk::ImageLayout::eDepthStencilAttachmentOptimal)
 				.setFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
 		);
 		depthStencilAttachmentRef = vk::AttachmentReference()
@@ -6198,7 +6341,15 @@ size_t VkRoot::getOrCreateCustomRenderPassId(const CustomPassLayoutKey& key)
 			.setPDepthStencilAttachment(depthStencilAttachmentRef.has_value() ? &depthStencilAttachmentRef.value() : nullptr)
 	};
 
-	const auto dependencies = std::array<vk::SubpassDependency, 1> {
+	const auto dependencies = std::array<vk::SubpassDependency, 2> {
+		vk::SubpassDependency()
+			.setSrcSubpass(VK_SUBPASS_EXTERNAL)
+			.setDstSubpass(0)
+			.setSrcStageMask(vk::PipelineStageFlagBits::eFragmentShader)
+			.setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+			.setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
+			.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
+			.setDependencyFlags(vk::DependencyFlagBits::eByRegion),
 		vk::SubpassDependency()
 			.setSrcSubpass(VK_SUBPASS_EXTERNAL)
 			.setDstSubpass(0)
@@ -6355,6 +6506,24 @@ void VkRoot::beginCustomPass(gfx_api::RenderPassDesc& pass)
 		currentPSO = nullptr;
 	}
 
+	vk::CommandBuffer customDrawCmdBuffer = buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer();
+	transitionInputTextures(pass, customDrawCmdBuffer);
+
+	_activeCustomColorOutputs.clear();
+	_activeCustomColorOutputs.reserve(pass.colorAttachments.size());
+	for (const auto& colorAttachment : pass.colorAttachments)
+	{
+		_activeCustomColorOutputs.push_back(colorAttachment.texture);
+	}
+	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
+	{
+		_activeCustomDepthOutput = pass.depthAttachment->texture;
+	}
+	else
+	{
+		_activeCustomDepthOutput.reset();
+	}
+
 	std::vector<vk::ImageView> fboAttachments;
 	fboAttachments.reserve(pass.colorAttachments.size() + (pass.depthAttachment.has_value() ? 1 : 0));
 	for (const auto& colorAttachment : pass.colorAttachments)
@@ -6428,6 +6597,8 @@ void VkRoot::endCustomPass()
 		dev.destroyFramebuffer(_activeCustomFramebuffer, nullptr, vkDynLoader);
 		_activeCustomFramebuffer = vk::Framebuffer();
 	}
+
+	trackCustomPassOutputLayouts();
 
 	currentRenderPassId = DEFAULT_RENDER_PASS_ID;
 	currentPSO = nullptr;
@@ -6884,6 +7055,10 @@ void VkRoot::endCurrentDepthPass()
 
 	// Set up the buffering_mechanism resources state, so subsequent calls to currentDrawCmdBuffer() use the one for the default render pass
 	buffering_mechanism::get_current_resources().endCurrentDepthPass();
+	if (pDepthMapImage != nullptr)
+	{
+		setImageLayout(pDepthMapImage, vk::ImageLayout::eDepthStencilReadOnlyOptimal);
+	}
 	currentRenderPassId = DEFAULT_RENDER_PASS_ID;
 	currentPSO = nullptr;
 }

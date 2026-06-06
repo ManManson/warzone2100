@@ -926,6 +926,16 @@ private:
 	vk::Format getAttachmentVkFormat(gfx_api::abstract_texture* texture) const;
 	void resumeDefaultRenderPass();
 	void destroyCustomRenderPasses();
+	void resetImageLayoutTracker();
+	void setImageLayout(gfx_api::abstract_texture* texture, vk::ImageLayout layout);
+	vk::ImageLayout getImageLayout(gfx_api::abstract_texture* texture) const;
+	vk::Image getVkImageHandle(gfx_api::abstract_texture* texture) const;
+	vk::ImageAspectFlags getVkImageAspect(gfx_api::abstract_texture* texture) const;
+	bool isDepthInputTexture(gfx_api::abstract_texture* texture) const;
+	void transitionImageLayout(vk::CommandBuffer cmdBuffer, gfx_api::abstract_texture* texture, vk::ImageLayout newLayout,
+		vk::PipelineStageFlags srcStage, vk::PipelineStageFlags dstStage, vk::AccessFlags srcAccess, vk::AccessFlags dstAccess);
+	void transitionInputTextures(const gfx_api::RenderPassDesc& pass, vk::CommandBuffer cmdBuffer);
+	void trackCustomPassOutputLayouts();
 private:
 	size_t depthPassCount = WZ_MAX_SHADOW_CASCADES;
 	std::string formattedRendererInfoString;
@@ -949,6 +959,10 @@ private:
 	vk::Framebuffer _activeCustomFramebuffer;
 	uint32_t _customPassWidth = 0;
 	uint32_t _customPassHeight = 0;
+	std::vector<gfx_api::abstract_texture*> _activeCustomColorOutputs;
+	optional<gfx_api::abstract_texture*> _activeCustomDepthOutput = nullopt;
+
+	std::unordered_map<gfx_api::abstract_texture*, vk::ImageLayout> _imageLayoutTracker;
 };
 
 #endif // defined(WZ_VULKAN_ENABLED)
