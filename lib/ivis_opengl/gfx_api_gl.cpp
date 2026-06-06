@@ -2534,6 +2534,15 @@ gl_gpurendered_texture* gl_context::create_framebuffer_color_texture(GLenum inte
 	return create_gpurendered_texture(internalFormat, format, type, width, height, filename);
 }
 
+std::unique_ptr<gfx_api::abstract_texture> gl_context::createTransientColorRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height, const std::string& debugName)
+{
+	ASSERT(is_uncompressed_format(format), "Transient render targets require an uncompressed format");
+	const GLenum internalFormat = to_gl_internalformat(format, gles);
+	const GLenum glFormat = to_gl_format(format, gles);
+	return std::unique_ptr<gfx_api::abstract_texture>(
+		create_framebuffer_color_texture(internalFormat, glFormat, GL_UNSIGNED_BYTE, width, height, debugName));
+}
+
 gfx_api::buffer * gl_context::create_buffer_object(const gfx_api::buffer::usage &usage, const buffer_storage_hint& hint /*= buffer_storage_hint::static_draw*/, const std::string& debugName /*= ""*/)
 {
 	return new gl_buffer(usage, hint);
@@ -4870,6 +4879,8 @@ bool gl_context::shouldDraw()
 
 void gl_context::shutdown()
 {
+	_transientRenderTargets.clear();
+
 #if !defined(WZ_STATIC_GL_BINDINGS)
 	if (glClear)
 #endif
@@ -5485,6 +5496,25 @@ void gl_context::endSceneRenderPass()
 gfx_api::abstract_texture* gl_context::getSceneTexture()
 {
 	return sceneTexture;
+}
+
+gfx_api::abstract_texture* gl_context::acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height)
+{
+	ASSERT_OR_RETURN(nullptr, width > 0 && height > 0, "Invalid transient render target dimensions");
+	ASSERT_OR_RETURN(nullptr, is_uncompressed_format(format), "Unsupported transient render target format");
+
+	static uint32_t transientTargetId = 0;
+	const gfx_api::TransientRenderTargetKey key{format, width, height};
+	const std::string debugName = "<transient_rt_" + std::to_string(transientTargetId++) + ">";
+
+	return _transientRenderTargets.acquire(key, [this, format, width, height, debugName]() {
+		return createTransientColorRenderTarget(format, width, height, debugName);
+	});
+}
+
+void gl_context::releaseTransientRenderTargets()
+{
+	_transientRenderTargets.releaseAll();
 }
 
 #if defined(__EMSCRIPTEN__)

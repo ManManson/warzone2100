@@ -106,6 +106,7 @@ void RenderGraph::execute()
 
 void RenderGraph::reset()
 {
+	gfx_api::context::get().releaseTransientRenderTargets();
 	_render_passes.clear();
 }
 

@@ -20,6 +20,7 @@
 #pragma once
 
 #include "gfx_api.h"
+#include "gfx_api_transient_render_targets.h"
 
 #if defined(__EMSCRIPTEN__)
 # define WZ_STATIC_GL_BINDINGS
@@ -332,6 +333,8 @@ struct gl_context final : public gfx_api::context
 	void beginSceneRenderPass();
 	void endSceneRenderPass();
 	virtual gfx_api::abstract_texture* getSceneTexture() override;
+	virtual gfx_api::abstract_texture* acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height) override;
+	virtual void releaseTransientRenderTargets() override;
 	virtual void debugStringMarker(const char *str) override;
 	virtual void debugSceneBegin(const char *descr) override;
 	virtual void debugSceneEnd(const char *descr) override;
@@ -375,6 +378,7 @@ private:
 	gl_gpurendered_texture* create_gpurendered_texture_array(GLenum internalFormat, GLenum format, GLenum type, const size_t& width, const size_t& height, const size_t& layer_count, const std::string& filename);
 	gl_gpurendered_texture* create_depthmap_texture(const size_t& layer_count, const size_t& width, const size_t& height, const std::string& filename);
 	gl_gpurendered_texture* create_framebuffer_color_texture(GLenum internalFormat, GLenum format, GLenum type, const size_t& width, const size_t& height, const std::string& filename);
+	std::unique_ptr<gfx_api::abstract_texture> createTransientColorRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height, const std::string& debugName);
 	bool createDefaultTextures();
 	bool createSceneRenderpass();
 	void deleteSceneRenderpass();
@@ -445,4 +449,6 @@ private:
 	GLuint sceneMsaaRBO = 0;
 	GLuint sceneDepthStencilRBO = 0;
 	size_t sceneFBOIdx = 0;
+
+	gfx_api::TransientRenderTargetPool _transientRenderTargets;
 };

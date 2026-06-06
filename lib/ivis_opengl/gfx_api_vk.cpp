@@ -3909,6 +3909,8 @@ bool VkRoot::shouldDraw()
 
 void VkRoot::shutdown()
 {
+	_transientRenderTargets.clear();
+
 	destroySwapchainAndSwapchainSpecificStuff(true);
 
 	if (dev)
@@ -6049,6 +6051,26 @@ void VkRoot::endSceneRenderPass()
 gfx_api::abstract_texture* VkRoot::getSceneTexture()
 {
 	return pSceneImage;
+}
+
+gfx_api::abstract_texture* VkRoot::acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height)
+{
+	ASSERT_OR_RETURN(nullptr, width > 0 && height > 0, "Invalid transient render target dimensions");
+	ASSERT_OR_RETURN(nullptr, is_uncompressed_format(format), "Unsupported transient render target format");
+
+	static uint32_t transientTargetId = 0;
+	const gfx_api::TransientRenderTargetKey key{format, width, height};
+	const std::string debugName = "<transient_rt_" + std::to_string(transientTargetId++) + ">";
+
+	return _transientRenderTargets.acquire(key, [this, format, width, height, debugName]() -> std::unique_ptr<gfx_api::abstract_texture> {
+		const vk::Format vkFormat = get_format(format);
+		return std::unique_ptr<gfx_api::abstract_texture>(new VkRenderedImage(*this, width, height, vkFormat, debugName));
+	});
+}
+
+void VkRoot::releaseTransientRenderTargets()
+{
+	_transientRenderTargets.releaseAll();
 }
 
 bool VkRoot::endRenderPass_RecreateSwapchain(const vk::Result& reason)

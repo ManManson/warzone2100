@@ -447,6 +447,15 @@ void null_context::submitFrame()
 	current_program = nullptr;
 }
 
+gfx_api::abstract_texture* null_context::acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height)
+{
+	return nullptr;
+}
+
+void null_context::releaseTransientRenderTargets()
+{
+}
+
 void null_context::handleWindowSizeChange(unsigned int oldWidth, unsigned int oldHeight, unsigned int newWidth, unsigned int newHeight)
 {
 	// no-op

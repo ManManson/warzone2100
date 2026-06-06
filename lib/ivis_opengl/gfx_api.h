@@ -412,6 +412,11 @@ namespace gfx_api
 		virtual gfx_api::abstract_texture* getDepthTexture() { return nullptr; }
 		virtual gfx_api::abstract_texture* getSceneTexture() { return nullptr; }
 
+		// Transient offscreen render targets (Custom passes, E4).
+		// Returns nullptr if unsupported or on the null backend.
+		virtual abstract_texture* acquireTransientRenderTarget(pixel_format format, uint32_t width, uint32_t height) { return nullptr; }
+		virtual void releaseTransientRenderTargets() {}
+
 		virtual void executeRenderGraph(std::vector<RenderPassDesc>& passes);
 		virtual void debugStringMarker(const char *str) = 0;
 		virtual void debugSceneBegin(const char *descr) = 0;

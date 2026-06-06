@@ -48,6 +48,7 @@
 #include "lib/framework/frame.h"
 
 #include "gfx_api.h"
+#include "gfx_api_transient_render_targets.h"
 #include <algorithm>
 #include <sstream>
 #include <map>
@@ -835,6 +836,8 @@ public:
 	void beginSceneRenderPass();
 	void endSceneRenderPass();
 	virtual gfx_api::abstract_texture* getSceneTexture() override;
+	virtual gfx_api::abstract_texture* acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height) override;
+	virtual void releaseTransientRenderTargets() override;
 	virtual void set_polygon_offset(const float& offset, const float& slope) override;
 	virtual void set_depth_range(const float& min, const float& max) override;
 private:
@@ -910,6 +913,8 @@ private:
 		SetSwapIntervalCompletionHandler completionHandler;
 	};
 	optional<QueuedSwapModeChange> queuedSwapModeChange = nullopt;
+
+	gfx_api::TransientRenderTargetPool _transientRenderTargets;
 };
 
 #endif // defined(WZ_VULKAN_ENABLED)
