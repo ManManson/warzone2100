@@ -42,8 +42,8 @@ RenderPassBuilder RenderPassBuilder::create(const std::string& debugName)
 }
 
 RenderPassBuilder::RenderPassBuilder(std::string debugName)
-	: _desc{std::move(debugName), RenderPassType::Default, 0, {}}
 {
+	_desc.debugName = std::move(debugName);
 }
 
 RenderPassBuilder& RenderPassBuilder::type(RenderPassType t)
@@ -55,6 +55,30 @@ RenderPassBuilder& RenderPassBuilder::type(RenderPassType t)
 RenderPassBuilder& RenderPassBuilder::depthIndex(size_t idx)
 {
 	_desc.depthPassIndex = idx;
+	return *this;
+}
+
+RenderPassBuilder& RenderPassBuilder::colorAttachment(abstract_texture* tex, bool clear)
+{
+	_desc.colorAttachments.push_back({tex, clear});
+	return *this;
+}
+
+RenderPassBuilder& RenderPassBuilder::depthAttachment(abstract_texture* tex, bool clear)
+{
+	_desc.depthAttachment = AttachmentDesc{tex, clear};
+	return *this;
+}
+
+RenderPassBuilder& RenderPassBuilder::viewport(uint32_t w, uint32_t h)
+{
+	_desc.viewportSize = std::make_pair(w, h);
+	return *this;
+}
+
+RenderPassBuilder& RenderPassBuilder::inputTexture(abstract_texture* tex)
+{
+	_desc.inputTextures.push_back(tex);
 	return *this;
 }
 

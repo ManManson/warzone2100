@@ -1,11 +1,19 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
+#include <utility>
 #include <vector>
 #include <string>
 
+#include <nonstd/optional.hpp>
+using nonstd::optional;
+using nonstd::nullopt;
+
 namespace gfx_api
 {
+
+struct abstract_texture;
 
 /// <summary>
 /// Identifies a logical render pass within the graph.
@@ -16,6 +24,16 @@ enum class RenderPassType
 	Depth,    // Shadow map cascade
 	Scene,    // Offscreen 3D scene
 	Default   // Swapchain / compositing + UI
+};
+
+/// <summary>
+/// Describes a color or depth attachment for a render pass.
+/// texture == nullptr requests a transient allocation (E4) at execute time.
+/// </summary>
+struct AttachmentDesc
+{
+	abstract_texture* texture = nullptr;
+	bool clear = true;
 };
 
 /// <summary>
@@ -34,6 +52,12 @@ struct RenderPassDesc
 	// (correct command buffer, FBO, viewport, etc.)
 	using RecordFunc = std::function<void()>;
 	RecordFunc recordFunc;
+
+	// Declarative pass configuration (used by Custom passes; ignored by Depth/Scene/Default today).
+	std::vector<AttachmentDesc> colorAttachments;
+	optional<AttachmentDesc> depthAttachment;
+	optional<std::pair<uint32_t, uint32_t>> viewportSize;
+	std::vector<abstract_texture*> inputTextures;
 };
 
 /// <summary>
@@ -47,6 +71,10 @@ public:
 
 	RenderPassBuilder& type(RenderPassType t);
 	RenderPassBuilder& depthIndex(size_t idx);
+	RenderPassBuilder& colorAttachment(abstract_texture* tex, bool clear = true);
+	RenderPassBuilder& depthAttachment(abstract_texture* tex, bool clear = true);
+	RenderPassBuilder& viewport(uint32_t w, uint32_t h);
+	RenderPassBuilder& inputTexture(abstract_texture* tex);
 	RenderPassBuilder& record(RenderPassDesc::RecordFunc func);
 
 	RenderPassDesc build() &&;
