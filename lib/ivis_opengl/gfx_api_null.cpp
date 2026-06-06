@@ -456,6 +456,10 @@ void null_context::releaseTransientRenderTargets()
 {
 }
 
+void null_context::purgeFrameResources()
+{
+}
+
 void null_context::beginCustomPass(gfx_api::RenderPassDesc& pass)
 {
 	(void)pass;

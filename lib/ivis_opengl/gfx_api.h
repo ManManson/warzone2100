@@ -416,6 +416,7 @@ namespace gfx_api
 		// Returns nullptr if unsupported or on the null backend.
 		virtual abstract_texture* acquireTransientRenderTarget(pixel_format format, uint32_t width, uint32_t height) { return nullptr; }
 		virtual void releaseTransientRenderTargets() {}
+		virtual void purgeFrameResources() {}
 
 		virtual optional<std::pair<uint32_t, uint32_t>> getRenderTargetDimensions(abstract_texture* texture) { return nullopt; }
 		virtual void beginCustomPass(RenderPassDesc& pass) {}

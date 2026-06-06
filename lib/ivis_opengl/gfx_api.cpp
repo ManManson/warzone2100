@@ -953,5 +953,7 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 		submitFrame();
 	}
 
+	purgeFrameResources();
+
 	setRenderGraphExecuting(false);
 }

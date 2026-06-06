@@ -58,15 +58,37 @@ RenderPassBuilder& RenderPassBuilder::depthIndex(size_t idx)
 	return *this;
 }
 
+RenderPassBuilder& RenderPassBuilder::colorAttachment(abstract_texture* tex, AttachmentLoadOp loadOp,
+	ClearValue clearValue)
+{
+	_desc.colorAttachments.push_back(AttachmentDesc::color(tex, loadOp, clearValue));
+	return *this;
+}
+
 RenderPassBuilder& RenderPassBuilder::colorAttachment(abstract_texture* tex, bool clear)
 {
-	_desc.colorAttachments.push_back({tex, clear});
+	_desc.colorAttachments.push_back(AttachmentDesc::fromLegacyClear(tex, clear));
+	return *this;
+}
+
+RenderPassBuilder& RenderPassBuilder::depthAttachment(abstract_texture* tex, AttachmentLoadOp loadOp,
+	ClearValue clearValue)
+{
+	_desc.depthAttachment = AttachmentDesc::depth(tex, loadOp, clearValue);
 	return *this;
 }
 
 RenderPassBuilder& RenderPassBuilder::depthAttachment(abstract_texture* tex, bool clear)
 {
-	_desc.depthAttachment = AttachmentDesc{tex, clear};
+	_desc.depthAttachment = AttachmentDesc::depth(tex,
+		clear ? AttachmentLoadOp::Clear : AttachmentLoadOp::Load);
+	return *this;
+}
+
+RenderPassBuilder& RenderPassBuilder::resolveAttachment(abstract_texture* tex, AttachmentLoadOp loadOp,
+	ClearValue clearValue)
+{
+	_desc.resolveAttachment = AttachmentDesc::color(tex, loadOp, clearValue);
 	return *this;
 }
 

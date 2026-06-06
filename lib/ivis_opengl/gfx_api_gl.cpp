@@ -4889,7 +4889,7 @@ bool gl_context::shouldDraw()
 
 void gl_context::shutdown()
 {
-	_transientRenderTargets.clear();
+	_frameResourceCache.clear();
 
 #if !defined(WZ_STATIC_GL_BINDINGS)
 	if (glClear)
@@ -5514,17 +5514,22 @@ gfx_api::abstract_texture* gl_context::acquireTransientRenderTarget(gfx_api::pix
 	ASSERT_OR_RETURN(nullptr, is_uncompressed_format(format), "Unsupported transient render target format");
 
 	static uint32_t transientTargetId = 0;
-	const gfx_api::TransientRenderTargetKey key{format, width, height};
+	const gfx_api::ImageResourceKey key = gfx_api::ImageResourceKey::color2d(format, width, height);
 	const std::string debugName = "<transient_rt_" + std::to_string(transientTargetId++) + ">";
 
-	return _transientRenderTargets.acquire(key, [this, format, width, height, debugName]() {
+	return _frameResourceCache.acquireImage(key, [this, format, width, height, debugName]() {
 		return createTransientColorRenderTarget(format, width, height, debugName);
 	});
 }
 
 void gl_context::releaseTransientRenderTargets()
 {
-	_transientRenderTargets.releaseAll();
+	_frameResourceCache.releaseAll();
+}
+
+void gl_context::purgeFrameResources()
+{
+	_frameResourceCache.purgeUnused();
 }
 
 optional<std::pair<uint32_t, uint32_t>> gl_context::getRenderTargetDimensions(gfx_api::abstract_texture* texture)
@@ -5606,13 +5611,13 @@ void gl_context::beginCustomPass(gfx_api::RenderPassDesc& pass)
 	GLbitfield clearFlags = 0;
 	for (const auto& attachment : pass.colorAttachments)
 	{
-		if (attachment.clear)
+		if (attachment.shouldClear())
 		{
 			clearFlags |= GL_COLOR_BUFFER_BIT;
 			break;
 		}
 	}
-	if (pass.depthAttachment.has_value() && pass.depthAttachment->clear)
+	if (pass.depthAttachment.has_value() && pass.depthAttachment->shouldClear())
 	{
 		clearFlags |= GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
 	}

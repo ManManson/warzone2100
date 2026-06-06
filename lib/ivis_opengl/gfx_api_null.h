@@ -133,6 +133,7 @@ public:
 	virtual void submitFrame() override;
 	virtual gfx_api::abstract_texture* acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height) override;
 	virtual void releaseTransientRenderTargets() override;
+	virtual void purgeFrameResources() override;
 	virtual void beginCustomPass(gfx_api::RenderPassDesc& pass) override;
 	virtual void endCustomPass() override;
 	virtual void debugStringMarker(const char *str) override;

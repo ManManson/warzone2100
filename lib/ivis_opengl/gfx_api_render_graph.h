@@ -1,5 +1,7 @@
 #pragma once
 
+#include "gfx_api_attachment.h"
+
 #include <cstdint>
 #include <functional>
 #include <utility>
@@ -13,8 +15,6 @@ using nonstd::nullopt;
 namespace gfx_api
 {
 
-struct abstract_texture;
-
 /// <summary>
 /// Identifies a logical render pass within the graph.
 /// Backends map this to their internal pass representation.
@@ -25,16 +25,6 @@ enum class RenderPassType
 	Scene,    // Offscreen 3D scene
 	Default,  // Swapchain / compositing + UI
 	Custom    // Declarative attachments (color/depth/viewport on RenderPassDesc)
-};
-
-/// <summary>
-/// Describes a color or depth attachment for a render pass.
-/// texture == nullptr requests a transient allocation (E4) at execute time.
-/// </summary>
-struct AttachmentDesc
-{
-	abstract_texture* texture = nullptr;
-	bool clear = true;
 };
 
 /// <summary>
@@ -54,9 +44,9 @@ struct RenderPassDesc
 	using RecordFunc = std::function<void()>;
 	RecordFunc recordFunc;
 
-	// Declarative pass configuration (used by Custom passes; ignored by Depth/Scene/Default today).
 	std::vector<AttachmentDesc> colorAttachments;
 	optional<AttachmentDesc> depthAttachment;
+	optional<AttachmentDesc> resolveAttachment;
 	optional<std::pair<uint32_t, uint32_t>> viewportSize;
 	std::vector<abstract_texture*> inputTextures;
 };
@@ -72,8 +62,19 @@ public:
 
 	RenderPassBuilder& type(RenderPassType t);
 	RenderPassBuilder& depthIndex(size_t idx);
-	RenderPassBuilder& colorAttachment(abstract_texture* tex, bool clear = true);
-	RenderPassBuilder& depthAttachment(abstract_texture* tex, bool clear = true);
+
+	RenderPassBuilder& colorAttachment(abstract_texture* tex, AttachmentLoadOp loadOp,
+		ClearValue clearValue = ClearValue::colorClear());
+	RenderPassBuilder& colorAttachment(abstract_texture* tex, bool clear);
+
+	RenderPassBuilder& depthAttachment(abstract_texture* tex, AttachmentLoadOp loadOp,
+		ClearValue clearValue = ClearValue::depthStencilClear());
+	RenderPassBuilder& depthAttachment(abstract_texture* tex, bool clear);
+
+	RenderPassBuilder& resolveAttachment(abstract_texture* tex,
+		AttachmentLoadOp loadOp = AttachmentLoadOp::DontCare,
+		ClearValue clearValue = ClearValue::colorClear());
+
 	RenderPassBuilder& viewport(uint32_t w, uint32_t h);
 	RenderPassBuilder& inputTexture(abstract_texture* tex);
 	RenderPassBuilder& record(RenderPassDesc::RecordFunc func);

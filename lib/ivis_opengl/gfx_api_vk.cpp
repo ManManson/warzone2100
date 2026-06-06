@@ -3913,7 +3913,7 @@ bool VkRoot::shouldDraw()
 
 void VkRoot::shutdown()
 {
-	_transientRenderTargets.clear();
+	_frameResourceCache.clear();
 	destroyCustomRenderPasses();
 
 	destroySwapchainAndSwapchainSpecificStuff(true);
@@ -6075,10 +6075,10 @@ gfx_api::abstract_texture* VkRoot::acquireTransientRenderTarget(gfx_api::pixel_f
 	ASSERT_OR_RETURN(nullptr, is_uncompressed_format(format), "Unsupported transient render target format");
 
 	static uint32_t transientTargetId = 0;
-	const gfx_api::TransientRenderTargetKey key{format, width, height};
+	const gfx_api::ImageResourceKey key = gfx_api::ImageResourceKey::color2d(format, width, height);
 	const std::string debugName = "<transient_rt_" + std::to_string(transientTargetId++) + ">";
 
-	gfx_api::abstract_texture* texture = _transientRenderTargets.acquire(key, [this, format, width, height, debugName]() -> std::unique_ptr<gfx_api::abstract_texture> {
+	gfx_api::abstract_texture* texture = _frameResourceCache.acquireImage(key, [this, format, width, height, debugName]() -> std::unique_ptr<gfx_api::abstract_texture> {
 		const vk::Format vkFormat = get_format(format);
 		return std::unique_ptr<gfx_api::abstract_texture>(new VkRenderedImage(*this, width, height, vkFormat, debugName));
 	});
@@ -6091,8 +6091,13 @@ gfx_api::abstract_texture* VkRoot::acquireTransientRenderTarget(gfx_api::pixel_f
 
 void VkRoot::releaseTransientRenderTargets()
 {
-	_transientRenderTargets.releaseAll();
+	_frameResourceCache.releaseAll();
 	resetImageLayoutTracker();
+}
+
+void VkRoot::purgeFrameResources()
+{
+	_frameResourceCache.purgeUnused();
 }
 
 void VkRoot::resetImageLayoutTracker()
@@ -6231,9 +6236,9 @@ void VkRoot::trackCustomPassOutputLayouts()
 bool VkRoot::CustomPassLayoutKey::operator==(const CustomPassLayoutKey& other) const
 {
 	return colorFormats == other.colorFormats
-		&& colorClear == other.colorClear
+		&& colorLoadOps == other.colorLoadOps
 		&& depthFormat == other.depthFormat
-		&& depthClear == other.depthClear
+		&& depthLoadOp == other.depthLoadOp
 		&& width == other.width
 		&& height == other.height;
 }
@@ -6279,6 +6284,34 @@ static vk::ImageView getAttachmentImageView(gfx_api::abstract_texture* texture)
 	return vk::ImageView();
 }
 
+static vk::AttachmentLoadOp toVkAttachmentLoadOp(gfx_api::AttachmentLoadOp loadOp)
+{
+	switch (loadOp)
+	{
+	case gfx_api::AttachmentLoadOp::Clear:
+		return vk::AttachmentLoadOp::eClear;
+	case gfx_api::AttachmentLoadOp::Load:
+		return vk::AttachmentLoadOp::eLoad;
+	case gfx_api::AttachmentLoadOp::DontCare:
+		return vk::AttachmentLoadOp::eDontCare;
+	}
+	return vk::AttachmentLoadOp::eDontCare;
+}
+
+static vk::ImageLayout initialColorAttachmentLayout(gfx_api::AttachmentLoadOp loadOp)
+{
+	return (loadOp == gfx_api::AttachmentLoadOp::Clear)
+		? vk::ImageLayout::eUndefined
+		: vk::ImageLayout::eShaderReadOnlyOptimal;
+}
+
+static vk::ImageLayout initialDepthAttachmentLayout(gfx_api::AttachmentLoadOp loadOp)
+{
+	return (loadOp == gfx_api::AttachmentLoadOp::Clear)
+		? vk::ImageLayout::eUndefined
+		: vk::ImageLayout::eDepthStencilAttachmentOptimal;
+}
+
 size_t VkRoot::getOrCreateCustomRenderPassId(const CustomPassLayoutKey& key)
 {
 	for (size_t i = 0; i < _customPassLayoutKeys.size(); ++i)
@@ -6297,15 +6330,16 @@ size_t VkRoot::getOrCreateCustomRenderPassId(const CustomPassLayoutKey& key)
 
 	for (size_t i = 0; i < key.colorFormats.size(); ++i)
 	{
+		const vk::AttachmentLoadOp vkLoadOp = toVkAttachmentLoadOp(key.colorLoadOps[i]);
 		attachments.push_back(
 			vk::AttachmentDescription()
 				.setFormat(key.colorFormats[i])
 				.setSamples(vk::SampleCountFlagBits::e1)
-				.setLoadOp(key.colorClear[i] ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad)
+				.setLoadOp(vkLoadOp)
 				.setStoreOp(vk::AttachmentStoreOp::eStore)
 				.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-				.setInitialLayout(key.colorClear[i] ? vk::ImageLayout::eUndefined : vk::ImageLayout::eShaderReadOnlyOptimal)
+				.setInitialLayout(initialColorAttachmentLayout(key.colorLoadOps[i]))
 				.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
 		);
 	}
@@ -6314,15 +6348,16 @@ size_t VkRoot::getOrCreateCustomRenderPassId(const CustomPassLayoutKey& key)
 	if (key.depthFormat.has_value())
 	{
 		const uint32_t depthAttachmentIndex = static_cast<uint32_t>(attachments.size());
+		const vk::AttachmentLoadOp vkDepthLoadOp = toVkAttachmentLoadOp(key.depthLoadOp);
 		attachments.push_back(
 			vk::AttachmentDescription()
 				.setFormat(key.depthFormat.value())
 				.setSamples(vk::SampleCountFlagBits::e1)
-				.setLoadOp(key.depthClear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad)
+				.setLoadOp(vkDepthLoadOp)
 				.setStoreOp(vk::AttachmentStoreOp::eDontCare)
-				.setStencilLoadOp(key.depthClear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad)
+				.setStencilLoadOp(vkDepthLoadOp)
 				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-				.setInitialLayout(key.depthClear ? vk::ImageLayout::eUndefined : vk::ImageLayout::eDepthStencilAttachmentOptimal)
+				.setInitialLayout(initialDepthAttachmentLayout(key.depthLoadOp))
 				.setFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
 		);
 		depthStencilAttachmentRef = vk::AttachmentReference()
@@ -6536,12 +6571,12 @@ void VkRoot::beginCustomPass(gfx_api::RenderPassDesc& pass)
 	{
 		ASSERT_OR_RETURN(, colorAttachment.texture != nullptr, "Unresolved color attachment in custom pass");
 		layoutKey.colorFormats.push_back(getAttachmentVkFormat(colorAttachment.texture));
-		layoutKey.colorClear.push_back(colorAttachment.clear);
+		layoutKey.colorLoadOps.push_back(colorAttachment.loadOp);
 	}
 	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
 	{
 		layoutKey.depthFormat = getAttachmentVkFormat(pass.depthAttachment->texture);
-		layoutKey.depthClear = pass.depthAttachment->clear;
+		layoutKey.depthLoadOp = pass.depthAttachment->loadOp;
 	}
 
 	_activeCustomRenderPassId = getOrCreateCustomRenderPassId(layoutKey);
@@ -6594,12 +6629,14 @@ void VkRoot::beginCustomPass(gfx_api::RenderPassDesc& pass)
 	clearValues.reserve(pass.colorAttachments.size() + 1);
 	for (const auto& colorAttachment : pass.colorAttachments)
 	{
-		clearValues.push_back(vk::ClearColorValue(std::array<float, 4> {0.f, 0.f, 0.f, 0.f}));
-		(void)colorAttachment;
+		const auto& c = colorAttachment.clearValue.color;
+		clearValues.push_back(vk::ClearColorValue(std::array<float, 4> {c[0], c[1], c[2], c[3]}));
 	}
 	if (pass.depthAttachment.has_value())
 	{
-		clearValues.push_back(vk::ClearDepthStencilValue(1.f, 0u));
+		clearValues.push_back(vk::ClearDepthStencilValue(
+			pass.depthAttachment->clearValue.depth,
+			pass.depthAttachment->clearValue.stencil));
 	}
 
 	buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().beginRenderPass(
