@@ -700,6 +700,8 @@ struct VkRoot final : gfx_api::context
 	struct RenderPassDetails
 	{
 		vk::RenderPass rp;
+		/// Load-op variant of rp (Default pass only); used when resuming swapchain rendering.
+		vk::RenderPass rpLoad;
 		std::shared_ptr<VkhRenderPassCompat> rp_compat_info;
 		std::vector<vk::Framebuffer> fbo;
 		vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
@@ -845,7 +847,7 @@ public:
 
 	virtual size_t numDepthPasses() override;
 	virtual bool setDepthPassProperties(size_t numDepthPasses, size_t depthBufferResolution) override;
-	virtual void beginPass(gfx_api::RenderPassType type, size_t index = 0) override;
+	virtual void beginPass(gfx_api::RenderPassDesc& pass) override;
 	virtual void endPass() override;
 	virtual void submitFrame() override;
 	void beginDepthPass(size_t idx);
@@ -860,12 +862,12 @@ public:
 	virtual void releaseTransientRenderTargets() override;
 	virtual void purgeFrameResources() override;
 	virtual optional<std::pair<uint32_t, uint32_t>> getRenderTargetDimensions(gfx_api::abstract_texture* texture) override;
-	virtual void beginCustomPass(gfx_api::RenderPassDesc& pass) override;
-	virtual void endCustomPass() override;
 	virtual void set_polygon_offset(const float& offset, const float& slope) override;
 	virtual void set_depth_range(const float& min, const float& max) override;
 private:
 	void startRenderPass();
+	void beginCustomPass(gfx_api::RenderPassDesc& pass);
+	void endCustomPass();
 
 	enum AcquireNextSwapchainImageResult
 	{

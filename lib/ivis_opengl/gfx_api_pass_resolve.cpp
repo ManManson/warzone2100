@@ -129,24 +129,20 @@ void applyScenePreset(RenderPassDesc& pass, gfx_api::context& ctx)
 	}
 }
 
-void applyDefaultPreset(RenderPassDesc& pass, gfx_api::context& ctx)
+void applyDefaultPreset(RenderPassDesc& pass, gfx_api::context& ctx, bool isFirstDefaultPassInFrame)
 {
-	if (pass.viewportSize.has_value())
-	{
-		return;
-	}
-
 	const auto drawable = ctx.getDrawableDimensions();
-	if (drawable.first > 0 && drawable.second > 0)
+	if (!pass.viewportSize.has_value() && drawable.first > 0 && drawable.second > 0)
 	{
 		pass.viewportSize = drawable;
 	}
 
-	// Swapchain color attachment is resolved by the backend when unified Default passes land (Phase 4+).
-	// Preset only establishes viewport dimensions for now.
+	pass.swapchainLoadOp = isFirstDefaultPassInFrame
+		? AttachmentLoadOp::Clear
+		: AttachmentLoadOp::Load;
 }
 
-void applyTypePreset(RenderPassDesc& pass, gfx_api::context& ctx)
+void applyTypePreset(RenderPassDesc& pass, gfx_api::context& ctx, bool isFirstDefaultPassInFrame)
 {
 	switch (pass.type)
 	{
@@ -157,7 +153,7 @@ void applyTypePreset(RenderPassDesc& pass, gfx_api::context& ctx)
 		applyScenePreset(pass, ctx);
 		break;
 	case RenderPassType::Default:
-		applyDefaultPreset(pass, ctx);
+		applyDefaultPreset(pass, ctx, isFirstDefaultPassInFrame);
 		break;
 	case RenderPassType::Custom:
 		break;
@@ -198,11 +194,11 @@ bool resolveTransientAttachments(RenderPassDesc& pass, gfx_api::context& ctx, ui
 
 } // namespace
 
-bool resolvePassDescription(RenderPassDesc& pass)
+bool resolvePassDescription(RenderPassDesc& pass, bool isFirstDefaultPassInFrame)
 {
 	auto& ctx = gfx_api::context::get();
 
-	applyTypePreset(pass, ctx);
+	applyTypePreset(pass, ctx, isFirstDefaultPassInFrame);
 
 	uint32_t width = 0;
 	uint32_t height = 0;

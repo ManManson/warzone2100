@@ -836,68 +836,35 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 {
 	setRenderGraphExecuting(true);
 
-	bool defaultPassActive = false;
+	bool firstDefaultPassInFrame = true;
+	bool executedAnyPass = false;
 
 	for (auto& pass : passes)
 	{
 		debugStringMarker(pass.debugName.c_str());
 
-		if (!resolvePassDescription(pass))
+		const bool isFirstDefaultPass = pass.type == RenderPassType::Default && firstDefaultPassInFrame;
+		if (!resolvePassDescription(pass, isFirstDefaultPass))
 		{
 			continue;
 		}
 
-		switch (pass.type)
+		if (pass.type == RenderPassType::Default)
 		{
-		case RenderPassType::Depth:
-			beginPass(RenderPassType::Depth, pass.depthPassIndex);
-			if (pass.recordFunc)
-			{
-				pass.recordFunc();
-			}
-			endPass();
-			break;
-
-		case RenderPassType::Scene:
-			beginPass(RenderPassType::Scene);
-			if (pass.recordFunc)
-			{
-				pass.recordFunc();
-			}
-			endPass();
-			break;
-
-		case RenderPassType::Default:
-			if (!defaultPassActive)
-			{
-				beginPass(RenderPassType::Default);
-				defaultPassActive = true;
-			}
-			if (pass.recordFunc)
-			{
-				pass.recordFunc();
-			}
-			break;
-
-		case RenderPassType::Custom:
-			if (defaultPassActive)
-			{
-				endPass();
-				defaultPassActive = false;
-			}
-			beginCustomPass(pass);
-			if (pass.recordFunc)
-			{
-				pass.recordFunc();
-			}
-			endCustomPass();
-			break;
+			firstDefaultPassInFrame = false;
 		}
+
+		executedAnyPass = true;
+		beginPass(pass);
+		if (pass.recordFunc)
+		{
+			pass.recordFunc();
+		}
+		endPass();
 	}
 
-	if (defaultPassActive)
+	if (executedAnyPass)
 	{
-		endPass();
 		submitFrame();
 	}
 

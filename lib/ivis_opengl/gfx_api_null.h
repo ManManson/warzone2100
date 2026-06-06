@@ -128,14 +128,12 @@ public:
 	virtual void set_depth_range(const float& min, const float& max) override;
 	virtual int32_t get_context_value(const context_value property) override;
 	virtual uint64_t get_estimated_vram_mb(bool dedicatedOnly) override;
-	virtual void beginPass(gfx_api::RenderPassType type, size_t index = 0) override;
+	virtual void beginPass(gfx_api::RenderPassDesc& pass) override;
 	virtual void endPass() override;
 	virtual void submitFrame() override;
 	virtual gfx_api::abstract_texture* acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height) override;
 	virtual void releaseTransientRenderTargets() override;
 	virtual void purgeFrameResources() override;
-	virtual void beginCustomPass(gfx_api::RenderPassDesc& pass) override;
-	virtual void endCustomPass() override;
 	virtual void debugStringMarker(const char *str) override;
 	virtual void debugSceneBegin(const char *descr) override;
 	virtual void debugSceneEnd(const char *descr) override;

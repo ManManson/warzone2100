@@ -49,6 +49,9 @@ struct RenderPassDesc
 	optional<AttachmentDesc> resolveAttachment;
 	optional<std::pair<uint32_t, uint32_t>> viewportSize;
 	std::vector<abstract_texture*> inputTextures;
+
+	// Default passes: swapchain color load op (first pass in frame typically Clear, rest Load).
+	AttachmentLoadOp swapchainLoadOp = AttachmentLoadOp::Load;
 };
 
 /// <summary>
@@ -114,10 +117,7 @@ public:
 						RenderPassDesc::RecordFunc recordFunc);
 
 	// Execute all accumulated passes in order, then clear the pass list.
-	// This drives the backend through its begin/end pass transitions.
-	// Manages the default render pass lifecycle:
-	//   - Calls beginPass(Default) before the first Default pass.
-	//   - Calls endPass()+submitFrame() after all passes are done (if the default pass was started).
+	// Each pass is resolved and executed with an explicit begin/end; submitFrame() runs at frame end.
 	void execute();
 
 	// Reset the graph for a new frame. Clears all accumulated passes.

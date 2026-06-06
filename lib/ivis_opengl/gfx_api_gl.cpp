@@ -4225,31 +4225,51 @@ void gl_context::submitFrame()
 #endif
 }
 
-void gl_context::beginPass(gfx_api::RenderPassType type, size_t index)
+void gl_context::beginDefaultPass(gfx_api::RenderPassDesc& pass)
+{
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	if (pass.viewportSize.has_value())
+	{
+		glViewport(0, 0, pass.viewportSize->first, pass.viewportSize->second);
+	}
+	else
+	{
+		glViewport(0, 0, viewportWidth, viewportHeight);
+	}
+
+	if (pass.swapchainLoadOp == gfx_api::AttachmentLoadOp::Clear)
+	{
+#if defined(__EMSCRIPTEN__)
+		_beginRenderPassImpl();
+#else
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glDepthMask(GL_TRUE);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+#endif
+	}
+
+	defaultPassStarted = true;
+}
+
+void gl_context::beginPass(gfx_api::RenderPassDesc& pass)
 {
 	ASSERT_OR_RETURN(, !hasActivePass, "beginPass called while another pass is active");
 	hasActivePass = true;
-	activePassType = type;
+	activePassType = pass.type;
 
-	switch (type)
+	switch (pass.type)
 	{
 	case gfx_api::RenderPassType::Depth:
-		beginDepthPass(index);
+		beginDepthPass(pass.depthPassIndex);
 		break;
 	case gfx_api::RenderPassType::Scene:
 		beginSceneRenderPass();
 		break;
 	case gfx_api::RenderPassType::Default:
-#if defined(__EMSCRIPTEN__)
-		if (!defaultPassStarted)
-		{
-			_beginRenderPassImpl();
-		}
-#endif
-		defaultPassStarted = true;
+		beginDefaultPass(pass);
 		break;
 	case gfx_api::RenderPassType::Custom:
-		ASSERT(false, "Use beginCustomPass() for Custom passes");
+		beginCustomPass(pass);
 		break;
 	}
 }
@@ -4267,11 +4287,10 @@ void gl_context::endPass()
 		endSceneRenderPass();
 		break;
 	case gfx_api::RenderPassType::Default:
-		// Keep default pass open until submitFrame.
 		break;
 	case gfx_api::RenderPassType::Custom:
-		// Custom passes end via endCustomPass().
-		break;
+		endCustomPass();
+		return;
 	}
 
 	hasActivePass = false;

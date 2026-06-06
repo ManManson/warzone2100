@@ -2948,6 +2948,19 @@ void VkRoot::createDefaultRenderpass(vk::Format swapchainFormat, vk::Format dept
 	renderPasses[DEFAULT_RENDER_PASS_ID].rp = dev.createRenderPass(createInfo, nullptr, vkDynLoader);
 	renderPasses[DEFAULT_RENDER_PASS_ID].msaaSamples = msaaSamplesSwapchain;
 
+	auto loadAttachments = attachments;
+	loadAttachments[0].setLoadOp(vk::AttachmentLoadOp::eLoad);
+	if (!msaaEnabled)
+	{
+		loadAttachments[0].setInitialLayout(vk::ImageLayout::ePresentSrcKHR);
+	}
+	loadAttachments[1].setLoadOp(vk::AttachmentLoadOp::eLoad);
+	loadAttachments[1].setStencilLoadOp(vk::AttachmentLoadOp::eLoad);
+	auto loadCreateInfo = createInfo
+		.setAttachmentCount(static_cast<uint32_t>(loadAttachments.size()))
+		.setPAttachments(loadAttachments.data());
+	renderPasses[DEFAULT_RENDER_PASS_ID].rpLoad = dev.createRenderPass(loadCreateInfo, nullptr, vkDynLoader);
+
 	// createFramebuffers for default render pass
 	ASSERT(!swapchainImageView.empty(), "No swapchain image views?");
 	try {
@@ -4106,10 +4119,18 @@ void VkRoot::destroySwapchainAndSwapchainSpecificStuff(bool doDestroySwapchain)
 		colorImage = vk::Image();
 	}
 
-	if ((DEFAULT_RENDER_PASS_ID < renderPasses.size()) && renderPasses[DEFAULT_RENDER_PASS_ID].rp)
+	if (DEFAULT_RENDER_PASS_ID < renderPasses.size())
 	{
-		dev.destroyRenderPass(renderPasses[DEFAULT_RENDER_PASS_ID].rp, nullptr, vkDynLoader);
-		renderPasses[DEFAULT_RENDER_PASS_ID].rp = vk::RenderPass();
+		if (renderPasses[DEFAULT_RENDER_PASS_ID].rp)
+		{
+			dev.destroyRenderPass(renderPasses[DEFAULT_RENDER_PASS_ID].rp, nullptr, vkDynLoader);
+			renderPasses[DEFAULT_RENDER_PASS_ID].rp = vk::RenderPass();
+		}
+		if (renderPasses[DEFAULT_RENDER_PASS_ID].rpLoad)
+		{
+			dev.destroyRenderPass(renderPasses[DEFAULT_RENDER_PASS_ID].rpLoad, nullptr, vkDynLoader);
+			renderPasses[DEFAULT_RENDER_PASS_ID].rpLoad = vk::RenderPass();
+		}
 	}
 
 	for (auto& imgview : swapchainImageView)
@@ -4706,8 +4727,6 @@ void VkRoot::createSwapchain(bool allowHandleSurfaceLost)
 		debug(LOG_ERROR, "Failed to upload default array texture??");
 	}
 	pDefaultArrayTexture->flush();
-
-	startRenderPass();
 }
 
 static optional<uint32_t> getVKLargestDeviceLocalMemoryHeapIndex(const vk::PhysicalDeviceMemoryProperties& memprops)
@@ -6472,17 +6491,15 @@ void VkRoot::endActiveSwapchainRenderPassIfNeeded()
 
 void VkRoot::resumeDefaultRenderPass()
 {
+	ASSERT(!_swapchainRenderPassActive, "resumeDefaultRenderPass called while swapchain render pass is already active");
+	ASSERT(defaultRenderpass().rpLoad, "Default render pass load variant is not initialized");
+
 	beginRenderPassDrawCmdBufferIfNeeded();
 
-	const auto clearValue = std::array<vk::ClearValue, 2> {
-		vk::ClearValue(), vk::ClearValue(vk::ClearDepthStencilValue(1.f, 0u))
-	};
 	buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().beginRenderPass(
 		vk::RenderPassBeginInfo()
 			.setFramebuffer(defaultRenderpass().fbo[currentSwapchainIndex])
-			.setClearValueCount(static_cast<uint32_t>(clearValue.size()))
-			.setPClearValues(clearValue.data())
-			.setRenderPass(defaultRenderpass().rp)
+			.setRenderPass(defaultRenderpass().rpLoad)
 			.setRenderArea(vk::Rect2D(vk::Offset2D(), swapchainSize)),
 		vk::SubpassContents::eInline,
 		vkDynLoader);
@@ -6996,33 +7013,33 @@ void VkRoot::submitFrame()
 	buffering_mechanism::get_current_resources().scenePassDrawCmdBuffer().begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
 }
 
-void VkRoot::beginPass(gfx_api::RenderPassType type, size_t index)
+void VkRoot::beginPass(gfx_api::RenderPassDesc& pass)
 {
 	ASSERT_OR_RETURN(, !hasActivePass, "beginPass called while another pass is active");
 	hasActivePass = true;
-	activePassType = type;
+	activePassType = pass.type;
 
-	switch (type)
+	switch (pass.type)
 	{
 	case gfx_api::RenderPassType::Depth:
-		beginDepthPass(index);
+		beginDepthPass(pass.depthPassIndex);
 		break;
 	case gfx_api::RenderPassType::Scene:
 		beginSceneRenderPass();
 		break;
 	case gfx_api::RenderPassType::Default:
-		if (!startedRenderPass)
+		ASSERT(!_swapchainRenderPassActive, "Default pass begin while swapchain render pass is already active");
+		if (pass.swapchainLoadOp == gfx_api::AttachmentLoadOp::Clear)
 		{
 			startRenderPass();
 		}
-		else if (_defaultPassInterrupted || !_swapchainRenderPassActive)
+		else
 		{
 			resumeDefaultRenderPass();
-			_defaultPassInterrupted = false;
 		}
 		break;
 	case gfx_api::RenderPassType::Custom:
-		ASSERT(false, "Use beginCustomPass() for Custom passes");
+		beginCustomPass(pass);
 		break;
 	}
 }
@@ -7040,11 +7057,11 @@ void VkRoot::endPass()
 		endSceneRenderPass();
 		break;
 	case gfx_api::RenderPassType::Default:
-		// Keep default render pass open until submitFrame().
+		endActiveSwapchainRenderPassIfNeeded();
 		break;
 	case gfx_api::RenderPassType::Custom:
-		// Custom passes end via endCustomPass().
-		break;
+		endCustomPass();
+		return;
 	}
 
 	hasActivePass = false;
@@ -7052,6 +7069,7 @@ void VkRoot::endPass()
 
 void VkRoot::startRenderPass()
 {
+	ASSERT(!_swapchainRenderPassActive, "startRenderPass called while swapchain render pass is already active");
 	ASSERT(currentRenderPassId == DEFAULT_RENDER_PASS_ID, "A previous depth pass wasn't properly ended?");
 
 	beginRenderPassDrawCmdBufferIfNeeded();

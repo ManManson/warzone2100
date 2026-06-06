@@ -427,10 +427,9 @@ bool null_context::_initialize(const gfx_api::backend_Impl_Factory& impl, int32_
 	return true;
 }
 
-void null_context::beginPass(gfx_api::RenderPassType type, size_t index)
+void null_context::beginPass(gfx_api::RenderPassDesc& pass)
 {
-	(void)type;
-	(void)index;
+	(void)pass;
 }
 
 void null_context::endPass()
@@ -457,15 +456,6 @@ void null_context::releaseTransientRenderTargets()
 }
 
 void null_context::purgeFrameResources()
-{
-}
-
-void null_context::beginCustomPass(gfx_api::RenderPassDesc& pass)
-{
-	(void)pass;
-}
-
-void null_context::endCustomPass()
 {
 }
 
