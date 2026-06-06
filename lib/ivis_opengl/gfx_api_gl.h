@@ -328,12 +328,9 @@ struct gl_context final : public gfx_api::context
 	virtual void beginPass(gfx_api::RenderPassDesc& pass) override;
 	virtual void endPass() override;
 	virtual void submitFrame() override;
-	void beginDepthPass(size_t idx);
 	virtual size_t getDepthPassDimensions(size_t idx) override;
 	void endCurrentDepthPass();
 	virtual gfx_api::abstract_texture* getDepthTexture() override;
-	void beginSceneRenderPass();
-	void endSceneRenderPass();
 	virtual gfx_api::abstract_texture* getSceneTexture() override;
 	virtual gfx_api::abstract_texture* acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height) override;
 	virtual void releaseTransientRenderTargets() override;
@@ -386,10 +383,12 @@ private:
 	bool createDefaultTextures();
 	bool createSceneRenderpass();
 	void deleteSceneRenderpass();
-	void _beginRenderPassImpl();
 	void beginCustomPass(gfx_api::RenderPassDesc& pass);
 	void endCustomPass();
+	void beginSceneRenderPass(const gfx_api::RenderPassDesc& pass);
+	void endSceneRenderPass();
 	void beginDefaultPass(gfx_api::RenderPassDesc& pass);
+	void beginDepthPass(size_t idx, gfx_api::AttachmentLoadOp depthLoadOp);
 
 protected:
 	friend struct gl_pipeline_state_object;
@@ -413,7 +412,7 @@ private:
 	std::vector<bool> enabledVertexAttribIndexes;
 	gfx_api::RenderPassType activePassType = gfx_api::RenderPassType::Default;
 	bool hasActivePass = false;
-	bool defaultPassStarted = false;
+	bool frameHasDrawCommands = false;
 	size_t frameNum = 0;
 	std::string formattedRendererInfoString;
 	std::array<std::vector<gfx_api::pixel_format_usage::flags>, gfx_api::PIXEL_FORMAT_TARGET_COUNT> textureFormatsSupport;

@@ -173,4 +173,5 @@ private:
 private:
 
 	size_t frameNum = 0;
+	bool frameHasDrawCommands = false;
 };

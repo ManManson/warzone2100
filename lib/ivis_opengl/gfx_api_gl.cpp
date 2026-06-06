@@ -3554,10 +3554,6 @@ bool gl_context::_initialize(const gfx_api::backend_Impl_Factory& impl, int32_t 
 	}
 #endif
 
-#if !defined(__EMSCRIPTEN__)
-	_beginRenderPassImpl();
-#endif
-
 	return true;
 }
 
@@ -4157,13 +4153,17 @@ bool gl_context::setDepthPassProperties(size_t _numDepthPasses, size_t _depthBuf
 	return true;
 }
 
-void gl_context::beginDepthPass(size_t idx)
+void gl_context::beginDepthPass(size_t idx, gfx_api::AttachmentLoadOp depthLoadOp)
 {
 	ASSERT_OR_RETURN(, idx < depthFBO.size(), "Invalid depth pass #: %zu", idx);
 	glBindFramebuffer(GL_FRAMEBUFFER, depthFBO[idx]);
 	glViewport(0, 0, static_cast<GLsizei>(depthBufferResolution), static_cast<GLsizei>(depthBufferResolution));
-	glDepthMask(GL_TRUE);
-	glClear(GL_DEPTH_BUFFER_BIT);
+	set_depth_range(0.f, 1.f);
+	if (depthLoadOp == gfx_api::AttachmentLoadOp::Clear)
+	{
+		glDepthMask(GL_TRUE);
+		glClear(GL_DEPTH_BUFFER_BIT);
+	}
 }
 
 size_t gl_context::getDepthPassDimensions(size_t idx)
@@ -4183,17 +4183,6 @@ gfx_api::abstract_texture* gl_context::getDepthTexture()
 	return depthTexture;
 }
 
-void gl_context::_beginRenderPassImpl()
-{
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glViewport(0, 0, viewportWidth, viewportHeight);
-	GLbitfield clearFlags = 0;
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	glDepthMask(GL_TRUE);
-	clearFlags = GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
-	glClear(clearFlags);
-}
-
 [[noreturn]] static void glContextHandleOOMError()
 {
 	wzDisplayFatalGfxBackendFailure("GL_OUT_OF_MEMORY");
@@ -4203,7 +4192,7 @@ void gl_context::_beginRenderPassImpl()
 
 void gl_context::submitFrame()
 {
-	if (!defaultPassStarted)
+	if (!frameHasDrawCommands)
 	{
 		return;
 	}
@@ -4212,10 +4201,7 @@ void gl_context::submitFrame()
 	backend_impl->swapWindow();
 	glUseProgram(0);
 	current_program = nullptr;
-#if !defined(__EMSCRIPTEN__)
-	_beginRenderPassImpl();
-#endif
-	defaultPassStarted = false;
+	frameHasDrawCommands = false;
 
 #if defined(WZ_GL_KHR_DEBUG_SUPPORTED)
 	if (khrCallbackOomDetected.load())
@@ -4239,16 +4225,10 @@ void gl_context::beginDefaultPass(gfx_api::RenderPassDesc& pass)
 
 	if (pass.swapchainLoadOp == gfx_api::AttachmentLoadOp::Clear)
 	{
-#if defined(__EMSCRIPTEN__)
-		_beginRenderPassImpl();
-#else
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 		glDepthMask(GL_TRUE);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-#endif
 	}
-
-	defaultPassStarted = true;
 }
 
 void gl_context::beginPass(gfx_api::RenderPassDesc& pass)
@@ -4256,14 +4236,20 @@ void gl_context::beginPass(gfx_api::RenderPassDesc& pass)
 	ASSERT_OR_RETURN(, !hasActivePass, "beginPass called while another pass is active");
 	hasActivePass = true;
 	activePassType = pass.type;
+	frameHasDrawCommands = true;
 
 	switch (pass.type)
 	{
 	case gfx_api::RenderPassType::Depth:
-		beginDepthPass(pass.depthPassIndex);
+	{
+		const gfx_api::AttachmentLoadOp depthLoadOp = pass.depthAttachment.has_value()
+			? pass.depthAttachment->loadOp
+			: gfx_api::AttachmentLoadOp::Clear;
+		beginDepthPass(pass.depthPassIndex, depthLoadOp);
 		break;
+	}
 	case gfx_api::RenderPassType::Scene:
-		beginSceneRenderPass();
+		beginSceneRenderPass(pass);
 		break;
 	case gfx_api::RenderPassType::Default:
 		beginDefaultPass(pass);
@@ -5405,15 +5391,39 @@ bool gl_context::createSceneRenderpass()
 	return !encounteredError;
 }
 
-void gl_context::beginSceneRenderPass()
+void gl_context::beginSceneRenderPass(const gfx_api::RenderPassDesc& pass)
 {
 	glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO[sceneFBOIdx]);
 	glViewport(0, 0, sceneFramebufferWidth, sceneFramebufferHeight);
+	set_depth_range(0.f, 1.f);
+
 	GLbitfield clearFlags = 0;
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	glDepthMask(GL_TRUE);
-	clearFlags = GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
-	glClear(clearFlags);
+	for (const auto& colorAttachment : pass.colorAttachments)
+	{
+		if (colorAttachment.shouldClear())
+		{
+			clearFlags |= GL_COLOR_BUFFER_BIT;
+			break;
+		}
+	}
+	// Scene FBO always has an internal depth/stencil renderbuffer (not yet exposed via AttachmentDesc).
+	if (pass.depthAttachment.has_value())
+	{
+		if (pass.depthAttachment->shouldClear())
+		{
+			clearFlags |= GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+		}
+	}
+	else
+	{
+		clearFlags |= GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+	}
+	if (clearFlags != 0)
+	{
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glDepthMask(GL_TRUE);
+		glClear(clearFlags);
+	}
 }
 
 void gl_context::endSceneRenderPass()

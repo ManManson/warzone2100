@@ -811,18 +811,15 @@ perFrameResources_t::perFrameResources_t(vk::Device& _dev, const VmaAllocator& a
 	const auto buffer = dev.allocateCommandBuffers(
 		vk::CommandBufferAllocateInfo()
 		.setCommandPool(pool)
-		.setCommandBufferCount(4)
+		.setCommandBufferCount(2)
 		.setLevel(vk::CommandBufferLevel::ePrimary)
 		, *pVkDynLoader
 	);
 	cmdDraw = buffer[0];
 	cmdCopy = buffer[1];
-	cmdDrawDepth = buffer[2];
-	cmdDrawScene = buffer[3];
 	pCurrentDrawCmdBuffer = &cmdDraw;
 	cmdCopy.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
-	cmdDrawDepth.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
-	cmdDrawScene.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
+	copyCmdBufferBegun = true;
 	previousSubmission = dev.createFence(
 		vk::FenceCreateInfo().setFlags(vk::FenceCreateFlagBits::eSignaled),
 		nullptr, *pVkDynLoader
@@ -842,24 +839,31 @@ perFrameResources_t::DescriptorPoolDetails perFrameResources_t::createNewDescrip
 		), poolSize, maxSets);
 }
 
-void perFrameResources_t::beginDepthPass()
+void perFrameResources_t::ensureDrawCmdBufferBegun()
 {
-	pCurrentDrawCmdBuffer = &cmdDrawDepth;
+	if (!drawCmdBufferBegun)
+	{
+		cmdDraw.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), *pVkDynLoader);
+		drawCmdBufferBegun = true;
+	}
 }
 
-void perFrameResources_t::endCurrentDepthPass()
+void perFrameResources_t::endCopyCmdBufferIfRecording()
 {
-	pCurrentDrawCmdBuffer = &cmdDraw;
+	if (copyCmdBufferBegun)
+	{
+		cmdCopy.end(*pVkDynLoader);
+		copyCmdBufferBegun = false;
+	}
 }
 
-void perFrameResources_t::beginScenePass()
+void perFrameResources_t::endDrawCmdBufferIfRecording()
 {
-	pCurrentDrawCmdBuffer = &cmdDrawScene;
-}
-
-void perFrameResources_t::endScenePass()
-{
-	pCurrentDrawCmdBuffer = &cmdDraw;
+	if (drawCmdBufferBegun)
+	{
+		cmdDraw.end(*pVkDynLoader);
+		drawCmdBufferBegun = false;
+	}
 }
 
 vk::CommandBuffer* perFrameResources_t::currentCopyCmdBuffer()
@@ -877,17 +881,7 @@ vk::CommandBuffer perFrameResources_t::copyCmdBuffer()
 	return cmdCopy;
 }
 
-vk::CommandBuffer perFrameResources_t::depthPassDrawCmdBuffer()
-{
-	return cmdDrawDepth;
-}
-
-vk::CommandBuffer perFrameResources_t::scenePassDrawCmdBuffer()
-{
-	return cmdDrawScene;
-}
-
-vk::CommandBuffer perFrameResources_t::renderPassDrawCmdBuffer()
+vk::CommandBuffer perFrameResources_t::drawCmdBuffer()
 {
 	return cmdDraw;
 }
@@ -1058,13 +1052,6 @@ size_t buffering_mechanism::numFrames()
 	return perFrameResources.size();
 }
 
-void buffering_mechanism::destroy(vk::Device dev, const WZ_vk::DispatchLoaderDynamic& vkDynLoader)
-{
-	perFrameResources.clear();
-	perSwapchainImageResources.clear();
-	currentFrame = 0;
-}
-
 void buffering_mechanism::swap(vk::Device dev, const WZ_vk::DispatchLoaderDynamic& vkDynLoader)
 {
 	currentFrame = (currentFrame < (perFrameResources.size() - 1)) ? currentFrame + 1 : 0;
@@ -1079,10 +1066,18 @@ void buffering_mechanism::swap(vk::Device dev, const WZ_vk::DispatchLoaderDynami
 	dev.resetFences(fences, vkDynLoader);
 	buffering_mechanism::get_current_resources().resetDescriptorPools();
 	dev.resetCommandPool(buffering_mechanism::get_current_resources().pool, vk::CommandPoolResetFlagBits(), vkDynLoader);
-	buffering_mechanism::get_current_resources().renderPassCmdBufferBegun = false;
+	buffering_mechanism::get_current_resources().drawCmdBufferBegun = false;
+	buffering_mechanism::get_current_resources().copyCmdBufferBegun = false;
 
 	buffering_mechanism::get_current_resources().clean();
 	buffering_mechanism::get_current_resources().numalloc = 0;
+}
+
+void buffering_mechanism::destroy(vk::Device dev, const WZ_vk::DispatchLoaderDynamic& vkDynLoader)
+{
+	perFrameResources.clear();
+	perSwapchainImageResources.clear();
+	currentFrame = 0;
 }
 
 // MARK: Definitions of statics
@@ -3927,7 +3922,6 @@ bool VkRoot::shouldDraw()
 void VkRoot::shutdown()
 {
 	_frameResourceCache.clear();
-	destroyCustomRenderPasses();
 
 	destroySwapchainAndSwapchainSpecificStuff(true);
 
@@ -4053,6 +4047,45 @@ void VkRoot::waitForAllIdle()
 	dev.waitIdle(vkDynLoader);
 }
 
+void VkRoot::finalizeActiveRecording()
+{
+	if (!dev || !buffering_mechanism::isInitialized())
+	{
+		hasActivePass = false;
+		_swapchainRenderPassActive = false;
+		_customPassActive = false;
+		frameHasDrawCommands = false;
+		currentPSO = nullptr;
+		return;
+	}
+
+	auto& frameResources = buffering_mechanism::get_current_resources();
+
+	if (_swapchainRenderPassActive || _customPassActive || hasActivePass)
+	{
+		if (frameResources.drawCmdBufferBegun)
+		{
+			frameResources.drawCmdBuffer().endRenderPass(vkDynLoader);
+		}
+	}
+
+	if (_customPassActive)
+	{
+		deferDestroyFramebuffer(_activeCustomFramebuffer);
+		_activeCustomFramebuffer = vk::Framebuffer();
+		_customPassActive = false;
+	}
+
+	_swapchainRenderPassActive = false;
+	hasActivePass = false;
+	frameHasDrawCommands = false;
+	currentPSO = nullptr;
+	currentRenderPassId = DEFAULT_RENDER_PASS_ID;
+
+	frameResources.endDrawCmdBufferIfRecording();
+	frameResources.endCopyCmdBufferIfRecording();
+}
+
 void VkRoot::destroySwapchainAndSwapchainSpecificStuff(bool doDestroySwapchain)
 {
 	if (!dev)
@@ -4061,7 +4094,9 @@ void VkRoot::destroySwapchainAndSwapchainSpecificStuff(bool doDestroySwapchain)
 		return;
 	}
 
+	finalizeActiveRecording();
 	waitForAllIdle();
+	destroyCustomRenderPasses();
 
 	if (pDefaultTexture)
 	{
@@ -5937,11 +5972,6 @@ void VkRoot::bind_pipeline(gfx_api::pipeline_state_object* pso, bool /*notexture
 	ASSERT_OR_RETURN(, renderGraphExecuting() && hasActivePass,
 		"bind_pipeline() called outside render graph record callback");
 
-	if (activePassType == gfx_api::RenderPassType::Default || activePassType == gfx_api::RenderPassType::Custom)
-	{
-		beginRenderPassDrawCmdBufferIfNeeded();
-	}
-
 	VkPSOId* newPSOId = static_cast<VkPSOId*>(pso);
 	// lookup PSO
 	auto& pipelineInfo = createdPipelines[newPSOId->psoID];
@@ -6041,6 +6071,9 @@ VkRoot::AcquireNextSwapchainImageResult VkRoot::acquireNextSwapchainImage(bool a
 
 void VkRoot::beginSceneRenderPass()
 {
+	buffering_mechanism::get_current_resources().ensureDrawCmdBufferBegun();
+	frameHasDrawCommands = true;
+
 	// There only needs to be a single scene RenderPass object
 	// What actually swaps out is the FBO used in the call to beginRenderPass
 	auto& sceneRenderPass = renderPasses[SCENE_RENDER_PASS_ID];
@@ -6048,7 +6081,7 @@ void VkRoot::beginSceneRenderPass()
 	const auto clearValue = std::array<vk::ClearValue, 2> {
 		vk::ClearValue(), vk::ClearValue(vk::ClearDepthStencilValue(1.f, 0u))
 	};
-	buffering_mechanism::get_current_resources().scenePassDrawCmdBuffer().beginRenderPass(
+	buffering_mechanism::get_current_resources().drawCmdBuffer().beginRenderPass(
 		vk::RenderPassBeginInfo()
 		.setFramebuffer(sceneRenderPass.fbo[buffering_mechanism::get_current_frame_num()])
 		.setClearValueCount(static_cast<uint32_t>(clearValue.size()))
@@ -6057,11 +6090,9 @@ void VkRoot::beginSceneRenderPass()
 		.setRenderArea(vk::Rect2D(vk::Offset2D(), swapchainSize)),
 		vk::SubpassContents::eInline,
 		vkDynLoader);
-	applyViewport(buffering_mechanism::get_current_resources().scenePassDrawCmdBuffer(),
+	applyViewport(buffering_mechanism::get_current_resources().drawCmdBuffer(),
 		swapchainSize.width, swapchainSize.height, 0.f, 1.f);
 
-	// Set up the buffering_mechanism resources state, so subsequent calls to currentDrawCmdBuffer() use the one for the depth pass
-	buffering_mechanism::get_current_resources().beginScenePass();
 	currentRenderPassId = SCENE_RENDER_PASS_ID;
 	currentPSO = nullptr;
 }
@@ -6070,11 +6101,8 @@ void VkRoot::endSceneRenderPass()
 {
 	ASSERT_OR_RETURN(, currentRenderPassId == SCENE_RENDER_PASS_ID, "Current render pass is not a scene pass! (Mismatched beginSceneRenderPass/endSceneRenderPass calls.)");
 
-	auto scenePassDrawCmdBuffer = buffering_mechanism::get_current_resources().scenePassDrawCmdBuffer();
-	scenePassDrawCmdBuffer.endRenderPass(vkDynLoader);
+	buffering_mechanism::get_current_resources().drawCmdBuffer().endRenderPass(vkDynLoader);
 
-	// Set up the buffering_mechanism resources state, so subsequent calls to currentDrawCmdBuffer() use the one for the default render pass
-	buffering_mechanism::get_current_resources().endScenePass();
 	if (pSceneImage != nullptr)
 	{
 		setImageLayout(pSceneImage, vk::ImageLayout::eShaderReadOnlyOptimal);
@@ -6252,7 +6280,7 @@ void VkRoot::trackCustomPassOutputLayouts()
 	_activeCustomDepthOutput.reset();
 }
 
-bool VkRoot::CustomPassLayoutKey::operator==(const CustomPassLayoutKey& other) const
+bool VkRoot::PassLayoutKey::operator==(const PassLayoutKey& other) const
 {
 	return colorFormats == other.colorFormats
 		&& colorLoadOps == other.colorLoadOps
@@ -6331,11 +6359,11 @@ static vk::ImageLayout initialDepthAttachmentLayout(gfx_api::AttachmentLoadOp lo
 		: vk::ImageLayout::eDepthStencilAttachmentOptimal;
 }
 
-size_t VkRoot::getOrCreateCustomRenderPassId(const CustomPassLayoutKey& key)
+size_t VkRoot::getOrCreatePassRenderPassId(const PassLayoutKey& key)
 {
-	for (size_t i = 0; i < _customPassLayoutKeys.size(); ++i)
+	for (size_t i = 0; i < _passLayoutKeys.size(); ++i)
 	{
-		if (_customPassLayoutKeys[i] == key)
+		if (_passLayoutKeys[i] == key)
 		{
 			return NUM_RENDERPASS_IDS + i;
 		}
@@ -6435,20 +6463,9 @@ size_t VkRoot::getOrCreateCustomRenderPassId(const CustomPassLayoutKey& key)
 	renderPassDetails.rp = dev.createRenderPass(createInfo, nullptr, vkDynLoader);
 	renderPassDetails.msaaSamples = vk::SampleCountFlagBits::e1;
 
-	_customPassLayoutKeys.push_back(key);
+	_passLayoutKeys.push_back(key);
 	ensureRenderPassPSOCapacity(renderPasses.size());
 	return renderPassId;
-}
-
-void VkRoot::beginRenderPassDrawCmdBufferIfNeeded()
-{
-	auto& frameResources = buffering_mechanism::get_current_resources();
-	if (!frameResources.renderPassCmdBufferBegun)
-	{
-		frameResources.renderPassDrawCmdBuffer().begin(
-			vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
-		frameResources.renderPassCmdBufferBegun = true;
-	}
 }
 
 void VkRoot::applyViewport(vk::CommandBuffer cmdBuffer, uint32_t width, uint32_t height, float minDepth, float maxDepth)
@@ -6482,29 +6499,42 @@ void VkRoot::endActiveSwapchainRenderPassIfNeeded()
 {
 	if (_swapchainRenderPassActive)
 	{
-		buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().endRenderPass(vkDynLoader);
+		buffering_mechanism::get_current_resources().drawCmdBuffer().endRenderPass(vkDynLoader);
 		_swapchainRenderPassActive = false;
-		_defaultPassInterrupted = startedRenderPass;
 		currentPSO = nullptr;
 	}
 }
 
-void VkRoot::resumeDefaultRenderPass()
+void VkRoot::beginSwapchainRenderPass(gfx_api::AttachmentLoadOp loadOp)
 {
-	ASSERT(!_swapchainRenderPassActive, "resumeDefaultRenderPass called while swapchain render pass is already active");
-	ASSERT(defaultRenderpass().rpLoad, "Default render pass load variant is not initialized");
+	ASSERT(!_swapchainRenderPassActive, "beginSwapchainRenderPass called while swapchain render pass is already active");
+	ASSERT(currentRenderPassId == DEFAULT_RENDER_PASS_ID, "A previous depth pass wasn't properly ended?");
 
-	beginRenderPassDrawCmdBufferIfNeeded();
+	buffering_mechanism::get_current_resources().ensureDrawCmdBufferBegun();
+	frameHasDrawCommands = true;
 
-	buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().beginRenderPass(
-		vk::RenderPassBeginInfo()
-			.setFramebuffer(defaultRenderpass().fbo[currentSwapchainIndex])
-			.setRenderPass(defaultRenderpass().rpLoad)
-			.setRenderArea(vk::Rect2D(vk::Offset2D(), swapchainSize)),
-		vk::SubpassContents::eInline,
-		vkDynLoader);
-	applyViewport(buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer(),
-		swapchainSize.width, swapchainSize.height, _viewportMinDepth, _viewportMaxDepth);
+	const bool clear = loadOp == gfx_api::AttachmentLoadOp::Clear;
+	const vk::RenderPass renderPass = clear ? defaultRenderpass().rp : defaultRenderpass().rpLoad;
+	ASSERT(renderPass, "Swapchain render pass is not initialized");
+
+	auto beginInfo = vk::RenderPassBeginInfo()
+		.setFramebuffer(defaultRenderpass().fbo[currentSwapchainIndex])
+		.setRenderPass(renderPass)
+		.setRenderArea(vk::Rect2D(vk::Offset2D(), swapchainSize));
+
+	if (clear)
+	{
+		const auto clearValue = std::array<vk::ClearValue, 2> {
+			vk::ClearValue(), vk::ClearValue(vk::ClearDepthStencilValue(1.f, 0u))
+		};
+		beginInfo
+			.setClearValueCount(static_cast<uint32_t>(clearValue.size()))
+			.setPClearValues(clearValue.data());
+	}
+
+	auto drawCmdBuffer = buffering_mechanism::get_current_resources().drawCmdBuffer();
+	drawCmdBuffer.beginRenderPass(beginInfo, vk::SubpassContents::eInline, vkDynLoader);
+	applyViewport(drawCmdBuffer, swapchainSize.width, swapchainSize.height, _viewportMinDepth, _viewportMaxDepth);
 
 	_swapchainRenderPassActive = true;
 	currentRenderPassId = DEFAULT_RENDER_PASS_ID;
@@ -6515,7 +6545,7 @@ void VkRoot::destroyCustomRenderPasses()
 {
 	if (!dev)
 	{
-		_customPassLayoutKeys.clear();
+		_passLayoutKeys.clear();
 		return;
 	}
 
@@ -6531,7 +6561,7 @@ void VkRoot::destroyCustomRenderPasses()
 	{
 		renderPasses.erase(renderPasses.begin() + static_cast<ptrdiff_t>(NUM_RENDERPASS_IDS), renderPasses.end());
 	}
-	_customPassLayoutKeys.clear();
+	_passLayoutKeys.clear();
 }
 
 optional<std::pair<uint32_t, uint32_t>> VkRoot::getRenderTargetDimensions(gfx_api::abstract_texture* texture)
@@ -6602,7 +6632,7 @@ void VkRoot::beginCustomPass(gfx_api::RenderPassDesc& pass)
 	}
 	ASSERT_OR_RETURN(, passWidth > 0 && passHeight > 0, "Custom pass requires viewportSize or inferrable attachment dimensions");
 
-	CustomPassLayoutKey layoutKey;
+	PassLayoutKey layoutKey;
 	layoutKey.width = passWidth;
 	layoutKey.height = passHeight;
 	for (const auto& colorAttachment : pass.colorAttachments)
@@ -6617,14 +6647,15 @@ void VkRoot::beginCustomPass(gfx_api::RenderPassDesc& pass)
 		layoutKey.depthLoadOp = pass.depthAttachment->loadOp;
 	}
 
-	_activeCustomRenderPassId = getOrCreateCustomRenderPassId(layoutKey);
+	_activeCustomRenderPassId = getOrCreatePassRenderPassId(layoutKey);
 	_customPassWidth = passWidth;
 	_customPassHeight = passHeight;
 
 	endActiveSwapchainRenderPassIfNeeded();
-	beginRenderPassDrawCmdBufferIfNeeded();
+	buffering_mechanism::get_current_resources().ensureDrawCmdBufferBegun();
+	frameHasDrawCommands = true;
 
-	vk::CommandBuffer customDrawCmdBuffer = buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer();
+	vk::CommandBuffer customDrawCmdBuffer = buffering_mechanism::get_current_resources().drawCmdBuffer();
 	transitionInputTextures(pass, customDrawCmdBuffer);
 
 	_activeCustomColorOutputs.clear();
@@ -6677,7 +6708,7 @@ void VkRoot::beginCustomPass(gfx_api::RenderPassDesc& pass)
 			pass.depthAttachment->clearValue.stencil));
 	}
 
-	buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().beginRenderPass(
+	buffering_mechanism::get_current_resources().drawCmdBuffer().beginRenderPass(
 		vk::RenderPassBeginInfo()
 			.setFramebuffer(_activeCustomFramebuffer)
 			.setClearValueCount(static_cast<uint32_t>(clearValues.size()))
@@ -6687,7 +6718,7 @@ void VkRoot::beginCustomPass(gfx_api::RenderPassDesc& pass)
 		vk::SubpassContents::eInline,
 		vkDynLoader);
 
-	applyViewport(buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer(),
+	applyViewport(buffering_mechanism::get_current_resources().drawCmdBuffer(),
 		passWidth, passHeight, 0.f, 1.f);
 
 	currentRenderPassId = _activeCustomRenderPassId;
@@ -6701,7 +6732,7 @@ void VkRoot::endCustomPass()
 {
 	ASSERT_OR_RETURN(, _customPassActive, "endCustomPass called without an active custom pass");
 
-	buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().endRenderPass(vkDynLoader);
+	buffering_mechanism::get_current_resources().drawCmdBuffer().endRenderPass(vkDynLoader);
 	deferDestroyFramebuffer(_activeCustomFramebuffer);
 	_activeCustomFramebuffer = vk::Framebuffer();
 
@@ -6749,7 +6780,7 @@ bool VkRoot::endRenderPass_RecreateSwapchain(const vk::Result& reason)
 
 void VkRoot::submitFrame()
 {
-	if (!startedRenderPass)
+	if (!frameHasDrawCommands)
 	{
 		return;
 	}
@@ -6758,21 +6789,18 @@ void VkRoot::submitFrame()
 
 	currentPSO = nullptr;
 
-	buffering_mechanism::get_current_resources().depthPassDrawCmdBuffer().end(vkDynLoader);
-	buffering_mechanism::get_current_resources().scenePassDrawCmdBuffer().end(vkDynLoader);
-
 	if (_swapchainRenderPassActive)
 	{
-		buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().endRenderPass(vkDynLoader);
+		buffering_mechanism::get_current_resources().drawCmdBuffer().endRenderPass(vkDynLoader);
 		_swapchainRenderPassActive = false;
 	}
-	if (buffering_mechanism::get_current_resources().renderPassCmdBufferBegun)
+	if (buffering_mechanism::get_current_resources().drawCmdBufferBegun)
 	{
-		buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().end(vkDynLoader);
-		buffering_mechanism::get_current_resources().renderPassCmdBufferBegun = false;
+		buffering_mechanism::get_current_resources().drawCmdBuffer().end(vkDynLoader);
+		buffering_mechanism::get_current_resources().drawCmdBufferBegun = false;
 	}
 
-	startedRenderPass = false;
+	frameHasDrawCommands = false;
 
 	// Add memory barrier at end of cmdCopy
 	const auto memoryBarriers = std::array<vk::MemoryBarrier, 1> {
@@ -6786,6 +6814,7 @@ void VkRoot::submitFrame()
 																				 vk::DependencyFlagBits(), memoryBarriers, nullptr, nullptr, vkDynLoader);
 
 	buffering_mechanism::get_current_resources().copyCmdBuffer().end(vkDynLoader);
+	buffering_mechanism::get_current_resources().copyCmdBufferBegun = false;
 
 	buffering_mechanism::get_current_resources().uniformBufferAllocator.flushAutomappedMemory();
 	buffering_mechanism::get_current_resources().uniformBufferAllocator.unmapAutomappedMemory();
@@ -6810,11 +6839,10 @@ void VkRoot::submitFrame()
 		}
 	}
 
-	const auto executableCmdBuffer = std::array<vk::CommandBuffer, 4>{
+	const auto executableCmdBuffer = std::array<vk::CommandBuffer, 2>{
 		buffering_mechanism::get_current_resources().copyCmdBuffer(), // copy before render
-		buffering_mechanism::get_current_resources().depthPassDrawCmdBuffer(),
-		buffering_mechanism::get_current_resources().scenePassDrawCmdBuffer(),
-		buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer()};
+		buffering_mechanism::get_current_resources().drawCmdBuffer(),
+	};
 	const vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput; //vk::PipelineStageFlagBits::eAllCommands;
 
 	auto submitInfo = vk::SubmitInfo()
@@ -7009,8 +7037,7 @@ void VkRoot::submitFrame()
 	}
 
 	buffering_mechanism::get_current_resources().copyCmdBuffer().begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
-	buffering_mechanism::get_current_resources().depthPassDrawCmdBuffer().begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
-	buffering_mechanism::get_current_resources().scenePassDrawCmdBuffer().begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
+	buffering_mechanism::get_current_resources().copyCmdBufferBegun = true;
 }
 
 void VkRoot::beginPass(gfx_api::RenderPassDesc& pass)
@@ -7029,14 +7056,7 @@ void VkRoot::beginPass(gfx_api::RenderPassDesc& pass)
 		break;
 	case gfx_api::RenderPassType::Default:
 		ASSERT(!_swapchainRenderPassActive, "Default pass begin while swapchain render pass is already active");
-		if (pass.swapchainLoadOp == gfx_api::AttachmentLoadOp::Clear)
-		{
-			startRenderPass();
-		}
-		else
-		{
-			resumeDefaultRenderPass();
-		}
+		beginSwapchainRenderPass(pass.swapchainLoadOp);
 		break;
 	case gfx_api::RenderPassType::Custom:
 		beginCustomPass(pass);
@@ -7067,33 +7087,6 @@ void VkRoot::endPass()
 	hasActivePass = false;
 }
 
-void VkRoot::startRenderPass()
-{
-	ASSERT(!_swapchainRenderPassActive, "startRenderPass called while swapchain render pass is already active");
-	ASSERT(currentRenderPassId == DEFAULT_RENDER_PASS_ID, "A previous depth pass wasn't properly ended?");
-
-	beginRenderPassDrawCmdBufferIfNeeded();
-
-	const auto clearValue = std::array<vk::ClearValue, 2> {
-		vk::ClearValue(), vk::ClearValue(vk::ClearDepthStencilValue(1.f, 0u))
-	};
-	buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer().beginRenderPass(
-		vk::RenderPassBeginInfo()
-		.setFramebuffer(defaultRenderpass().fbo[currentSwapchainIndex])
-		.setClearValueCount(static_cast<uint32_t>(clearValue.size()))
-		.setPClearValues(clearValue.data())
-		.setRenderPass(defaultRenderpass().rp)
-		.setRenderArea(vk::Rect2D(vk::Offset2D(), swapchainSize)),
-		vk::SubpassContents::eInline,
-		vkDynLoader);
-	applyViewport(buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer(),
-		swapchainSize.width, swapchainSize.height, _viewportMinDepth, _viewportMaxDepth);
-
-	_swapchainRenderPassActive = true;
-	startedRenderPass = true;
-	currentRenderPassId = DEFAULT_RENDER_PASS_ID;
-}
-
 size_t VkRoot::numDepthPasses()
 {
 	return depthPassCount;
@@ -7118,6 +7111,9 @@ bool VkRoot::setDepthPassProperties(size_t _numDepthPasses, size_t _depthBufferR
 
 void VkRoot::beginDepthPass(size_t idx)
 {
+	buffering_mechanism::get_current_resources().ensureDrawCmdBufferBegun();
+	frameHasDrawCommands = true;
+
 	auto& depthRenderPass = renderPasses[DEPTH_RENDER_PASS_ID];
 	ASSERT_OR_RETURN(, idx < depthRenderPass.fbo.size(), "Invalid depth pass #: %zu (exceeds depthPass FBOs count: %zu)", idx, depthRenderPass.fbo.size());
 
@@ -7128,7 +7124,7 @@ void VkRoot::beginDepthPass(size_t idx)
 	const auto clearValue = std::array<vk::ClearValue, 1> {
 		vk::ClearValue(vk::ClearDepthStencilValue(1.f, 0u))
 	};
-	buffering_mechanism::get_current_resources().depthPassDrawCmdBuffer().beginRenderPass(
+	buffering_mechanism::get_current_resources().drawCmdBuffer().beginRenderPass(
 		vk::RenderPassBeginInfo()
 		.setFramebuffer(depthRenderPass.fbo[idx])
 		.setClearValueCount(static_cast<uint32_t>(clearValue.size()))
@@ -7137,11 +7133,9 @@ void VkRoot::beginDepthPass(size_t idx)
 		.setRenderArea(vk::Rect2D(vk::Offset2D(), depthPassExtent)),
 		vk::SubpassContents::eInline,
 		vkDynLoader);
-	applyViewport(buffering_mechanism::get_current_resources().depthPassDrawCmdBuffer(),
+	applyViewport(buffering_mechanism::get_current_resources().drawCmdBuffer(),
 		depthMapSize, depthMapSize, 0.f, 1.f);
 
-	// Set up the buffering_mechanism resources state, so subsequent calls to currentDrawCmdBuffer() use the one for the depth pass
-	buffering_mechanism::get_current_resources().beginDepthPass();
 	currentRenderPassId = DEPTH_RENDER_PASS_ID;
 	currentPSO = nullptr;
 }
@@ -7155,11 +7149,8 @@ void VkRoot::endCurrentDepthPass()
 {
 	ASSERT_OR_RETURN(, currentRenderPassId == DEPTH_RENDER_PASS_ID, "Current render pass is not a depth pass! (Mismatched beginDepthPass/endCurrentDepthPass calls.)");
 
-	auto depthPassDrawCmdBuffer = buffering_mechanism::get_current_resources().depthPassDrawCmdBuffer();
-	depthPassDrawCmdBuffer.endRenderPass(vkDynLoader);
+	buffering_mechanism::get_current_resources().drawCmdBuffer().endRenderPass(vkDynLoader);
 
-	// Set up the buffering_mechanism resources state, so subsequent calls to currentDrawCmdBuffer() use the one for the default render pass
-	buffering_mechanism::get_current_resources().endCurrentDepthPass();
 	if (pDepthMapImage != nullptr)
 	{
 		setImageLayout(pDepthMapImage, vk::ImageLayout::eDepthStencilReadOnlyOptimal);
@@ -7189,7 +7180,7 @@ void VkRoot::set_depth_range(const float& min, const float& max)
 		return;
 	}
 
-	applyViewport(buffering_mechanism::get_current_resources().renderPassDrawCmdBuffer(),
+	applyViewport(buffering_mechanism::get_current_resources().drawCmdBuffer(),
 		swapchainSize.width, swapchainSize.height, min, max);
 }
 

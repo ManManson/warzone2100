@@ -430,6 +430,7 @@ bool null_context::_initialize(const gfx_api::backend_Impl_Factory& impl, int32_
 void null_context::beginPass(gfx_api::RenderPassDesc& pass)
 {
 	(void)pass;
+	frameHasDrawCommands = true;
 }
 
 void null_context::endPass()
@@ -438,7 +439,13 @@ void null_context::endPass()
 
 void null_context::submitFrame()
 {
+	if (!frameHasDrawCommands)
+	{
+		return;
+	}
+
 	frameNum = std::max<size_t>(frameNum + 1, 1);
+	frameHasDrawCommands = false;
 
 	// Backend is expected to handle throttling / sleeping
 	backend_impl->swapWindow();

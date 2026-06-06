@@ -263,35 +263,26 @@ struct perFrameResources_t
 	~perFrameResources_t();
 
 public:
-	void beginDepthPass();
-	void endCurrentDepthPass();
-
-	void beginScenePass();
-	void endScenePass();
-
 	vk::CommandBuffer* currentCopyCmdBuffer();
 	vk::CommandBuffer* currentDrawCmdBuffer();
 
 	vk::CommandBuffer copyCmdBuffer();
-	vk::CommandBuffer depthPassDrawCmdBuffer();
-	vk::CommandBuffer scenePassDrawCmdBuffer();
-	vk::CommandBuffer renderPassDrawCmdBuffer();
+	vk::CommandBuffer drawCmdBuffer();
 
-	bool renderPassCmdBufferBegun = false;
+	void ensureDrawCmdBufferBegun();
+	void endCopyCmdBufferIfRecording();
+	void endDrawCmdBufferIfRecording();
+
+	bool drawCmdBufferBegun = false;
+	bool copyCmdBufferBegun = false;
 
 protected:
 	friend struct buffering_mechanism;
 
-	// main command buffer for copying command
+	// upload / transfer commands
 	vk::CommandBuffer cmdCopy;
 
-	// drawing command buffer for depth pass(es)
-	vk::CommandBuffer cmdDrawDepth;
-
-	// drawing command buffer for scene pass
-	vk::CommandBuffer cmdDrawScene;
-
-	// main command buffer for drawing (default render pass)
+	// all render passes recorded sequentially in graph order
 	vk::CommandBuffer cmdDraw;
 
 	void resetDescriptorPools();
@@ -685,7 +676,7 @@ struct VkRoot final : gfx_api::context
 	const size_t SCENE_RENDER_PASS_ID = 2;
 	const size_t NUM_RENDERPASS_IDS = 3;
 
-	struct CustomPassLayoutKey
+	struct PassLayoutKey
 	{
 		std::vector<vk::Format> colorFormats;
 		std::vector<gfx_api::AttachmentLoadOp> colorLoadOps;
@@ -694,7 +685,7 @@ struct VkRoot final : gfx_api::context
 		uint32_t width = 0;
 		uint32_t height = 0;
 
-		bool operator==(const CustomPassLayoutKey& other) const;
+		bool operator==(const PassLayoutKey& other) const;
 	};
 
 	struct RenderPassDetails
@@ -767,7 +758,7 @@ struct VkRoot final : gfx_api::context
 	bool debugCallbacksEnabled = true;
 	bool debugUtilsExtEnabled = false;
 
-	bool startedRenderPass = false;
+	bool frameHasDrawCommands = false;
 	gfx_api::RenderPassType activePassType = gfx_api::RenderPassType::Default;
 	bool hasActivePass = false;
 	const size_t maxErrorHandlingDepth = 10;
@@ -865,7 +856,7 @@ public:
 	virtual void set_polygon_offset(const float& offset, const float& slope) override;
 	virtual void set_depth_range(const float& min, const float& max) override;
 private:
-	void startRenderPass();
+	void beginSwapchainRenderPass(gfx_api::AttachmentLoadOp loadOp);
 	void beginCustomPass(gfx_api::RenderPassDesc& pass);
 	void endCustomPass();
 
@@ -878,6 +869,8 @@ private:
 
 	void handleSurfaceLost(); // Throws on failure
 	void waitForAllIdle(); // Throws on failure
+	/// Close any in-progress command buffer / render pass recording before GPU teardown.
+	void finalizeActiveRecording();
 	void destroySwapchainAndSwapchainSpecificStuff(bool doDestroySwapchain);
 	void createNewSwapchainAndSwapchainSpecificStuff(const vk::Result& reason); // Throws on failure
 
@@ -927,9 +920,8 @@ private:
 	RenderPassDetails& defaultRenderpass() { return renderPasses[DEFAULT_RENDER_PASS_ID]; }
 	bool endRenderPass_RecreateSwapchain(const vk::Result& reason);
 	void ensureRenderPassPSOCapacity(size_t requiredCount);
-	size_t getOrCreateCustomRenderPassId(const CustomPassLayoutKey& key);
+	size_t getOrCreatePassRenderPassId(const PassLayoutKey& key);
 	vk::Format getAttachmentVkFormat(gfx_api::abstract_texture* texture) const;
-	void resumeDefaultRenderPass();
 	void destroyCustomRenderPasses();
 	void resetImageLayoutTracker();
 	void setImageLayout(gfx_api::abstract_texture* texture, vk::ImageLayout layout);
@@ -941,7 +933,6 @@ private:
 		vk::PipelineStageFlags srcStage, vk::PipelineStageFlags dstStage, vk::AccessFlags srcAccess, vk::AccessFlags dstAccess);
 	void transitionInputTextures(const gfx_api::RenderPassDesc& pass, vk::CommandBuffer cmdBuffer);
 	void trackCustomPassOutputLayouts();
-	void beginRenderPassDrawCmdBufferIfNeeded();
 	void applyViewport(vk::CommandBuffer cmdBuffer, uint32_t width, uint32_t height, float minDepth, float maxDepth);
 	void deferDestroyFramebuffer(vk::Framebuffer framebuffer);
 	void endActiveSwapchainRenderPassIfNeeded();
@@ -961,12 +952,11 @@ private:
 
 	gfx_api::FrameResourceCache _frameResourceCache;
 
-	std::vector<CustomPassLayoutKey> _customPassLayoutKeys;
+	std::vector<PassLayoutKey> _passLayoutKeys;
 	float _viewportMinDepth = 0.f;
 	float _viewportMaxDepth = 1.f;
 	bool _swapchainRenderPassActive = false;
 	bool _customPassActive = false;
-	bool _defaultPassInterrupted = false;
 	size_t _activeCustomRenderPassId = 0;
 	vk::Framebuffer _activeCustomFramebuffer;
 	uint32_t _customPassWidth = 0;
