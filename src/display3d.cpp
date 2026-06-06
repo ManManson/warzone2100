@@ -1040,8 +1040,11 @@ void draw3DScene()
 
 	wzPerfBegin(PERF_MISC, "3D scene - misc and text");
 
-	pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "3DSceneOverlays",
-		[]
+	pie_GetFrameRenderGraph().addRenderPass(
+		std::move(
+			gfx_api::RenderPassBuilder::create("3DSceneOverlays")
+				.type(gfx_api::RenderPassType::Default)
+				.record([]
 	{
 	pie_BeginInterface();
 
@@ -1154,7 +1157,8 @@ void draw3DScene()
 		txtCurrentTime.setText(buildInfo, font_small);
 		txtCurrentTime.render(RET_X + 134, 422 + E_H, WZCOL_TEXT_MEDIUM);
 	}
-	});
+				}))
+			.build());
 
 	while (playerPos.r.y > DEG(360))
 	{
@@ -1178,8 +1182,11 @@ void draw3DScene()
 
 	structureEffects(); // add fancy effects to structures
 
-	pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "3DSceneDebugOverlays",
-		[]
+	pie_GetFrameRenderGraph().addRenderPass(
+		std::move(
+			gfx_api::RenderPassBuilder::create("3DSceneDebugOverlays")
+				.type(gfx_api::RenderPassType::Default)
+				.record([]
 	{
 	showDroidSensorRanges(); //shows sensor data for units/droids/whatever...-Q 5-10-05
 	if (CauseCrash)
@@ -1218,7 +1225,8 @@ void draw3DScene()
 	{
 		showDroidPaths(gameWorld);
 	}
-	});
+				}))
+			.build());
 
 	wzPerfEnd(PERF_MISC);
 }
@@ -1514,24 +1522,32 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 		for (size_t i = 0; i < numShadowCascades; ++i)
 		{
 			WZ_PROFILE_SCOPE(ShadowMapping);
-			renderGraph.addDepthPass(i, "ShadowCascade" + std::to_string(i),
-				[cascadeProjMatrix = shadowCascades[i].projectionMatrix,
-					cascadeViewMatrix = shadowCascades[i].viewMatrix,
-					cameraPos, shadowCascadesInfo]
+			renderGraph.addRenderPass(
+				std::move(
+					gfx_api::RenderPassBuilder::create("ShadowCascade" + std::to_string(i))
+						.type(gfx_api::RenderPassType::Depth)
+						.depthIndex(i)
+						.record([cascadeProjMatrix = shadowCascades[i].projectionMatrix,
+							cascadeViewMatrix = shadowCascades[i].viewMatrix,
+							cameraPos, shadowCascadesInfo]
 			{
 				if (bDrawTerrainShadows)
 				{
 					drawTerrainDepthOnly(cascadeProjMatrix * cascadeViewMatrix);
 				}
 				pie_DrawAllMeshes(currentGameFrame, cascadeProjMatrix, cascadeViewMatrix, cameraPos, shadowCascadesInfo, true);
-			});
+			}))
+				.build());
 		}
 	}
 
 	// start main render pass
-	renderGraph.addRenderPass(gfx_api::RenderPassType::Scene, "ScenePass",
-		[perspectiveViewMatrix, viewMatrix, cameraPos,
-			shadowCascadesInfo, baseViewMatrix, perspectiveMatrix]
+	renderGraph.addRenderPass(
+		std::move(
+			gfx_api::RenderPassBuilder::create("ScenePass")
+				.type(gfx_api::RenderPassType::Scene)
+				.record([perspectiveViewMatrix, viewMatrix, cameraPos,
+					shadowCascadesInfo, baseViewMatrix, perspectiveMatrix]
 	{
 		// now we are about to draw the terrain
 		wzPerfBegin(PERF_TERRAIN, "3D scene - terrain");
@@ -1564,11 +1580,15 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 			doConstructionLines(viewMatrix);
 		}
 		locateMouse();
-	});
+	}))
+			.build());
 
 	// Draw the scene to the default framebuffer
-	renderGraph.addRenderPass(gfx_api::RenderPassType::Default, "SceneBlit",
-		[]
+	renderGraph.addRenderPass(
+		std::move(
+			gfx_api::RenderPassBuilder::create("SceneBlit")
+				.type(gfx_api::RenderPassType::Default)
+				.record([]
 	{
 		WZ_PROFILE_SCOPE(copyToFBO);
 		gfx_api::WorldToScreenPSO::get().bind();
@@ -1577,7 +1597,8 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 		gfx_api::WorldToScreenPSO::get().bind_textures(gfx_api::context::get().getSceneTexture());
 		gfx_api::WorldToScreenPSO::get().draw(3, 0);
 		gfx_api::WorldToScreenPSO::get().unbind_vertex_buffers(pScreenTriangleVBO);
-	});
+	}))
+			.build());
 }
 
 /// Initialise the fog, skybox and some other stuff

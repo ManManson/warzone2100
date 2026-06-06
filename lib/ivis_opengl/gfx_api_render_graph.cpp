@@ -16,24 +16,57 @@ void RenderGraph::addRenderPass(RenderPassDesc desc)
 void RenderGraph::addRenderPass(RenderPassType type, const std::string& debugName,
 	RenderPassDesc::RecordFunc recordFunc)
 {
-	ASSERT(!_executing, "Cannot add passes during execute()");
-	RenderPassDesc desc;
-	desc.type = type;
-	desc.debugName = debugName;
-	desc.recordFunc = std::move(recordFunc);
-	_render_passes.push_back(std::move(desc));
+	addRenderPass(
+		std::move(
+			RenderPassBuilder::create(debugName)
+				.type(type)
+				.record(std::move(recordFunc)))
+			.build());
 }
 
 void RenderGraph::addDepthPass(size_t cascadeIndex, const std::string& debugName,
 	RenderPassDesc::RecordFunc recordFunc)
 {
-	ASSERT(!_executing, "Cannot add passes during execute()");
-	RenderPassDesc desc;
-	desc.type = RenderPassType::Depth;
-	desc.depthPassIndex = cascadeIndex;
-	desc.debugName = debugName;
-	desc.recordFunc = std::move(recordFunc);
-	_render_passes.push_back(std::move(desc));
+	addRenderPass(
+		std::move(
+			RenderPassBuilder::create(debugName)
+				.type(RenderPassType::Depth)
+				.depthIndex(cascadeIndex)
+				.record(std::move(recordFunc)))
+			.build());
+}
+
+RenderPassBuilder RenderPassBuilder::create(const std::string& debugName)
+{
+	return RenderPassBuilder(debugName);
+}
+
+RenderPassBuilder::RenderPassBuilder(std::string debugName)
+	: _desc{std::move(debugName), RenderPassType::Default, 0, {}}
+{
+}
+
+RenderPassBuilder& RenderPassBuilder::type(RenderPassType t)
+{
+	_desc.type = t;
+	return *this;
+}
+
+RenderPassBuilder& RenderPassBuilder::depthIndex(size_t idx)
+{
+	_desc.depthPassIndex = idx;
+	return *this;
+}
+
+RenderPassBuilder& RenderPassBuilder::record(RenderPassDesc::RecordFunc func)
+{
+	_desc.recordFunc = std::move(func);
+	return *this;
+}
+
+RenderPassDesc RenderPassBuilder::build() &&
+{
+	return std::move(_desc);
 }
 
 void RenderGraph::execute()

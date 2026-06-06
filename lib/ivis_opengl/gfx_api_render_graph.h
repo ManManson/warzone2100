@@ -37,6 +37,27 @@ struct RenderPassDesc
 };
 
 /// <summary>
+/// Fluent builder for RenderPassDesc. Returns a pass description by value;
+/// call build() on an rvalue to finalize (move-only).
+/// </summary>
+class RenderPassBuilder
+{
+public:
+	static RenderPassBuilder create(const std::string& debugName);
+
+	RenderPassBuilder& type(RenderPassType t);
+	RenderPassBuilder& depthIndex(size_t idx);
+	RenderPassBuilder& record(RenderPassDesc::RecordFunc func);
+
+	RenderPassDesc build() &&;
+
+private:
+	explicit RenderPassBuilder(std::string debugName);
+
+	RenderPassDesc _desc;
+};
+
+/// <summary>
 /// The render graph abstraction: accumulates render pass descriptions,
 /// then executes them all in sequence.
 /// </summary>
