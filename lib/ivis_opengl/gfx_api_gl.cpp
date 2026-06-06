@@ -5633,6 +5633,7 @@ void gl_context::endCustomPass()
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	if (_customPassFBO != 0)
 	{
+		// GL has no command-buffer lifetime coupling; safe to delete immediately.
 		glDeleteFramebuffers(1, &_customPassFBO);
 		_customPassFBO = 0;
 	}

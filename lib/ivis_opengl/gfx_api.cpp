@@ -888,6 +888,8 @@ static bool resolveCustomPassAttachments(gfx_api::RenderPassDesc& pass)
 
 void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 {
+	setRenderGraphExecuting(true);
+
 	bool defaultPassActive = false;
 
 	for (auto& pass : passes)
@@ -950,4 +952,6 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 		endPass();
 		submitFrame();
 	}
+
+	setRenderGraphExecuting(false);
 }

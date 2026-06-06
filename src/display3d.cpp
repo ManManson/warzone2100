@@ -153,6 +153,16 @@ static WzText droidText;
 
 static gfx_api::buffer* pScreenTriangleVBO = nullptr;
 
+static void drawWorldToScreenBlit(gfx_api::abstract_texture* sourceTexture)
+{
+	gfx_api::WorldToScreenPSO::get().bind();
+	gfx_api::WorldToScreenPSO::get().bind_constants({1.0f});
+	gfx_api::WorldToScreenPSO::get().bind_vertex_buffers(pScreenTriangleVBO);
+	gfx_api::WorldToScreenPSO::get().bind_textures(sourceTexture);
+	gfx_api::WorldToScreenPSO::get().draw(3, 0);
+	gfx_api::WorldToScreenPSO::get().unbind_vertex_buffers(pScreenTriangleVBO);
+}
+
 
 /********************  Variables  ********************/
 // Should be cleaned up properly and be put in structures.
@@ -1583,20 +1593,54 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	}))
 			.build());
 
+	// Custom-pass validation (gfxdebug): scene -> transient offscreen via inputTextures + barriers (E6).
+	gfx_api::abstract_texture* customSceneCopyTarget = nullptr;
+	gfx_api::abstract_texture* sceneTexture = gfx_api::context::get().getSceneTexture();
+	if (uses_gfx_debug && sceneTexture != nullptr)
+	{
+		const auto sceneDims = gfx_api::context::get().getRenderTargetDimensions(sceneTexture);
+		if (sceneDims.has_value())
+		{
+			customSceneCopyTarget = gfx_api::context::get().acquireTransientRenderTarget(
+				gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8,
+				sceneDims->first, sceneDims->second);
+			if (customSceneCopyTarget != nullptr)
+			{
+				renderGraph.addRenderPass(
+					std::move(
+						gfx_api::RenderPassBuilder::create("CustomSceneCopyValidate")
+							.type(gfx_api::RenderPassType::Custom)
+							.viewport(sceneDims->first, sceneDims->second)
+							.colorAttachment(customSceneCopyTarget, true)
+							.inputTexture(sceneTexture)
+							.record([sceneTexture]
+				{
+					WZ_PROFILE_SCOPE(CustomSceneCopyValidate);
+					drawWorldToScreenBlit(sceneTexture);
+				}))
+						.build());
+			}
+		}
+	}
+
 	// Draw the scene to the default framebuffer
 	renderGraph.addRenderPass(
 		std::move(
 			gfx_api::RenderPassBuilder::create("SceneBlit")
 				.type(gfx_api::RenderPassType::Default)
-				.record([]
+				.record([customSceneCopyTarget, sceneTexture]
 	{
 		WZ_PROFILE_SCOPE(copyToFBO);
-		gfx_api::WorldToScreenPSO::get().bind();
-		gfx_api::WorldToScreenPSO::get().bind_constants({1.0f});
-		gfx_api::WorldToScreenPSO::get().bind_vertex_buffers(pScreenTriangleVBO);
-		gfx_api::WorldToScreenPSO::get().bind_textures(gfx_api::context::get().getSceneTexture());
-		gfx_api::WorldToScreenPSO::get().draw(3, 0);
-		gfx_api::WorldToScreenPSO::get().unbind_vertex_buffers(pScreenTriangleVBO);
+		gfx_api::abstract_texture* blitSource = customSceneCopyTarget;
+		if (blitSource == nullptr)
+		{
+			blitSource = sceneTexture;
+		}
+		if (blitSource == nullptr)
+		{
+			blitSource = gfx_api::context::get().getSceneTexture();
+		}
+		drawWorldToScreenBlit(blitSource);
 	}))
 			.build());
 }

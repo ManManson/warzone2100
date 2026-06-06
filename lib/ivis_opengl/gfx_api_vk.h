@@ -277,6 +277,8 @@ public:
 	vk::CommandBuffer scenePassDrawCmdBuffer();
 	vk::CommandBuffer renderPassDrawCmdBuffer();
 
+	bool renderPassCmdBufferBegun = false;
+
 protected:
 	friend struct buffering_mechanism;
 
@@ -936,6 +938,10 @@ private:
 		vk::PipelineStageFlags srcStage, vk::PipelineStageFlags dstStage, vk::AccessFlags srcAccess, vk::AccessFlags dstAccess);
 	void transitionInputTextures(const gfx_api::RenderPassDesc& pass, vk::CommandBuffer cmdBuffer);
 	void trackCustomPassOutputLayouts();
+	void beginRenderPassDrawCmdBufferIfNeeded();
+	void applyViewport(vk::CommandBuffer cmdBuffer, uint32_t width, uint32_t height, float minDepth, float maxDepth);
+	void deferDestroyFramebuffer(vk::Framebuffer framebuffer);
+	void endActiveSwapchainRenderPassIfNeeded();
 private:
 	size_t depthPassCount = WZ_MAX_SHADOW_CASCADES;
 	std::string formattedRendererInfoString;
@@ -953,6 +959,9 @@ private:
 	gfx_api::TransientRenderTargetPool _transientRenderTargets;
 
 	std::vector<CustomPassLayoutKey> _customPassLayoutKeys;
+	float _viewportMinDepth = 0.f;
+	float _viewportMaxDepth = 1.f;
+	bool _swapchainRenderPassActive = false;
 	bool _customPassActive = false;
 	bool _defaultPassInterrupted = false;
 	size_t _activeCustomRenderPassId = 0;

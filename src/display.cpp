@@ -31,6 +31,7 @@
 #include "lib/framework/strres.h"
 #include "lib/ivis_opengl/piestate.h"
 #include "lib/ivis_opengl/pietypes.h"
+#include "lib/ivis_opengl/piemode.h"
 #include "lib/framework/fixedpoint.h"
 #include "lib/framework/wzapp.h"
 #include "profiling.h"
@@ -1363,7 +1364,11 @@ void displayWorld()
 	{
 		if (graphicsTime < fadeEndTime)
 		{
-			fadeStartOfGame();
+			pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "GameStartFade",
+				[]
+				{
+					fadeStartOfGame();
+				});
 		}
 		else
 		{

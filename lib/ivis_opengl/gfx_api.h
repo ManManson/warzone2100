@@ -472,7 +472,14 @@ namespace gfx_api
 		gfx_api::pixel_format bestUncompressedPixelFormat(gfx_api::pixel_format_target target, gfx_api::texture_type textureType);
 
 		gfx_api::texture* createTextureForCompatibleImageUploads(const size_t& mipmap_count, const iV_Image& bitmap, const std::string& filename);
+
+	protected:
+		// True while executeRenderGraph() is running. Draw/bind APIs must only be called from record callbacks.
+		bool renderGraphExecuting() const { return _renderGraphExecuting; }
+		void setRenderGraphExecuting(bool executing) { _renderGraphExecuting = executing; }
+
 	private:
+		bool _renderGraphExecuting = false;
 		virtual bool _initialize(const backend_Impl_Factory& impl, int32_t antialiasing, swap_interval_mode mode, optional<float> mipLodBias, uint32_t depthMapResolution) = 0;
 	};
 

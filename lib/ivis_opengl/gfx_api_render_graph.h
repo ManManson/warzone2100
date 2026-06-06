@@ -48,9 +48,9 @@ struct RenderPassDesc
 	// For Depth passes: which cascade index
 	size_t depthPassIndex = 0;
 
-	// The function that records draw calls for this pass.
-	// When called, the context is already configured for this pass
-	// (correct command buffer, FBO, viewport, etc.)
+	// Records draw calls for this pass. Must only invoke gfx_api draw/bind APIs.
+	// When called, executeRenderGraph() is active and the backend has configured
+	// the pass (command buffer, framebuffer, viewport, etc.).
 	using RecordFunc = std::function<void()>;
 	RecordFunc recordFunc;
 
