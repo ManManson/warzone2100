@@ -70,6 +70,7 @@
 #include "lib/ivis_opengl/piestate.h"
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/ivis_opengl/piemode.h"
+#include "lib/ivis_opengl/gfx_api_render_graph.h"
 #include "lib/ivis_opengl/screen.h"
 #include "lib/netplay/netplay.h"
 #include "lib/netplay/netreplay.h"
@@ -1277,7 +1278,11 @@ void mainLoop()
 		}
 		if (!frameEnded && loop_GetVideoStatus())
 		{
-			videoLoop(); // Display the video if necessary
+			pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "VideoPlayback",
+				[]
+				{
+					videoLoop(); // Display the video if necessary
+				});
 			pie_ScreenFrameRenderEnd();
 		}
 		else if (!frameEnded) switch (GetGameMode())

@@ -54,4 +54,12 @@ void pie_ScreenFrameRenderEnd();
 void pie_UpdateSurfaceGeometry();
 UDWORD pie_GetResScalingFactor();
 
+namespace gfx_api {
+
+class RenderGraph;
+
+} // namespace gfx_api
+
+gfx_api::RenderGraph& pie_GetFrameRenderGraph();
+
 #endif

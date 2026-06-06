@@ -4181,15 +4181,6 @@ void gl_context::_beginRenderPassImpl()
 	glClear(clearFlags);
 }
 
-void gl_context::beginRenderPass()
-{
-#if defined(__EMSCRIPTEN__)
-	_beginRenderPassImpl();
-#else
-	// no-op everywhere else
-#endif
-}
-
 [[noreturn]] static void glContextHandleOOMError()
 {
 	wzDisplayFatalGfxBackendFailure("GL_OUT_OF_MEMORY");
@@ -4197,8 +4188,13 @@ void gl_context::beginRenderPass()
 	abort();
 }
 
-void gl_context::endRenderPass()
+void gl_context::submitFrame()
 {
+	if (!defaultPassStarted)
+	{
+		return;
+	}
+
 	frameNum = std::max<size_t>(frameNum + 1, 1);
 	backend_impl->swapWindow();
 	glUseProgram(0);
@@ -4206,6 +4202,7 @@ void gl_context::endRenderPass()
 #if !defined(__EMSCRIPTEN__)
 	_beginRenderPassImpl();
 #endif
+	defaultPassStarted = false;
 
 #if defined(WZ_GL_KHR_DEBUG_SUPPORTED)
 	if (khrCallbackOomDetected.load())
@@ -4213,6 +4210,52 @@ void gl_context::endRenderPass()
 		glContextHandleOOMError();
 	}
 #endif
+}
+
+void gl_context::beginPass(gfx_api::RenderPassType type, size_t index)
+{
+	ASSERT_OR_RETURN(, !hasActivePass, "beginPass called while another pass is active");
+	hasActivePass = true;
+	activePassType = type;
+
+	switch (type)
+	{
+	case gfx_api::RenderPassType::Depth:
+		beginDepthPass(index);
+		break;
+	case gfx_api::RenderPassType::Scene:
+		beginSceneRenderPass();
+		break;
+	case gfx_api::RenderPassType::Default:
+#if defined(__EMSCRIPTEN__)
+		if (!defaultPassStarted)
+		{
+			_beginRenderPassImpl();
+		}
+#endif
+		defaultPassStarted = true;
+		break;
+	}
+}
+
+void gl_context::endPass()
+{
+	ASSERT_OR_RETURN(, hasActivePass, "endPass called without an active pass");
+
+	switch (activePassType)
+	{
+	case gfx_api::RenderPassType::Depth:
+		endCurrentDepthPass();
+		break;
+	case gfx_api::RenderPassType::Scene:
+		endSceneRenderPass();
+		break;
+	case gfx_api::RenderPassType::Default:
+		// Keep default pass open until submitFrame.
+		break;
+	}
+
+	hasActivePass = false;
 }
 
 bool gl_context::supportsInstancedRendering()

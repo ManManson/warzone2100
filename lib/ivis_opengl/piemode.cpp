@@ -36,6 +36,7 @@
 #include "lib/ivis_opengl/piefunc.h"
 #include "lib/ivis_opengl/tex.h"
 #include "lib/ivis_opengl/pieclip.h"
+#include "lib/ivis_opengl/gfx_api_render_graph.h"
 #include "screen.h"
 
 #include <algorithm>
@@ -102,10 +103,15 @@ void pie_ScreenFrameRenderBegin()
 		return;
 	}
 	renderingFrame = true;
-	gfx_api::context::get().beginRenderPass();
+	pie_GetFrameRenderGraph().reset();
+
 	if (screen_GetBackDrop())
 	{
-		screen_Display();
+		pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "Backdrop",
+			[]
+			{
+				screen_Display();
+			});
 	}
 }
 
@@ -118,7 +124,7 @@ void pie_ScreenFrameRenderEnd()
 	}
 	renderingFrame = false;
 	screenDoDumpToDiskIfRequired();
-	gfx_api::context::get().endRenderPass();
+	pie_GetFrameRenderGraph().execute();
 	wzPerfFrame();
 }
 
@@ -137,3 +143,9 @@ UDWORD	pie_GetResScalingFactor()
 	return std::max<UDWORD>(result, 1);
 }
 
+
+gfx_api::RenderGraph& pie_GetFrameRenderGraph()
+{
+	static gfx_api::RenderGraph instance;
+	return instance;
+}

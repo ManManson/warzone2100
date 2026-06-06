@@ -830,3 +830,52 @@ bool gfx_api::context::loadTextureArrayLayerFromBaseImages(gfx_api::texture_arra
 
 	return true;
 }
+
+void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
+{
+	bool defaultPassActive = false;
+
+	for (auto& pass : passes)
+	{
+		debugStringMarker(pass.debugName.c_str());
+
+		switch (pass.type)
+		{
+		case RenderPassType::Depth:
+			beginPass(RenderPassType::Depth, pass.depthPassIndex);
+			if (pass.recordFunc)
+			{
+				pass.recordFunc();
+			}
+			endPass();
+			break;
+
+		case RenderPassType::Scene:
+			beginPass(RenderPassType::Scene);
+			if (pass.recordFunc)
+			{
+				pass.recordFunc();
+			}
+			endPass();
+			break;
+
+		case RenderPassType::Default:
+			if (!defaultPassActive)
+			{
+				beginPass(RenderPassType::Default);
+				defaultPassActive = true;
+			}
+			if (pass.recordFunc)
+			{
+				pass.recordFunc();
+			}
+			break;
+		}
+	}
+
+	if (defaultPassActive)
+	{
+		endPass();
+		submitFrame();
+	}
+}

@@ -35,6 +35,7 @@
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/ivis_opengl/piematrix.h"
 #include "lib/ivis_opengl/piemode.h"
+#include "lib/ivis_opengl/gfx_api_render_graph.h"
 #include "lib/framework/fixedpoint.h"
 #include "lib/ivis_opengl/piefunc.h"
 #include "lib/ivis_opengl/screen.h"
@@ -1039,6 +1040,9 @@ void draw3DScene()
 
 	wzPerfBegin(PERF_MISC, "3D scene - misc and text");
 
+	pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "3DSceneOverlays",
+		[]
+	{
 	pie_BeginInterface();
 
 	/* Show the drag Box if necessary */
@@ -1150,6 +1154,7 @@ void draw3DScene()
 		txtCurrentTime.setText(buildInfo, font_small);
 		txtCurrentTime.render(RET_X + 134, 422 + E_H, WZCOL_TEXT_MEDIUM);
 	}
+	});
 
 	while (playerPos.r.y > DEG(360))
 	{
@@ -1173,6 +1178,9 @@ void draw3DScene()
 
 	structureEffects(); // add fancy effects to structures
 
+	pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "3DSceneDebugOverlays",
+		[]
+	{
 	showDroidSensorRanges(); //shows sensor data for units/droids/whatever...-Q 5-10-05
 	if (CauseCrash)
 	{
@@ -1210,6 +1218,7 @@ void draw3DScene()
 	{
 		showDroidPaths(gameWorld);
 	}
+	});
 
 	wzPerfEnd(PERF_MISC);
 }
@@ -1489,6 +1498,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	pie_UpdateLightmap(getTerrainLightmapTexture(), getModelUVLightmapMatrix());
 	pie_FinalizeMeshes(currentGameFrame);
 
+	auto& renderGraph = pie_GetFrameRenderGraph();
 
 	// shadow/depth-mapping passes
 	ShadowCascadesInfo shadowCascadesInfo;
@@ -1501,61 +1511,64 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 
 	if (currShadowMode == ShadowMode::Shadow_Mapping)
 	{
-		WZ_PROFILE_SCOPE(ShadowMapping);
 		for (size_t i = 0; i < numShadowCascades; ++i)
 		{
-			gfx_api::context::get().beginDepthPass(i);
-			if (bDrawTerrainShadows)
+			WZ_PROFILE_SCOPE(ShadowMapping);
+			renderGraph.addDepthPass(i, "ShadowCascade" + std::to_string(i),
+				[cascadeProjMatrix = shadowCascades[i].projectionMatrix,
+					cascadeViewMatrix = shadowCascades[i].viewMatrix,
+					cameraPos, shadowCascadesInfo]
 			{
-				drawTerrainDepthOnly(shadowCascades[i].projectionMatrix * shadowCascades[i].viewMatrix);
-			}
-			pie_DrawAllMeshes(currentGameFrame, shadowCascades[i].projectionMatrix, shadowCascades[i].viewMatrix, cameraPos, shadowCascadesInfo, true);
-			gfx_api::context::get().endCurrentDepthPass();
+				if (bDrawTerrainShadows)
+				{
+					drawTerrainDepthOnly(cascadeProjMatrix * cascadeViewMatrix);
+				}
+				pie_DrawAllMeshes(currentGameFrame, cascadeProjMatrix, cascadeViewMatrix, cameraPos, shadowCascadesInfo, true);
+			});
 		}
 	}
+
 	// start main render pass
-
-
-	gfx_api::context::get().beginSceneRenderPass();
-
-	// now we are about to draw the terrain
-	wzPerfBegin(PERF_TERRAIN, "3D scene - terrain");
-	pie_SetFogStatus(true);
-	drawTerrain(perspectiveViewMatrix, viewMatrix, cameraPos, -getTheSun(), shadowCascadesInfo);
-	wzPerfEnd(PERF_TERRAIN);
-
-	// draw skybox
-	// NOTE: Must come *after* drawTerrain *if* using the fallback (old) terrain shaders
-	wzPerfBegin(PERF_SKYBOX, "3D scene - skybox");
-	renderSurroundings(pie_SkyboxPerspectiveGet(), baseViewMatrix);
-	wzPerfEnd(PERF_SKYBOX);
-
-	wzPerfBegin(PERF_WATER, "3D scene - water");
-	// prepare for the water and the lightmap
-	pie_SetFogStatus(true);
-	// also, make sure we can use world coordinates directly
-	drawWater(perspectiveViewMatrix, viewMatrix, cameraPos, -getTheSun(), shadowCascadesInfo);
-	wzPerfEnd(PERF_WATER);
-
-	wzPerfBegin(PERF_MODELS, "3D scene - models");
+	renderGraph.addRenderPass(gfx_api::RenderPassType::Scene, "ScenePass",
+		[perspectiveViewMatrix, viewMatrix, cameraPos,
+			shadowCascadesInfo, baseViewMatrix, perspectiveMatrix]
 	{
-		WZ_PROFILE_SCOPE(pie_DrawAllMeshes);
-		pie_DrawAllMeshes(currentGameFrame, perspectiveMatrix, viewMatrix, cameraPos, shadowCascadesInfo, false);
-	}
-	wzPerfEnd(PERF_MODELS);
+		// now we are about to draw the terrain
+		wzPerfBegin(PERF_TERRAIN, "3D scene - terrain");
+		pie_SetFogStatus(true);
+		drawTerrain(perspectiveViewMatrix, viewMatrix, cameraPos, -getTheSun(), shadowCascadesInfo);
+		wzPerfEnd(PERF_TERRAIN);
 
-	if (!gamePaused())
-	{
-		doConstructionLines(viewMatrix);
-	}
-	locateMouse();
+		// draw skybox
+		// NOTE: Must come *after* drawTerrain *if* using the fallback (old) terrain shaders
+		wzPerfBegin(PERF_SKYBOX, "3D scene - skybox");
+		renderSurroundings(pie_SkyboxPerspectiveGet(), baseViewMatrix);
+		wzPerfEnd(PERF_SKYBOX);
 
-	{
-		WZ_PROFILE_SCOPE(endSceneRenderPass);
-		gfx_api::context::get().endSceneRenderPass();
-	}
+		wzPerfBegin(PERF_WATER, "3D scene - water");
+		// prepare for the water and the lightmap
+		pie_SetFogStatus(true);
+		// also, make sure we can use world coordinates directly
+		drawWater(perspectiveViewMatrix, viewMatrix, cameraPos, -getTheSun(), shadowCascadesInfo);
+		wzPerfEnd(PERF_WATER);
+
+		wzPerfBegin(PERF_MODELS, "3D scene - models");
+		{
+			WZ_PROFILE_SCOPE(pie_DrawAllMeshes);
+			pie_DrawAllMeshes(currentGameFrame, perspectiveMatrix, viewMatrix, cameraPos, shadowCascadesInfo, false);
+		}
+		wzPerfEnd(PERF_MODELS);
+
+		if (!gamePaused())
+		{
+			doConstructionLines(viewMatrix);
+		}
+		locateMouse();
+	});
 
 	// Draw the scene to the default framebuffer
+	renderGraph.addRenderPass(gfx_api::RenderPassType::Default, "SceneBlit",
+		[]
 	{
 		WZ_PROFILE_SCOPE(copyToFBO);
 		gfx_api::WorldToScreenPSO::get().bind();
@@ -1564,7 +1577,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 		gfx_api::WorldToScreenPSO::get().bind_textures(gfx_api::context::get().getSceneTexture());
 		gfx_api::WorldToScreenPSO::get().draw(3, 0);
 		gfx_api::WorldToScreenPSO::get().unbind_vertex_buffers(pScreenTriangleVBO);
-	}
+	});
 }
 
 /// Initialise the fog, skybox and some other stuff

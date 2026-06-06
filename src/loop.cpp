@@ -32,6 +32,7 @@
 #include "lib/ivis_opengl/pieblitfunc.h"
 #include "lib/ivis_opengl/piestate.h" //ivis render code
 #include "lib/ivis_opengl/piemode.h"
+#include "lib/ivis_opengl/gfx_api_render_graph.h"
 // FIXME Direct iVis implementation include!
 #include "lib/ivis_opengl/screen.h"
 
@@ -337,17 +338,21 @@ static GAMECODE renderLoop()
 			}
 			displayWorld();
 		}
-		wzPerfBegin(PERF_GUI, "User interface");
-		WZ_PROFILE_SCOPE(DrawUI);
-		/* Display the in game interface */
-		pie_SetFogStatus(false);
+		pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "InGameUI",
+			[]
+			{
+				wzPerfBegin(PERF_GUI, "User interface");
+				WZ_PROFILE_SCOPE(DrawUI);
+				/* Display the in game interface */
+				pie_SetFogStatus(false);
 
-		if (getWidgetsStatus())
-		{
-			intDisplayWidgets();
-		}
-		pie_SetFogStatus(true);
-		wzPerfEnd(PERF_GUI);
+				if (getWidgetsStatus())
+				{
+					intDisplayWidgets();
+				}
+				pie_SetFogStatus(true);
+				wzPerfEnd(PERF_GUI);
+			});
 	}
 
 	pie_GetResetCounts(&loopPieCount, &loopPolyCount);

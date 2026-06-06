@@ -6051,15 +6051,6 @@ gfx_api::abstract_texture* VkRoot::getSceneTexture()
 	return pSceneImage;
 }
 
-void VkRoot::beginRenderPass()
-{
-	if (startedRenderPass)
-	{
-		return; // don't double-start the render pass
-	}
-	startRenderPass();
-}
-
 bool VkRoot::endRenderPass_RecreateSwapchain(const vk::Result& reason)
 {
 	try {
@@ -6094,8 +6085,13 @@ bool VkRoot::endRenderPass_RecreateSwapchain(const vk::Result& reason)
 	return false;
 }
 
-void VkRoot::endRenderPass()
+void VkRoot::submitFrame()
 {
+	if (!startedRenderPass)
+	{
+		return;
+	}
+
 	frameNum = std::max<size_t>(frameNum + 1, 1);
 
 	currentPSO = nullptr;
@@ -6345,6 +6341,49 @@ void VkRoot::endRenderPass()
 	buffering_mechanism::get_current_resources().copyCmdBuffer().begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
 	buffering_mechanism::get_current_resources().depthPassDrawCmdBuffer().begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
 	buffering_mechanism::get_current_resources().scenePassDrawCmdBuffer().begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), vkDynLoader);
+}
+
+void VkRoot::beginPass(gfx_api::RenderPassType type, size_t index)
+{
+	ASSERT_OR_RETURN(, !hasActivePass, "beginPass called while another pass is active");
+	hasActivePass = true;
+	activePassType = type;
+
+	switch (type)
+	{
+	case gfx_api::RenderPassType::Depth:
+		beginDepthPass(index);
+		break;
+	case gfx_api::RenderPassType::Scene:
+		beginSceneRenderPass();
+		break;
+	case gfx_api::RenderPassType::Default:
+		if (!startedRenderPass)
+		{
+			startRenderPass();
+		}
+		break;
+	}
+}
+
+void VkRoot::endPass()
+{
+	ASSERT_OR_RETURN(, hasActivePass, "endPass called without an active pass");
+
+	switch (activePassType)
+	{
+	case gfx_api::RenderPassType::Depth:
+		endCurrentDepthPass();
+		break;
+	case gfx_api::RenderPassType::Scene:
+		endSceneRenderPass();
+		break;
+	case gfx_api::RenderPassType::Default:
+		// Keep default render pass open until submitFrame().
+		break;
+	}
+
+	hasActivePass = false;
 }
 
 void VkRoot::startRenderPass()

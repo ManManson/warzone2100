@@ -29,6 +29,7 @@
 // FIXME Direct iVis implementation include!
 #include "lib/ivis_opengl/pieblitfunc.h"
 #include "lib/ivis_opengl/piemode.h"
+#include "lib/ivis_opengl/gfx_api_render_graph.h"
 #include "lib/ivis_opengl/piestate.h"
 #include "lib/ivis_opengl/screen.h"
 #include "lib/netplay/connection_provider_registry.h"
@@ -216,9 +217,13 @@ TITLECODE titleLoop()
 	pie_SetFogStatus(false);
 	if (!headlessGameMode() && screen_RestartBackDrop())
 	{
-		// changed value - draw the backdrop
-		// otherwise, pie_ScreenFrameRenderBegin handles drawing it
-		screen_Display();
+		// pie_ScreenFrameRenderBegin has already run for this frame,
+		// so queue the backdrop explicitly when it is re-enabled mid-frame.
+		pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "Backdrop",
+			[]
+			{
+				screen_Display();
+			});
 	}
 	wzShowMouse(true);
 
@@ -287,6 +292,18 @@ TITLECODE titleLoop()
 	{
 		return RetCode; // don't flip
 	}
+
+	if (!headlessGameMode() && RetCode == TITLECODE_CONTINUE && wzTitleUICurrent)
+	{
+		// Run logic above, then queue the current title UI's rendering as a render pass.
+		std::shared_ptr<WzTitleUI> currentForRender = wzTitleUICurrent;
+		pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "TitleUI",
+			[currentForRender]
+			{
+				currentForRender->render();
+			});
+	}
+
 	NETflush();  // Send any pending network data.
 
 	audio_Update();
@@ -318,10 +335,18 @@ void presentLoadingScreenForCurrentFrame()
 
 	if (screen_GetBackDrop())
 	{
-		screen_Display();
+		pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "LoadingBackdrop",
+			[]
+			{
+				screen_Display();
+			});
 	}
 
-	renderLoadingScreenPass();
+	pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "LoadingScreen",
+		[]
+		{
+			renderLoadingScreenPass();
+		});
 }
 
 #if defined(__EMSCRIPTEN__)
