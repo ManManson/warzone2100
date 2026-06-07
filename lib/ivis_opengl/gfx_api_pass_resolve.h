@@ -30,6 +30,9 @@ struct PassOutputView
 /// All passes share this single path; factories set explicit attachments.
 bool resolvePassDescription(RenderPassDesc& pass);
 
+/// Fill unset AttachmentDesc::storeOp from attachment role and pipeline surface usage.
+void applyDefaultAttachmentStoreOps(RenderPassDesc& pass);
+
 /// Select the backend execution path after resolvePassDescription().
 ResolvedPassRoute routeResolvedPass(const RenderPassDesc& pass);
 

@@ -156,6 +156,7 @@ RenderPassDesc makeDepthCascadePass(size_t cascadeIndex, const std::string& debu
 	const size_t depthDim = ctx.getDepthPassDimensions(cascadeIndex);
 	pass.depthAttachment = makePipelineSurfaceAttachment(PipelineSurfaceId::ShadowMap,
 		AttachmentLoadOp::Clear, ClearValue::depthStencilClear());
+	pass.depthAttachment->storeOp = AttachmentStoreOp::Store;
 	pass.depthAttachment->arrayLayer = static_cast<uint32_t>(cascadeIndex);
 	if (depthDim > 0)
 	{
@@ -175,16 +176,20 @@ RenderPassDesc makeScenePass(const std::string& debugName, RenderPassDesc::Recor
 	{
 		pass.colorAttachments.push_back(makePipelineSurfaceAttachment(PipelineSurfaceId::SceneMSAAColor,
 			AttachmentLoadOp::Clear));
+		pass.colorAttachments[0].storeOp = AttachmentStoreOp::DontCare;
 		pass.resolveAttachment = makePipelineSurfaceAttachment(PipelineSurfaceId::SceneColor,
 			AttachmentLoadOp::DontCare);
+		pass.resolveAttachment->storeOp = AttachmentStoreOp::Store;
 	}
 	else
 	{
 		pass.colorAttachments.push_back(makePipelineSurfaceAttachment(PipelineSurfaceId::SceneColor,
 			AttachmentLoadOp::Clear));
+		pass.colorAttachments[0].storeOp = AttachmentStoreOp::Store;
 	}
 	pass.depthAttachment = makePipelineSurfaceAttachment(PipelineSurfaceId::SceneDepth,
 		AttachmentLoadOp::Clear, ClearValue::depthStencilClear());
+	pass.depthAttachment->storeOp = AttachmentStoreOp::Invalidate;
 
 	abstract_texture* sceneColor = ctx.getPipelineSurface(PipelineSurfaceId::SceneColor);
 	const auto dims = ctx.getRenderTargetDimensions(sceneColor);

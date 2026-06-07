@@ -3,6 +3,8 @@
 #include <array>
 #include <cstdint>
 
+#include <nonstd/optional.hpp>
+
 namespace gfx_api
 {
 
@@ -14,6 +16,15 @@ enum class AttachmentLoadOp
 	Clear,
 	Load,
 	DontCare
+};
+
+/// Store operation for a render pass attachment (post-pass contract).
+enum class AttachmentStoreOp : uint8_t
+{
+	Store,      // keep contents (shadow depth, resolve output, transient scratch)
+	DontCare,   // contents not needed after pass (MSAA intermediate color)
+	Resolve,    // MSAA color → resolve attachment (VK subpass; GL blit target)
+	Invalidate, // tile-friendly discard (scene depth/stencil after scene pass)
 };
 
 /// Clear values for color and depth/stencil attachments.
@@ -53,6 +64,8 @@ struct AttachmentDesc
 	AttachmentSource source = AttachmentSource::Texture;
 	abstract_texture* texture = nullptr;
 	AttachmentLoadOp loadOp = AttachmentLoadOp::Clear;
+	/// When unset, resolved by applyDefaultAttachmentStoreOps() during pass resolution.
+	nonstd::optional<AttachmentStoreOp> storeOp;
 	ClearValue clearValue;
 	uint32_t mipLevel = 0;
 	uint32_t arrayLayer = 0;

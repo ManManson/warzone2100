@@ -169,7 +169,94 @@ bool resolveTransientAttachments(RenderPassDesc& pass, gfx_api::context& ctx, ui
 	return true;
 }
 
+void setDefaultStoreOpIfUnset(AttachmentDesc& attachment, AttachmentStoreOp storeOp)
+{
+	if (!attachment.storeOp.has_value())
+	{
+		attachment.storeOp = storeOp;
+	}
+}
+
+nonstd::optional<PipelineSurfaceUsage> getAttachmentSurfaceUsage(gfx_api::context& ctx,
+	const AttachmentDesc& attachment)
+{
+	if (attachment.texture == nullptr)
+	{
+		return nonstd::nullopt;
+	}
+	const auto surfaceId = ctx.findPipelineSurfaceId(attachment.texture);
+	if (!surfaceId.has_value())
+	{
+		return nonstd::nullopt;
+	}
+	return ctx.pipelineSurfaceMeta(surfaceId.value()).usage;
+}
+
+AttachmentStoreOp defaultDepthStoreOp(gfx_api::context& ctx, const RenderPassDesc& pass,
+	const AttachmentDesc& depthAttachment)
+{
+	const auto usage = getAttachmentSurfaceUsage(ctx, depthAttachment);
+	if (usage.has_value())
+	{
+		if (usage.value() == PipelineSurfaceUsage::DepthOnly)
+		{
+			return AttachmentStoreOp::Store;
+		}
+		if (usage.value() == PipelineSurfaceUsage::DepthStencil)
+		{
+			return AttachmentStoreOp::Invalidate;
+		}
+	}
+	if (passIsDepthOnly(pass))
+	{
+		return AttachmentStoreOp::Store;
+	}
+	if (attachmentDepthHasStencil(depthAttachment))
+	{
+		return AttachmentStoreOp::Invalidate;
+	}
+	return AttachmentStoreOp::Store;
+}
+
 } // namespace
+
+void applyDefaultAttachmentStoreOps(RenderPassDesc& pass)
+{
+	auto& ctx = gfx_api::context::get();
+	const bool needsMsaaResolve = passNeedsMsaaResolve(pass);
+
+	for (size_t i = 0; i < pass.colorAttachments.size(); ++i)
+	{
+		auto& colorAttachment = pass.colorAttachments[i];
+		if (colorAttachment.isSwapchain())
+		{
+			setDefaultStoreOpIfUnset(colorAttachment, AttachmentStoreOp::Store);
+			continue;
+		}
+
+		if (needsMsaaResolve && i == 0
+			&& colorAttachment.texture != nullptr
+			&& ctx.isMultisampledColorAttachment(colorAttachment.texture))
+		{
+			setDefaultStoreOpIfUnset(colorAttachment, AttachmentStoreOp::DontCare);
+		}
+		else
+		{
+			setDefaultStoreOpIfUnset(colorAttachment, AttachmentStoreOp::Store);
+		}
+	}
+
+	if (pass.resolveAttachment.has_value())
+	{
+		setDefaultStoreOpIfUnset(pass.resolveAttachment.value(), AttachmentStoreOp::Store);
+	}
+
+	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
+	{
+		setDefaultStoreOpIfUnset(pass.depthAttachment.value(),
+			defaultDepthStoreOp(ctx, pass, pass.depthAttachment.value()));
+	}
+}
 
 bool resolvePassDescription(RenderPassDesc& pass)
 {
@@ -197,6 +284,8 @@ bool resolvePassDescription(RenderPassDesc& pass)
 		ASSERT(false, "Failed to resolve transient attachments for pass \"%s\"", pass.debugName.c_str());
 		return false;
 	}
+
+	applyDefaultAttachmentStoreOps(pass);
 
 	return true;
 }
