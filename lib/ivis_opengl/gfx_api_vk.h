@@ -621,7 +621,10 @@ struct VkTransientDepthStencilImage final : public gfx_api::abstract_texture
 	vk::Device dev;
 	vk::Image image = {};
 	vk::DeviceMemory memory = {};
+	/// Depth+stencil view for framebuffer attachment.
 	vk::ImageView view = {};
+	/// Depth-only view for shader sampling (descriptor sets require a single aspect).
+	vk::ImageView depthSampleView = {};
 	vk::Format imageFormat = vk::Format::eUndefined;
 	uint32_t width = 0;
 	uint32_t height = 0;
