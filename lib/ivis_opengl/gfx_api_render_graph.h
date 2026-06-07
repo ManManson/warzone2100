@@ -37,10 +37,6 @@ struct RenderPassDesc
 	optional<AttachmentDesc> resolveAttachment;
 	optional<std::pair<uint32_t, uint32_t>> viewportSize;
 	std::vector<abstract_texture*> inputTextures;
-
-	// Swapchain passes: mirrored from the swapchain color attachment after resolve.
-	AttachmentLoadOp swapchainLoadOp = AttachmentLoadOp::Load;
-	bool swapchainLoadOpExplicit = false;
 };
 
 /// Fluent builder for RenderPassDesc. Returns a pass description by value;

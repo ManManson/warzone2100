@@ -200,19 +200,6 @@ void resolveMissingAttachments(RenderPassDesc& pass, gfx_api::context& ctx)
 	}
 }
 
-void syncSwapchainLoadOpFromAttachments(RenderPassDesc& pass)
-{
-	for (const auto& colorAttachment : pass.colorAttachments)
-	{
-		if (colorAttachment.isSwapchain())
-		{
-			pass.swapchainLoadOp = colorAttachment.loadOp;
-			pass.swapchainLoadOpExplicit = true;
-			return;
-		}
-	}
-}
-
 bool resolveTransientAttachments(RenderPassDesc& pass, gfx_api::context& ctx, uint32_t width, uint32_t height)
 {
 	const auto colorFormat = pixel_format::FORMAT_RGBA8_UNORM_PACK8;
@@ -249,7 +236,6 @@ bool resolvePassDescription(RenderPassDesc& pass)
 	auto& ctx = gfx_api::context::get();
 
 	resolveMissingAttachments(pass, ctx);
-	syncSwapchainLoadOpFromAttachments(pass);
 
 	uint32_t width = 0;
 	uint32_t height = 0;
@@ -291,10 +277,24 @@ bool resolvePassDescription(RenderPassDesc& pass)
 	return true;
 }
 
+nonstd::optional<AttachmentLoadOp> getSwapchainColorLoadOp(const RenderPassDesc& pass)
+{
+	for (const auto& colorAttachment : pass.colorAttachments)
+	{
+		if (colorAttachment.isSwapchain())
+		{
+			return colorAttachment.loadOp;
+		}
+	}
+	return nonstd::nullopt;
+}
+
 bool canExtendSwapchainBatch(const RenderPassDesc& pass)
 {
+	const auto loadOp = getSwapchainColorLoadOp(pass);
 	return routeResolvedPass(pass) == ResolvedPassRoute::Swapchain
-		&& pass.swapchainLoadOp != AttachmentLoadOp::Clear;
+		&& loadOp.has_value()
+		&& loadOp.value() != AttachmentLoadOp::Clear;
 }
 
 ResolvedPassRoute routeResolvedPass(const RenderPassDesc& pass)

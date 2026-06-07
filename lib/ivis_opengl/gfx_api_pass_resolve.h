@@ -1,5 +1,9 @@
 #pragma once
 
+#include "gfx_api_attachment.h"
+
+#include <nonstd/optional.hpp>
+
 namespace gfx_api
 {
 
@@ -24,5 +28,8 @@ ResolvedPassRoute routeResolvedPass(const RenderPassDesc& pass);
 /// True when a resolved swapchain pass can share an open swapchain render pass batch.
 /// Clear load ops start a new batch (Vulkan render pass boundary).
 bool canExtendSwapchainBatch(const RenderPassDesc& pass);
+
+/// Load op of the first swapchain color attachment, if any.
+nonstd::optional<AttachmentLoadOp> getSwapchainColorLoadOp(const RenderPassDesc& pass);
 
 } // namespace gfx_api

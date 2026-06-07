@@ -4227,7 +4227,8 @@ void gl_context::beginSwapchainPass(const gfx_api::RenderPassDesc& pass)
 	{
 		glViewport(0, 0, static_cast<GLsizei>(viewportWidth), static_cast<GLsizei>(viewportHeight));
 	}
-	if (pass.swapchainLoadOp == gfx_api::AttachmentLoadOp::Clear)
+	const auto loadOp = gfx_api::getSwapchainColorLoadOp(pass);
+	if (loadOp.has_value() && loadOp.value() == gfx_api::AttachmentLoadOp::Clear)
 	{
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 		glDepthMask(GL_TRUE);

@@ -6827,7 +6827,8 @@ void VkRoot::beginSwapchainPass(gfx_api::RenderPassDesc& pass)
 	buffering_mechanism::get_current_resources().ensureDrawCmdBufferBegun();
 	frameHasDrawCommands = true;
 
-	const bool clear = pass.swapchainLoadOp == gfx_api::AttachmentLoadOp::Clear;
+	const auto loadOp = gfx_api::getSwapchainColorLoadOp(pass);
+	const bool clear = loadOp.has_value() && loadOp.value() == gfx_api::AttachmentLoadOp::Clear;
 	const vk::RenderPass renderPass = clear ? defaultRenderpass().rp : defaultRenderpass().rpLoad;
 	ASSERT(renderPass, "Swapchain render pass is not initialized");
 

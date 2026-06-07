@@ -57,8 +57,6 @@ RenderPassBuilder& RenderPassBuilder::transientColorAttachment(AttachmentLoadOp 
 RenderPassBuilder& RenderPassBuilder::swapchainAttachment(AttachmentLoadOp loadOp, ClearValue clearValue)
 {
 	_desc.colorAttachments.push_back(AttachmentDesc::swapchain(loadOp, clearValue));
-	_desc.swapchainLoadOp = loadOp;
-	_desc.swapchainLoadOpExplicit = true;
 	return *this;
 }
 
@@ -148,8 +146,6 @@ RenderPassDesc makeSwapchainPass(const std::string& debugName, AttachmentLoadOp 
 	RenderPassDesc pass;
 	pass.debugName = debugName;
 	pass.colorAttachments.push_back(AttachmentDesc::swapchain(loadOp));
-	pass.swapchainLoadOp = loadOp;
-	pass.swapchainLoadOpExplicit = true;
 	pass.recordFunc = std::move(recordFunc);
 	return pass;
 }
