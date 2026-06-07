@@ -3,6 +3,8 @@
 #include "gfx_api_attachment.h"
 #include "gfx_api_render_graph.h"
 
+#include <unordered_set>
+
 #include <nonstd/optional.hpp>
 
 namespace gfx_api
@@ -51,6 +53,12 @@ bool passNeedsMsaaResolve(const RenderPassDesc& pass);
 
 /// True when the resolved depth attachment includes a stencil component (scene depth, not shadow map).
 bool attachmentDepthHasStencil(const AttachmentDesc& attachment);
+
+/// True when the texture is a pipeline depth surface sampled in shaders (shadow map).
+bool isDepthShaderSampledSurface(abstract_texture* texture);
+
+/// All non-null color, depth, and resolve attachment textures for a pass.
+std::unordered_set<abstract_texture*> getPassAttachmentTextures(const RenderPassDesc& pass);
 
 /// Resolve a producer pass output attachment for readPassOutput().
 nonstd::optional<PassOutputView> getPassOutputAttachment(

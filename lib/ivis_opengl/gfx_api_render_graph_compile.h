@@ -2,15 +2,37 @@
 
 #include "gfx_api_render_graph.h"
 
+#include <cstdint>
 #include <vector>
+
+#include <nonstd/optional.hpp>
 
 namespace gfx_api
 {
+
+/// Backend-agnostic image layout state tracked during graph compilation.
+enum class CompileImageLayout : uint8_t
+{
+	Undefined,
+	ShaderReadOnly,
+	DepthReadOnly,
+	ColorAttachment,
+	DepthAttachment,
+	Present,
+};
 
 struct ImageBarrierOp
 {
 	abstract_texture* texture = nullptr;
 	bool isDepth = false;
+	CompileImageLayout oldLayout = CompileImageLayout::Undefined;
+	CompileImageLayout newLayout = CompileImageLayout::Undefined;
+};
+
+struct LayoutStateUpdate
+{
+	abstract_texture* texture = nullptr;
+	CompileImageLayout layout = CompileImageLayout::Undefined;
 };
 
 struct CompiledPass
@@ -20,7 +42,22 @@ struct CompiledPass
 	bool skipped = false;
 	std::vector<ResolvedRead> resolvedReads;
 	std::vector<ImageBarrierOp> prePassBarriers;
+	std::vector<LayoutStateUpdate> postPassLayoutUpdates;
 };
+
+enum class PostPassAttachmentKind : uint8_t
+{
+	Color,
+	Resolve,
+	Depth,
+};
+
+/// Post-pass layout for an attachment write; nullopt when compile state should not advance.
+nonstd::optional<CompileImageLayout> getAttachmentPostPassLayout(
+	const RenderPassDesc& pass,
+	const AttachmentDesc& attachment,
+	PostPassAttachmentKind kind,
+	size_t colorIndex = 0);
 
 class CompiledRenderGraph
 {

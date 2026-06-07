@@ -152,6 +152,46 @@ RenderPassContext buildRenderPassContext(const CompiledPass& compiledPass)
 	return RenderPassContext(compiledPass.desc, compiledPass.resolvedReads);
 }
 
+nonstd::optional<CompileImageLayout> getAttachmentPostPassLayout(
+	const RenderPassDesc& pass,
+	const AttachmentDesc& attachment,
+	PostPassAttachmentKind kind,
+	size_t colorIndex)
+{
+	if (attachment.texture == nullptr)
+	{
+		return nonstd::nullopt;
+	}
+
+	switch (kind)
+	{
+	case PostPassAttachmentKind::Color:
+		if (attachment.isSwapchain())
+		{
+			return nonstd::nullopt;
+		}
+		if (passNeedsMsaaResolve(pass) && colorIndex == 0)
+		{
+			return nonstd::nullopt;
+		}
+		return CompileImageLayout::ShaderReadOnly;
+	case PostPassAttachmentKind::Resolve:
+		if (!passNeedsMsaaResolve(pass))
+		{
+			return nonstd::nullopt;
+		}
+		return CompileImageLayout::ShaderReadOnly;
+	case PostPassAttachmentKind::Depth:
+		if (isDepthShaderSampledSurface(attachment.texture) && passIsDepthOnly(pass))
+		{
+			return CompileImageLayout::DepthReadOnly;
+		}
+		return CompileImageLayout::DepthAttachment;
+	}
+
+	return nonstd::nullopt;
+}
+
 bool CompiledRenderGraph::compile(std::vector<RenderPassDesc>& descs)
 {
 	_passes.clear();
