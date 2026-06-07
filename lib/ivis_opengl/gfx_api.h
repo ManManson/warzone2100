@@ -37,6 +37,7 @@
 #include "screen.h"
 #include "pietypes.h"
 #include "gfx_api_formats_def.h"
+#include "gfx_api_pipeline_surfaces.h"
 #include "gfx_api_render_graph.h"
 
 #include <glm/glm.hpp>
@@ -411,6 +412,9 @@ namespace gfx_api
 		virtual size_t getDepthPassDimensions(size_t idx) { return 0; }
 		virtual gfx_api::abstract_texture* getDepthTexture() { return nullptr; }
 		virtual gfx_api::abstract_texture* getSceneTexture() { return nullptr; }
+		virtual gfx_api::abstract_texture* getPipelineSurface(PipelineSurfaceId id) { return nullptr; }
+		virtual bool isSceneMSAAEnabled() const { return false; }
+		virtual pixel_format getDepthStencilFormat() const { return pixel_format::invalid; }
 
 		// Transient offscreen render targets pooled via FrameResourceCache (LegitVulkan ImageCache).
 		// releaseTransientRenderTargets() at graph reset; purgeFrameResources() after submitFrame().

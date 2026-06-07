@@ -22,6 +22,7 @@
 #include "gfx_api.h"
 #include "gfx_api_frame_resource_cache.h"
 #include "gfx_api_pass_resolve.h"
+#include "gfx_api_pipeline_surfaces.h"
 
 #if defined(__EMSCRIPTEN__)
 # define WZ_STATIC_GL_BINDINGS
@@ -146,6 +147,28 @@ public:
 	GLenum target() const;
 	unsigned id() const;
 	void unbind();
+};
+
+struct gl_gpurendered_renderbuffer final : public gfx_api::abstract_texture
+{
+	friend struct gl_context;
+	GLuint _id = 0;
+	GLsizei _samples = 0;
+	uint32_t _width = 0;
+	uint32_t _height = 0;
+#if defined(WZ_DEBUG_GFX_API_LEAKS)
+	std::string debugName;
+#endif
+
+	gl_gpurendered_renderbuffer() = default;
+	~gl_gpurendered_renderbuffer() override;
+public:
+	virtual void bind() override;
+	virtual bool isArray() const override { return false; }
+	virtual size_t backend_internal_value() const override;
+	GLuint id() const { return _id; }
+	GLsizei samples() const { return _samples; }
+	bool isMultisampled() const { return _samples > 1; }
 };
 
 struct gl_buffer final : public gfx_api::buffer
@@ -332,6 +355,9 @@ struct gl_context final : public gfx_api::context
 	virtual size_t getDepthPassDimensions(size_t idx) override;
 	virtual gfx_api::abstract_texture* getDepthTexture() override;
 	virtual gfx_api::abstract_texture* getSceneTexture() override;
+	virtual gfx_api::abstract_texture* getPipelineSurface(gfx_api::PipelineSurfaceId id) override;
+	virtual bool isSceneMSAAEnabled() const override;
+	virtual gfx_api::pixel_format getDepthStencilFormat() const override;
 	virtual gfx_api::abstract_texture* acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height) override;
 	virtual void releaseTransientRenderTargets() override;
 	virtual void purgeFrameResources() override;
@@ -379,6 +405,8 @@ private:
 	gl_gpurendered_texture* create_gpurendered_texture_array(GLenum internalFormat, GLenum format, GLenum type, const size_t& width, const size_t& height, const size_t& layer_count, const std::string& filename);
 	gl_gpurendered_texture* create_depthmap_texture(const size_t& layer_count, const size_t& width, const size_t& height, const std::string& filename);
 	gl_gpurendered_texture* create_framebuffer_color_texture(GLenum internalFormat, GLenum format, GLenum type, const size_t& width, const size_t& height, const std::string& filename);
+	std::unique_ptr<gl_gpurendered_renderbuffer> create_framebuffer_renderbuffer(GLenum internalFormat, GLsizei samples,
+		uint32_t width, uint32_t height, const std::string& filename);
 	std::unique_ptr<gfx_api::abstract_texture> createTransientColorRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height, const std::string& debugName);
 	bool createDefaultTextures();
 	bool createSceneRenderpass();
@@ -456,10 +484,11 @@ private:
 	gl_gpurendered_texture* sceneTexture = nullptr;
 	std::vector<GLuint> sceneFBO;
 	std::vector<GLuint> sceneResolveFBO;
-	GLuint sceneMsaaRBO = 0;
-	GLuint sceneDepthStencilRBO = 0;
+	std::unique_ptr<gl_gpurendered_renderbuffer> _sceneMsaaSurface;
+	std::unique_ptr<gl_gpurendered_renderbuffer> _sceneDepthStencilSurface;
 	size_t sceneFBOIdx = 0;
 
+	gfx_api::PipelineSurfaceRegistry _pipelineSurfaces;
 	gfx_api::FrameResourceCache _frameResourceCache;
 
 	GLuint _customPassFBO = 0;

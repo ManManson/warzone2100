@@ -50,6 +50,7 @@
 #include "gfx_api.h"
 #include "gfx_api_frame_resource_cache.h"
 #include "gfx_api_pass_resolve.h"
+#include "gfx_api_pipeline_surfaces.h"
 #include <algorithm>
 #include <sstream>
 #include <map>
@@ -590,6 +591,29 @@ struct VkRenderedImage final : public gfx_api::abstract_texture
 	VkRenderedImage& operator=( const VkRenderedImage& ) = delete; // non copyable
 };
 
+/// Non-owning wrapper for pipeline attachment images (scene MSAA / depth) owned by VkRoot.
+struct VkAttachmentImage final : public gfx_api::abstract_texture
+{
+	vk::Image image;
+	vk::ImageView view;
+	vk::Format imageFormat = vk::Format::eUndefined;
+	uint32_t width = 0;
+	uint32_t height = 0;
+	vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1;
+
+#if defined(WZ_DEBUG_GFX_API_LEAKS)
+	std::string debugName;
+#endif
+
+	VkAttachmentImage(vk::Image _image, vk::ImageView _view, vk::Format format, uint32_t w, uint32_t h,
+		vk::SampleCountFlagBits sampleCount, const std::string& filename);
+
+	virtual ~VkAttachmentImage() override;
+	virtual void bind() override;
+	virtual bool isArray() const override { return false; }
+	virtual size_t backend_internal_value() const override;
+};
+
 struct QueueFamilyIndices
 {
 	optional<uint32_t> graphicsFamily;
@@ -845,6 +869,9 @@ public:
 	virtual size_t getDepthPassDimensions(size_t idx) override;
 	virtual gfx_api::abstract_texture* getDepthTexture() override;
 	virtual gfx_api::abstract_texture* getSceneTexture() override;
+	virtual gfx_api::abstract_texture* getPipelineSurface(gfx_api::PipelineSurfaceId id) override;
+	virtual bool isSceneMSAAEnabled() const override;
+	virtual gfx_api::pixel_format getDepthStencilFormat() const override;
 	virtual gfx_api::abstract_texture* acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height) override;
 	virtual void releaseTransientRenderTargets() override;
 	virtual void purgeFrameResources() override;
@@ -950,6 +977,9 @@ private:
 	};
 	optional<QueuedSwapModeChange> queuedSwapModeChange = nullopt;
 
+	std::unique_ptr<VkAttachmentImage> _sceneDepthSurface;
+	std::unique_ptr<VkAttachmentImage> _sceneMsaaSurface;
+	gfx_api::PipelineSurfaceRegistry _pipelineSurfaces;
 	gfx_api::FrameResourceCache _frameResourceCache;
 
 	std::vector<PassLayoutKey> _passLayoutKeys;

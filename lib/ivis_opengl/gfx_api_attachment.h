@@ -42,9 +42,8 @@ struct ClearValue
 /// Where an attachment's backing storage comes from at execute time.
 enum class AttachmentSource
 {
-	Texture,          // explicit abstract_texture*
+	Texture,          // explicit abstract_texture* or pipeline surface
 	Transient,        // per-frame cache allocation (texture resolved at execute)
-	BackendInternal,  // backend-owned surface (e.g. scene depth RBO)
 	Swapchain         // current drawable / swapchain image
 };
 
@@ -61,11 +60,6 @@ struct AttachmentDesc
 	bool shouldClear() const
 	{
 		return loadOp == AttachmentLoadOp::Clear;
-	}
-
-	bool isBackendInternal() const
-	{
-		return source == AttachmentSource::BackendInternal;
 	}
 
 	bool isTransient() const
@@ -117,17 +111,6 @@ struct AttachmentDesc
 	{
 		AttachmentDesc desc;
 		desc.source = AttachmentSource::Swapchain;
-		desc.loadOp = op;
-		desc.clearValue = clear;
-		return desc;
-	}
-
-	/// Backend-owned depth/stencil; resolved at pass begin by the backend.
-	static AttachmentDesc backendInternalDepth(AttachmentLoadOp op = AttachmentLoadOp::Clear,
-		ClearValue clear = ClearValue::depthStencilClear())
-	{
-		AttachmentDesc desc;
-		desc.source = AttachmentSource::BackendInternal;
 		desc.loadOp = op;
 		desc.clearValue = clear;
 		return desc;

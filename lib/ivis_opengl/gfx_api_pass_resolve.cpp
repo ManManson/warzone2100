@@ -1,6 +1,7 @@
 #include "gfx_api_pass_resolve.h"
 
 #include "gfx_api.h"
+#include "gfx_api_pipeline_surfaces.h"
 #include "gfx_api_render_graph.h"
 
 #include <algorithm>
@@ -18,7 +19,6 @@ bool attachmentIsResolved(const AttachmentDesc& attachment)
 	case AttachmentSource::Texture:
 		return attachment.texture != nullptr;
 	case AttachmentSource::Transient:
-	case AttachmentSource::BackendInternal:
 	case AttachmentSource::Swapchain:
 		return true;
 	}
@@ -75,7 +75,7 @@ void tryInferPassDimensions(RenderPassDesc& pass, gfx_api::context& ctx, uint32_
 			tryFromTexture(colorAttachment.texture);
 		}
 	}
-	if (pass.depthAttachment.has_value() && !pass.depthAttachment->isBackendInternal())
+	if (pass.depthAttachment.has_value())
 	{
 		tryFromTexture(pass.depthAttachment->texture);
 	}
@@ -171,7 +171,8 @@ void applySceneFramebufferAttachments(RenderPassDesc& pass, gfx_api::context& ct
 
 	if (!pass.depthAttachment.has_value())
 	{
-		pass.depthAttachment = AttachmentDesc::backendInternalDepth(AttachmentLoadOp::Clear);
+		pass.depthAttachment = makePipelineSurfaceAttachment(PipelineSurfaceId::SceneDepth,
+			AttachmentLoadOp::Clear, ClearValue::depthStencilClear());
 	}
 }
 
@@ -263,8 +264,9 @@ bool resolvePassDescription(RenderPassDesc& pass)
 	{
 		ASSERT_OR_RETURN(false, !pass.colorAttachments.empty(),
 			"Scene pass \"%s\" could not resolve scene color attachment", pass.debugName.c_str());
-		ASSERT_OR_RETURN(false, pass.depthAttachment.has_value(),
-			"Scene pass \"%s\" requires a depth attachment (explicit or backend-internal)",
+		ASSERT_OR_RETURN(false, pass.depthAttachment.has_value()
+			&& pass.depthAttachment->texture != nullptr,
+			"Scene pass \"%s\" requires a resolved depth attachment",
 			pass.debugName.c_str());
 	}
 
@@ -305,10 +307,16 @@ ResolvedPassRoute routeResolvedPass(const RenderPassDesc& pass)
 	}
 
 	const bool hasColor = !pass.colorAttachments.empty();
-	const bool hasBackendDepth = pass.depthAttachment.has_value() && pass.depthAttachment->isBackendInternal();
-	if (hasColor && hasBackendDepth)
+	const bool hasDepthTex = pass.depthAttachment.has_value()
+		&& pass.depthAttachment->texture != nullptr;
+	if (hasColor && hasDepthTex)
 	{
-		return ResolvedPassRoute::SceneFramebuffer;
+		auto& ctx = gfx_api::context::get();
+		abstract_texture* sceneDepth = ctx.getPipelineSurface(PipelineSurfaceId::SceneDepth);
+		if (sceneDepth != nullptr && pass.depthAttachment->texture == sceneDepth)
+		{
+			return ResolvedPassRoute::SceneFramebuffer;
+		}
 	}
 
 	const bool depthOnly = !hasColor

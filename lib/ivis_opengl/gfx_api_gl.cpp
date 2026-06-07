@@ -474,6 +474,27 @@ void gl_gpurendered_texture::unbind()
 	glBindTexture((_isArray) ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D, 0);
 }
 
+// MARK: gl_gpurendered_renderbuffer
+
+gl_gpurendered_renderbuffer::~gl_gpurendered_renderbuffer()
+{
+	if (_id != 0)
+	{
+		glDeleteRenderbuffers(1, &_id);
+		_id = 0;
+	}
+}
+
+void gl_gpurendered_renderbuffer::bind()
+{
+	glBindRenderbuffer(GL_RENDERBUFFER, _id);
+}
+
+size_t gl_gpurendered_renderbuffer::backend_internal_value() const
+{
+	return 0;
+}
+
 // MARK: gl_texture
 
 gl_texture::gl_texture()
@@ -2538,6 +2559,38 @@ gl_gpurendered_texture* gl_context::create_framebuffer_color_texture(GLenum inte
 	return create_gpurendered_texture(internalFormat, format, type, width, height, filename);
 }
 
+std::unique_ptr<gl_gpurendered_renderbuffer> gl_context::create_framebuffer_renderbuffer(GLenum internalFormat, GLsizei samples,
+	uint32_t width, uint32_t height, const std::string& filename)
+{
+	auto surface = std::make_unique<gl_gpurendered_renderbuffer>();
+	surface->_samples = samples;
+	surface->_width = width;
+	surface->_height = height;
+#if defined(WZ_DEBUG_GFX_API_LEAKS)
+	surface->debugName = filename;
+#endif
+	glGenRenderbuffers(1, &surface->_id);
+	glBindRenderbuffer(GL_RENDERBUFFER, surface->_id);
+	if (samples > 0)
+	{
+		glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, internalFormat,
+			static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+	}
+	else
+	{
+		glRenderbufferStorage(GL_RENDERBUFFER, internalFormat,
+			static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+	}
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+#if defined(WZ_GL_KHR_DEBUG_SUPPORTED)
+	if (!filename.empty())
+	{
+		wzGLObjectLabel(GL_RENDERBUFFER, surface->_id, -1, filename.c_str());
+	}
+#endif
+	return surface;
+}
+
 std::unique_ptr<gfx_api::abstract_texture> gl_context::createTransientColorRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height, const std::string& debugName)
 {
 	ASSERT(is_uncompressed_format(format), "Transient render targets require an uncompressed format");
@@ -4160,7 +4213,22 @@ size_t gl_context::getDepthPassDimensions(size_t idx)
 
 gfx_api::abstract_texture* gl_context::getDepthTexture()
 {
-	return depthTexture;
+	return _pipelineSurfaces.get(gfx_api::PipelineSurfaceId::ShadowMap);
+}
+
+gfx_api::abstract_texture* gl_context::getPipelineSurface(gfx_api::PipelineSurfaceId id)
+{
+	return _pipelineSurfaces.get(id);
+}
+
+bool gl_context::isSceneMSAAEnabled() const
+{
+	return multisamples > 0 && _sceneMsaaSurface != nullptr;
+}
+
+gfx_api::pixel_format gl_context::getDepthStencilFormat() const
+{
+	return gfx_api::pixel_format::invalid;
 }
 
 [[noreturn]] static void glContextHandleOOMError()
@@ -4283,25 +4351,39 @@ void gl_context::beginDynamicAttachmentPass(const gfx_api::RenderPassDesc& pass)
 	{
 		const auto& attachment = pass.colorAttachments[i];
 		ASSERT_OR_RETURN(, attachment.texture != nullptr, "Unresolved color attachment in dynamic pass");
-		auto* gpuTexture = dynamic_cast<gl_gpurendered_texture*>(attachment.texture);
-		ASSERT_OR_RETURN(, gpuTexture != nullptr, "Dynamic pass color attachment must be a GPU-rendered texture");
 		const GLenum colorAttachment = GL_COLOR_ATTACHMENT0 + static_cast<GLenum>(i);
-		glFramebufferTexture2D(GL_FRAMEBUFFER, colorAttachment, gpuTexture->target(), gpuTexture->id(), 0);
+		if (auto* renderbuffer = dynamic_cast<gl_gpurendered_renderbuffer*>(attachment.texture))
+		{
+			glFramebufferRenderbuffer(GL_FRAMEBUFFER, colorAttachment, GL_RENDERBUFFER, renderbuffer->id());
+		}
+		else
+		{
+			auto* gpuTexture = dynamic_cast<gl_gpurendered_texture*>(attachment.texture);
+			ASSERT_OR_RETURN(, gpuTexture != nullptr, "Dynamic pass color attachment must be a GPU-rendered texture or renderbuffer");
+			glFramebufferTexture2D(GL_FRAMEBUFFER, colorAttachment, gpuTexture->target(), gpuTexture->id(), 0);
+		}
 		drawBuffers.push_back(colorAttachment);
 	}
 
 	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
 	{
-		auto* depthTexture = dynamic_cast<gl_gpurendered_texture*>(pass.depthAttachment->texture);
-		ASSERT_OR_RETURN(, depthTexture != nullptr, "Dynamic pass depth attachment must be a GPU-rendered texture");
-		if (depthTexture->isArray())
+		if (auto* depthRenderbuffer = dynamic_cast<gl_gpurendered_renderbuffer*>(pass.depthAttachment->texture))
 		{
-			glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, depthTexture->id(), 0,
-				static_cast<GLint>(pass.depthAttachment->arrayLayer));
+			glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, depthRenderbuffer->id());
 		}
 		else
 		{
-			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, depthTexture->target(), depthTexture->id(), 0);
+			auto* depthTexture = dynamic_cast<gl_gpurendered_texture*>(pass.depthAttachment->texture);
+			ASSERT_OR_RETURN(, depthTexture != nullptr, "Dynamic pass depth attachment must be a GPU-rendered texture or renderbuffer");
+			if (depthTexture->isArray())
+			{
+				glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, depthTexture->id(), 0,
+					static_cast<GLint>(pass.depthAttachment->arrayLayer));
+			}
+			else
+			{
+				glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, depthTexture->target(), depthTexture->id(), 0);
+			}
 		}
 	}
 
@@ -4368,7 +4450,7 @@ void gl_context::endScenePass()
 	}
 #endif
 
-	const bool usingMSAAIntermediate = (sceneMsaaRBO != 0);
+	const bool usingMSAAIntermediate = (_sceneMsaaSurface != nullptr);
 	if (usingMSAAIntermediate)
 	{
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, sceneFBO[sceneFBOIdx]);
@@ -5356,6 +5438,7 @@ size_t gl_context::initDepthPasses(size_t resolution)
 	}
 	if (depthTexture)
 	{
+		_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::ShadowMap);
 		delete depthTexture;
 		depthTexture = nullptr;
 	}
@@ -5372,6 +5455,7 @@ size_t gl_context::initDepthPasses(size_t resolution)
 		return 0;
 	}
 	depthTexture = pNewDepthTexture;
+	_pipelineSurfaces.registerSurface(gfx_api::PipelineSurfaceId::ShadowMap, depthTexture);
 
 	GLenum target = depthTexture->target();
 	depthTexture->bind();
@@ -5415,6 +5499,10 @@ size_t gl_context::initDepthPasses(size_t resolution)
 
 void gl_context::deleteSceneRenderpass()
 {
+	_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneColor);
+	_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneMSAAColor);
+	_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneDepth);
+
 	// delete prior scene texture & FBOs (if present)
 #if !defined(WZ_STATIC_GL_BINDINGS)
 	if (glDeleteFramebuffers)
@@ -5431,21 +5519,13 @@ void gl_context::deleteSceneRenderpass()
 			sceneResolveFBO.clear();
 		}
 	}
-	if (sceneMsaaRBO)
-	{
-		glDeleteRenderbuffers(1, &sceneMsaaRBO);
-		sceneMsaaRBO = 0;
-	}
+	_sceneMsaaSurface.reset();
 	if (sceneTexture)
 	{
 		delete sceneTexture;
 		sceneTexture = nullptr;
 	}
-	if (sceneDepthStencilRBO)
-	{
-		glDeleteRenderbuffers(1, &sceneDepthStencilRBO);
-		sceneDepthStencilRBO = 0;
-	}
+	_sceneDepthStencilSurface.reset();
 }
 
 bool gl_context::createSceneRenderpass()
@@ -5468,14 +5548,9 @@ bool gl_context::createSceneRenderpass()
 
 	if (samples > 0)
 	{
-		// If MSAA is enabled, use glRenderbufferStorageMultisample to create an intermediate buffer with MSAA enabled
-		glGenRenderbuffers(1, &sceneMsaaRBO);
-		ASSERT_GL_NOERRORS_OR_RETURN(false);
-		glBindRenderbuffer(GL_RENDERBUFFER, sceneMsaaRBO);
-		ASSERT_GL_NOERRORS_OR_RETURN(false);
-		glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, multiSampledBufferInternalFormat, sceneFramebufferWidth, sceneFramebufferHeight); // OpenGL 3.0+, OpenGL ES 3.0+
-		ASSERT_GL_NOERRORS_OR_RETURN(false);
-		glBindRenderbuffer(GL_RENDERBUFFER, 0);
+		_sceneMsaaSurface = create_framebuffer_renderbuffer(multiSampledBufferInternalFormat, samples,
+			sceneFramebufferWidth, sceneFramebufferHeight, "<scene msaa color>");
+		ASSERT_OR_RETURN(false, _sceneMsaaSurface != nullptr, "Failed to create scene MSAA renderbuffer");
 		ASSERT_GL_NOERRORS_OR_RETURN(false);
 	}
 
@@ -5501,15 +5576,9 @@ bool gl_context::createSceneRenderpass()
 	sceneTexture->unbind();
 	ASSERT_GL_NOERRORS_OR_RETURN(false);
 
-	// Create a matching depth/stencil texture
-	sceneDepthStencilRBO = 0;
-	glGenRenderbuffers(1, &sceneDepthStencilRBO);
-	ASSERT_GL_NOERRORS_OR_RETURN(false);
-	glBindRenderbuffer(GL_RENDERBUFFER, sceneDepthStencilRBO);
-	ASSERT_GL_NOERRORS_OR_RETURN(false);
-	glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_DEPTH24_STENCIL8, sceneFramebufferWidth, sceneFramebufferHeight); // OpenGL 3.0+, OpenGL ES 3.0+
-	ASSERT_GL_NOERRORS_OR_RETURN(false);
-	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+	_sceneDepthStencilSurface = create_framebuffer_renderbuffer(GL_DEPTH24_STENCIL8, samples,
+		sceneFramebufferWidth, sceneFramebufferHeight, "<scene depth stencil>");
+	ASSERT_OR_RETURN(false, _sceneDepthStencilSurface != nullptr, "Failed to create scene depth/stencil renderbuffer");
 	ASSERT_GL_NOERRORS_OR_RETURN(false);
 
 	const size_t numSceneFBOs = 2;
@@ -5524,17 +5593,15 @@ bool gl_context::createSceneRenderpass()
 		ASSERT_GL_NOERRORS_OR_RETURN(false);
 		if (samples > 0)
 		{
-			// use the MSAA renderbuffer as the color attachment
-			glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, sceneMsaaRBO);
+			glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, _sceneMsaaSurface->id());
 			ASSERT_GL_NOERRORS_OR_RETURN(false);
 		}
 		else
 		{
-			// just directly use the sceneTexture as the color attachment (since no MSAA resolving needs to occur)
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneTexture->id(), 0);
 			ASSERT_GL_NOERRORS_OR_RETURN(false);
 		}
-		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, sceneDepthStencilRBO);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, _sceneDepthStencilSurface->id());
 		ASSERT_GL_NOERRORS_OR_RETURN(false);
 
 		GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
@@ -5577,12 +5644,23 @@ bool gl_context::createSceneRenderpass()
 
 	ASSERT_GL_NOERRORS_OR_RETURN(false);
 
+	_pipelineSurfaces.registerSurface(gfx_api::PipelineSurfaceId::SceneColor, sceneTexture);
+	_pipelineSurfaces.registerSurface(gfx_api::PipelineSurfaceId::SceneDepth, _sceneDepthStencilSurface.get());
+	if (_sceneMsaaSurface != nullptr)
+	{
+		_pipelineSurfaces.registerSurface(gfx_api::PipelineSurfaceId::SceneMSAAColor, _sceneMsaaSurface.get());
+	}
+	else
+	{
+		_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneMSAAColor);
+	}
+
 	return !encounteredError;
 }
 
 gfx_api::abstract_texture* gl_context::getSceneTexture()
 {
-	return sceneTexture;
+	return _pipelineSurfaces.get(gfx_api::PipelineSurfaceId::SceneColor);
 }
 
 gfx_api::abstract_texture* gl_context::acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height)
@@ -5620,6 +5698,13 @@ optional<std::pair<uint32_t, uint32_t>> gl_context::getRenderTargetDimensions(gf
 		if (gpuTexture->tex_width > 0 && gpuTexture->tex_height > 0)
 		{
 			return std::make_pair(gpuTexture->tex_width, gpuTexture->tex_height);
+		}
+	}
+	if (auto* renderbuffer = dynamic_cast<gl_gpurendered_renderbuffer*>(texture))
+	{
+		if (renderbuffer->_width > 0 && renderbuffer->_height > 0)
+		{
+			return std::make_pair(renderbuffer->_width, renderbuffer->_height);
 		}
 	}
 	if (texture == sceneTexture && sceneFramebufferWidth > 0 && sceneFramebufferHeight > 0)

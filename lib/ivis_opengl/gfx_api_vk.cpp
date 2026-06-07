@@ -191,7 +191,8 @@ enum class VulkanBackendInternalTextureType : size_t
 	Texture,
 	TextureArray,
 	DepthMap,
-	RenderedImage
+	RenderedImage,
+	AttachmentImage
 };
 
 // MARK: General helper functions
@@ -2462,6 +2463,31 @@ size_t VkRenderedImage::backend_internal_value() const
 	return static_cast<size_t>(VulkanBackendInternalTextureType::RenderedImage);
 }
 
+// MARK: VkAttachmentImage
+
+VkAttachmentImage::VkAttachmentImage(vk::Image _image, vk::ImageView _view, vk::Format format, uint32_t w, uint32_t h,
+	vk::SampleCountFlagBits sampleCount, const std::string& filename)
+	: image(_image)
+	, view(_view)
+	, imageFormat(format)
+	, width(w)
+	, height(h)
+	, samples(sampleCount)
+{
+#if defined(WZ_DEBUG_GFX_API_LEAKS)
+	debugName = filename;
+#endif
+}
+
+VkAttachmentImage::~VkAttachmentImage() = default;
+
+void VkAttachmentImage::bind() { }
+
+size_t VkAttachmentImage::backend_internal_value() const
+{
+	return static_cast<size_t>(VulkanBackendInternalTextureType::AttachmentImage);
+}
+
 // MARK: VkTextureArray
 
 VkTextureArray::VkTextureArray(const VkRoot& root, size_t mipmap_count, size_t layer_count, size_t width, size_t height, gfx_api::pixel_format internal_pixel_format, const std::string& filename)
@@ -3009,6 +3035,7 @@ void VkRoot::createDepthPassImagesAndFBOs(vk::Format depthFormat)
 	depthMapCascadeView.clear();
 	if (pDepthMapImage)
 	{
+		_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::ShadowMap);
 		// Destructor will automatically queue resources for future deletion once they are unused
 		delete pDepthMapImage;
 		pDepthMapImage = nullptr;
@@ -3022,6 +3049,7 @@ void VkRoot::createDepthPassImagesAndFBOs(vk::Format depthFormat)
 	// Create depth map image + view
 	size_t numCascadeLayers = depthPassCount;
 	pDepthMapImage = new VkDepthMapImage(*this, numCascadeLayers, depthMapSize, depthFormat, "<depth map>");
+	_pipelineSurfaces.registerSurface(gfx_api::PipelineSurfaceId::ShadowMap, pDepthMapImage);
 
 	// For each depth pass (cascade)
 	for (size_t i = 0; i < numCascadeLayers; ++i)
@@ -3148,6 +3176,12 @@ void VkRoot::createDepthPasses(vk::Format depthFormat)
 
 void VkRoot::destroySceneRenderpass()
 {
+	_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneColor);
+	_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneMSAAColor);
+	_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneDepth);
+	_sceneDepthSurface.reset();
+	_sceneMsaaSurface.reset();
+
 	// destroy scene pass objects
 	if (SCENE_RENDER_PASS_ID < renderPasses.size())
 	{
@@ -3383,6 +3417,22 @@ void VkRoot::createSceneRenderpass(vk::Format sceneFormat, vk::Format depthForma
 		}
 
 		renderPasses[SCENE_RENDER_PASS_ID].fbo.push_back(frame_fbo);
+	}
+
+	_sceneDepthSurface = std::make_unique<VkAttachmentImage>(sceneDepthStencilImage, sceneDepthStencilView, depthFormat,
+		swapchainSize.width, swapchainSize.height, msaaSamples, "<scene depth stencil>");
+	_pipelineSurfaces.registerSurface(gfx_api::PipelineSurfaceId::SceneColor, pSceneImage);
+	_pipelineSurfaces.registerSurface(gfx_api::PipelineSurfaceId::SceneDepth, _sceneDepthSurface.get());
+	if (msaaEnabled)
+	{
+		_sceneMsaaSurface = std::make_unique<VkAttachmentImage>(sceneMSAAImage, sceneMSAAView, sceneFormat,
+			swapchainSize.width, swapchainSize.height, msaaSamples, "<scene msaa color>");
+		_pipelineSurfaces.registerSurface(gfx_api::PipelineSurfaceId::SceneMSAAColor, _sceneMsaaSurface.get());
+	}
+	else
+	{
+		_sceneMsaaSurface.reset();
+		_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneMSAAColor);
 	}
 }
 
@@ -5848,6 +5898,10 @@ void VkRoot::bind_textures(const std::vector<gfx_api::texture_input>& attribute_
 					ASSERT(target_type == gfx_api::pixel_format_target::texture_2d, "Unexpected target type: (%d)", static_cast<int>(target_type));
 					imageView = static_cast<VkRenderedImage*>(texture)->view.get();
 					break;
+				case VulkanBackendInternalTextureType::AttachmentImage:
+					ASSERT(target_type == gfx_api::pixel_format_target::texture_2d, "Unexpected target type: (%d)", static_cast<int>(target_type));
+					imageView = static_cast<VkAttachmentImage*>(texture)->view;
+					break;
 				case VulkanBackendInternalTextureType::Invalid:
 					debug(LOG_FATAL, "Invalid internal texture type??");
 					break;
@@ -6076,7 +6130,22 @@ VkRoot::AcquireNextSwapchainImageResult VkRoot::acquireNextSwapchainImage(bool a
 
 gfx_api::abstract_texture* VkRoot::getSceneTexture()
 {
-	return pSceneImage;
+	return _pipelineSurfaces.get(gfx_api::PipelineSurfaceId::SceneColor);
+}
+
+gfx_api::abstract_texture* VkRoot::getPipelineSurface(gfx_api::PipelineSurfaceId id)
+{
+	return _pipelineSurfaces.get(id);
+}
+
+bool VkRoot::isSceneMSAAEnabled() const
+{
+	return msaaSamples != vk::SampleCountFlagBits::e1;
+}
+
+gfx_api::pixel_format VkRoot::getDepthStencilFormat() const
+{
+	return gfx_api::pixel_format::invalid;
 }
 
 gfx_api::abstract_texture* VkRoot::acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height)
@@ -6280,6 +6349,10 @@ vk::Format VkRoot::getAttachmentVkFormat(gfx_api::abstract_texture* texture) con
 	{
 		return depthImage->depthMapFormat;
 	}
+	if (auto* attachmentImage = dynamic_cast<VkAttachmentImage*>(texture))
+	{
+		return attachmentImage->imageFormat;
+	}
 	debug(LOG_FATAL, "Unsupported attachment texture type for custom pass");
 	return vk::Format::eUndefined;
 }
@@ -6294,6 +6367,10 @@ static vk::ImageView getAttachmentImageView(gfx_api::abstract_texture* texture)
 	if (auto* depthImage = dynamic_cast<VkDepthMapImage*>(texture))
 	{
 		return depthImage->view.get();
+	}
+	if (auto* attachmentImage = dynamic_cast<VkAttachmentImage*>(texture))
+	{
+		return attachmentImage->view;
 	}
 	debug(LOG_FATAL, "Unsupported attachment texture type for custom pass");
 	return vk::ImageView();
@@ -6514,6 +6591,13 @@ optional<std::pair<uint32_t, uint32_t>> VkRoot::getRenderTargetDimensions(gfx_ap
 		if (depthImage->mapSize > 0)
 		{
 			return std::make_pair(depthImage->mapSize, depthImage->mapSize);
+		}
+	}
+	if (auto* attachmentImage = dynamic_cast<VkAttachmentImage*>(texture))
+	{
+		if (attachmentImage->width > 0 && attachmentImage->height > 0)
+		{
+			return std::make_pair(attachmentImage->width, attachmentImage->height);
 		}
 	}
 	if (texture == pSceneImage && swapchainSize.width > 0 && swapchainSize.height > 0)
@@ -7138,7 +7222,7 @@ size_t VkRoot::getDepthPassDimensions(size_t idx)
 
 gfx_api::abstract_texture* VkRoot::getDepthTexture()
 {
-	return pDepthMapImage;
+	return _pipelineSurfaces.get(gfx_api::PipelineSurfaceId::ShadowMap);
 }
 
 void VkRoot::set_polygon_offset(const float& offset, const float& slope)
