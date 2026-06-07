@@ -41,7 +41,6 @@
 
 #include "gfx_api_vk.h"
 #include "gfx_api_pass_resolve.h"
-#include "gfx_api_render_graph_compile.h"
 #include "lib/framework/physfs_ext.h"
 #include "lib/framework/wzapp.h"
 #include "lib/exceptionhandler/dumpinfo.h"
@@ -6078,31 +6077,27 @@ void VkRoot::transitionImageLayout(vk::CommandBuffer cmdBuffer, gfx_api::abstrac
 	setImageLayout(texture, newLayout);
 }
 
-void VkRoot::transitionInputTextures(const gfx_api::RenderPassDesc& pass, vk::CommandBuffer cmdBuffer)
+void VkRoot::emitPrePassBarriers(const gfx_api::CompiledPass& pass)
 {
-	const std::vector<gfx_api::RenderPassDesc>* graphPasses = executingGraphPasses();
-	if (graphPasses == nullptr)
+	if (pass.prePassBarriers.empty())
 	{
 		return;
 	}
 
-	std::vector<gfx_api::ResolvedRead> resolvedReads;
-	if (!gfx_api::resolvePassReads(*graphPasses, executingPassIndex(), resolvedReads))
-	{
-		return;
-	}
+	buffering_mechanism::get_current_resources().ensureDrawCmdBufferBegun();
+	vk::CommandBuffer drawCmdBuffer = buffering_mechanism::get_current_resources().drawCmdBuffer();
 
-	for (const gfx_api::ResolvedRead& read : resolvedReads)
+	for (const gfx_api::ImageBarrierOp& barrier : pass.prePassBarriers)
 	{
-		if (read.texture == nullptr)
+		if (barrier.texture == nullptr)
 		{
 			continue;
 		}
 
-		if (read.isDepth)
+		if (barrier.isDepth)
 		{
 			transitionImageLayout(
-				cmdBuffer, read.texture, vk::ImageLayout::eDepthStencilReadOnlyOptimal,
+				drawCmdBuffer, barrier.texture, vk::ImageLayout::eDepthStencilReadOnlyOptimal,
 				vk::PipelineStageFlagBits::eLateFragmentTests | vk::PipelineStageFlagBits::eFragmentShader,
 				vk::PipelineStageFlagBits::eFragmentShader,
 				vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eShaderRead,
@@ -6111,7 +6106,7 @@ void VkRoot::transitionInputTextures(const gfx_api::RenderPassDesc& pass, vk::Co
 		else
 		{
 			transitionImageLayout(
-				cmdBuffer, read.texture, vk::ImageLayout::eShaderReadOnlyOptimal,
+				drawCmdBuffer, barrier.texture, vk::ImageLayout::eShaderReadOnlyOptimal,
 				vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eFragmentShader,
 				vk::PipelineStageFlagBits::eFragmentShader,
 				vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eShaderRead,
@@ -6961,8 +6956,6 @@ void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass)
 	frameHasDrawCommands = true;
 
 	vk::CommandBuffer drawCmdBuffer = buffering_mechanism::get_current_resources().drawCmdBuffer();
-	transitionInputTextures(pass, drawCmdBuffer);
-
 	_activeCustomColorOutputs.clear();
 	_activeCustomColorOutputs.reserve(pass.colorAttachments.size());
 	for (const auto& colorAttachment : pass.colorAttachments)

@@ -843,27 +843,34 @@ bool gfx_api::context::loadTextureArrayLayerFromBaseImages(gfx_api::texture_arra
 void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 {
 	setRenderGraphExecuting(true);
-	setExecutingGraphPass(&passes, 0);
+
+	CompiledRenderGraph compiled;
+	if (!compiled.compile(passes))
+	{
+		setRenderGraphExecuting(false);
+		return;
+	}
 
 	bool executedAnyPass = false;
 
-	for (size_t passIndex = 0; passIndex < passes.size(); )
+	for (size_t passIndex = 0; passIndex < compiled.passes().size(); )
 	{
-		RenderPassDesc& pass = passes[passIndex];
-		setExecutingGraphPass(&passes, passIndex);
-		debugStringMarker(pass.debugName.c_str());
-
-		if (!resolvePassDescription(pass))
+		const CompiledPass& compiledPass = compiled.passes()[passIndex];
+		if (compiledPass.skipped)
 		{
 			++passIndex;
 			continue;
 		}
 
+		RenderPassDesc& pass = passes[passIndex];
+		debugStringMarker(pass.debugName.c_str());
 		executedAnyPass = true;
-		const RenderPassContext passContext = buildRenderPassContext(passes, passIndex);
+
+		const RenderPassContext passContext = buildRenderPassContext(compiledPass);
 
 		if (routeResolvedPass(pass) != ResolvedPassRoute::Swapchain)
 		{
+			emitPrePassBarriers(compiledPass);
 			beginPass(pass);
 			if (pass.recordFunc)
 			{
@@ -876,14 +883,14 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 
 		const size_t batchStart = passIndex;
 		size_t batchEnd = passIndex + 1;
-		while (batchEnd < passes.size())
+		while (batchEnd < compiled.passes().size())
 		{
-			RenderPassDesc& nextPass = passes[batchEnd];
-			if (!resolvePassDescription(nextPass))
+			const CompiledPass& nextCompiledPass = compiled.passes()[batchEnd];
+			if (nextCompiledPass.skipped)
 			{
 				break;
 			}
-			if (!canExtendSwapchainBatch(nextPass))
+			if (!canExtendSwapchainBatch(nextCompiledPass.desc))
 			{
 				break;
 			}
@@ -893,15 +900,16 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 		beginPass(passes[batchStart]);
 		for (size_t batchIndex = batchStart; batchIndex < batchEnd; ++batchIndex)
 		{
-			setExecutingGraphPass(&passes, batchIndex);
+			const CompiledPass& batchCompiledPass = compiled.passes()[batchIndex];
 			if (batchIndex != batchStart)
 			{
-				debugStringMarker(passes[batchIndex].debugName.c_str());
+				debugStringMarker(batchCompiledPass.desc.debugName.c_str());
 			}
-			if (passes[batchIndex].recordFunc)
+			emitPrePassBarriers(batchCompiledPass);
+			if (batchCompiledPass.desc.recordFunc)
 			{
-				const RenderPassContext batchContext = buildRenderPassContext(passes, batchIndex);
-				passes[batchIndex].recordFunc(batchContext);
+				const RenderPassContext batchContext = buildRenderPassContext(batchCompiledPass);
+				batchCompiledPass.desc.recordFunc(batchContext);
 			}
 		}
 		endPass();
@@ -915,6 +923,5 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 
 	purgeFrameResources();
 
-	setExecutingGraphPass(nullptr, 0);
 	setRenderGraphExecuting(false);
 }

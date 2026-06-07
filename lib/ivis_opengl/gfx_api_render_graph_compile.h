@@ -7,12 +7,19 @@
 namespace gfx_api
 {
 
+struct ImageBarrierOp
+{
+	abstract_texture* texture = nullptr;
+	bool isDepth = false;
+};
+
 struct CompiledPass
 {
 	RenderPassDesc desc;
 	size_t graphIndex = 0;
 	bool skipped = false;
 	std::vector<ResolvedRead> resolvedReads;
+	std::vector<ImageBarrierOp> prePassBarriers;
 };
 
 class CompiledRenderGraph
@@ -30,5 +37,6 @@ bool resolvePassReads(const std::vector<RenderPassDesc>& descs, size_t passIndex
 	std::vector<ResolvedRead>& outReads);
 
 RenderPassContext buildRenderPassContext(const std::vector<RenderPassDesc>& descs, size_t passIndex);
+RenderPassContext buildRenderPassContext(const CompiledPass& compiledPass);
 
 } // namespace gfx_api

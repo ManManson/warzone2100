@@ -39,6 +39,7 @@
 #include "gfx_api_formats_def.h"
 #include "gfx_api_pipeline_surfaces.h"
 #include "gfx_api_render_graph.h"
+#include "gfx_api_render_graph_compile.h"
 
 #include <glm/glm.hpp>
 
@@ -428,6 +429,7 @@ namespace gfx_api
 		virtual optional<std::pair<uint32_t, uint32_t>> getRenderTargetDimensions(abstract_texture* texture) { return nullopt; }
 
 		virtual void executeRenderGraph(std::vector<RenderPassDesc>& passes);
+		virtual void emitPrePassBarriers(const CompiledPass& pass) {}
 		virtual void debugStringMarker(const char *str) = 0;
 		virtual void debugSceneBegin(const char *descr) = 0;
 		virtual void debugSceneEnd(const char *descr) = 0;
@@ -484,19 +486,8 @@ namespace gfx_api
 		bool renderGraphExecuting() const { return _renderGraphExecuting; }
 		void setRenderGraphExecuting(bool executing) { _renderGraphExecuting = executing; }
 
-		void setExecutingGraphPass(const std::vector<RenderPassDesc>* passes, size_t passIndex)
-		{
-			_executingGraphPasses = passes;
-			_executingPassIndex = passIndex;
-		}
-
-		const std::vector<RenderPassDesc>* executingGraphPasses() const { return _executingGraphPasses; }
-		size_t executingPassIndex() const { return _executingPassIndex; }
-
 	private:
 		bool _renderGraphExecuting = false;
-		const std::vector<RenderPassDesc>* _executingGraphPasses = nullptr;
-		size_t _executingPassIndex = 0;
 		virtual bool _initialize(const backend_Impl_Factory& impl, int32_t antialiasing, swap_interval_mode mode, optional<float> mipLodBias, uint32_t depthMapResolution) = 0;
 	};
 

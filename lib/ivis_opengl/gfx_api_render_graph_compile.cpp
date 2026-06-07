@@ -2,6 +2,9 @@
 
 #include "gfx_api.h"
 #include "gfx_api_pass_resolve.h"
+#include "gfx_api_pipeline_surfaces.h"
+
+#include <unordered_set>
 
 namespace gfx_api
 {
@@ -90,6 +93,31 @@ nonstd::optional<ResolvedRead> resolveSingleRead(const ReadDesc& read,
 	return resolved;
 }
 
+void planImageBarriers(std::vector<CompiledPass>& passes)
+{
+	for (CompiledPass& compiledPass : passes)
+	{
+		compiledPass.prePassBarriers.clear();
+		if (compiledPass.skipped)
+		{
+			continue;
+		}
+
+		std::unordered_set<abstract_texture*> seenTextures;
+		for (const ResolvedRead& read : compiledPass.resolvedReads)
+		{
+			if (read.texture == nullptr || !seenTextures.insert(read.texture).second)
+			{
+				continue;
+			}
+			ImageBarrierOp barrier;
+			barrier.texture = read.texture;
+			barrier.isDepth = read.isDepth;
+			compiledPass.prePassBarriers.push_back(barrier);
+		}
+	}
+}
+
 } // namespace
 
 bool resolvePassReads(const std::vector<RenderPassDesc>& descs, size_t passIndex,
@@ -119,6 +147,11 @@ RenderPassContext buildRenderPassContext(const std::vector<RenderPassDesc>& desc
 	return RenderPassContext(descs[passIndex], std::move(resolvedReads));
 }
 
+RenderPassContext buildRenderPassContext(const CompiledPass& compiledPass)
+{
+	return RenderPassContext(compiledPass.desc, compiledPass.resolvedReads);
+}
+
 bool CompiledRenderGraph::compile(std::vector<RenderPassDesc>& descs)
 {
 	_passes.clear();
@@ -139,6 +172,8 @@ bool CompiledRenderGraph::compile(std::vector<RenderPassDesc>& descs)
 			return false;
 		}
 	}
+
+	planImageBarriers(_passes);
 	return true;
 }
 
