@@ -36,6 +36,7 @@
 #include "lib/ivis_opengl/piematrix.h"
 #include "lib/ivis_opengl/piemode.h"
 #include "lib/ivis_opengl/gfx_api_render_graph.h"
+#include "ssao.h"
 #include "lib/framework/fixedpoint.h"
 #include "lib/ivis_opengl/piefunc.h"
 #include "lib/ivis_opengl/screen.h"
@@ -152,17 +153,6 @@ static WzText txtShowOrders;
 static WzText droidText;
 
 static gfx_api::buffer* pScreenTriangleVBO = nullptr;
-
-static void drawWorldToScreenBlit(gfx_api::abstract_texture* sourceTexture)
-{
-	gfx_api::WorldToScreenPSO::get().bind();
-	gfx_api::WorldToScreenPSO::get().bind_constants({1.0f});
-	gfx_api::WorldToScreenPSO::get().bind_vertex_buffers(pScreenTriangleVBO);
-	gfx_api::WorldToScreenPSO::get().bind_textures(sourceTexture);
-	gfx_api::WorldToScreenPSO::get().draw(3, 0);
-	gfx_api::WorldToScreenPSO::get().unbind_vertex_buffers(pScreenTriangleVBO);
-}
-
 
 /********************  Variables  ********************/
 // Should be cleaned up properly and be put in structures.
@@ -1515,7 +1505,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 
 	auto& renderGraph = pie_GetFrameRenderGraph();
 	gfx_api::PassHandle scenePass = gfx_api::kInvalidPassHandle;
-	gfx_api::PassHandle copyValidatePass = gfx_api::kInvalidPassHandle;
+	gfx_api::PassHandle depthPrePass = gfx_api::kInvalidPassHandle;
 
 	// shadow/depth-mapping passes
 	ShadowCascadesInfo shadowCascadesInfo;
@@ -1545,6 +1535,16 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 			}));
 		}
 	}
+
+	const ssao::SceneMatrices ssaoMatrices {
+		.perspectiveViewMatrix = perspectiveViewMatrix,
+		.perspectiveMatrix = perspectiveMatrix,
+		.viewMatrix = viewMatrix,
+		.invProjectionMatrix = glm::inverse(perspectiveMatrix),
+	};
+
+	depthPrePass = ssao::addDepthPrePass(
+		renderGraph, ssaoMatrices, cameraPos, shadowCascadesInfo, currentGameFrame);
 
 	// start main render pass
 	scenePass = renderGraph.addRenderPass(
@@ -1585,44 +1585,15 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 		locateMouse();
 	}));
 
-	// Custom-pass validation (gfxdebug): scene -> transient offscreen via readPassOutput + barriers.
-	if (uses_gfx_debug && scenePass != gfx_api::kInvalidPassHandle)
-	{
-		gfx_api::abstract_texture* sceneColor = gfx_api::context::get().getPipelineSurface(
-			gfx_api::PipelineSurfaceId::SceneColor);
-		const auto sceneDims = gfx_api::context::get().getRenderTargetDimensions(sceneColor);
-		if (sceneDims.has_value())
-		{
-			copyValidatePass = renderGraph.addRenderPass(
-				std::move(
-					gfx_api::RenderPassBuilder::create("CustomSceneCopyValidate")
-						.viewport(sceneDims->first, sceneDims->second)
-						.transientColorAttachment()
-						.readPassOutput(scenePass, gfx_api::AttachmentRole::PrimaryColor)
-						.record([](const gfx_api::RenderPassContext& ctx)
-			{
-				WZ_PROFILE_SCOPE(CustomSceneCopyValidate);
-				drawWorldToScreenBlit(ctx.getRead(0));
-			}))
-					.build());
-		}
-	}
+	gfx_api::abstract_texture* sceneColorSurf = gfx_api::context::get().getPipelineSurface(
+		gfx_api::PipelineSurfaceId::SceneColor);
+	const auto sceneDims = gfx_api::context::get().getRenderTargetDimensions(sceneColorSurf);
+	const ssao::PassHandles ssaoPasses = sceneDims.has_value()
+		? ssao::addPostScenePasses(
+			renderGraph, depthPrePass, *sceneDims, ssaoMatrices.invProjectionMatrix, pScreenTriangleVBO)
+		: ssao::PassHandles{};
 
-	// Draw the scene to the default framebuffer
-	const gfx_api::PassHandle blitSourcePass = (copyValidatePass != gfx_api::kInvalidPassHandle)
-		? copyValidatePass : scenePass;
-	renderGraph.addRenderPass(
-		std::move(
-			gfx_api::RenderPassBuilder::create("SceneBlit")
-				.swapchainAttachment(screen_GetBackDrop()
-					? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear)
-				.readPassOutput(blitSourcePass, gfx_api::AttachmentRole::PrimaryColor)
-				.record([](const gfx_api::RenderPassContext& ctx)
-	{
-		WZ_PROFILE_SCOPE(copyToFBO);
-		drawWorldToScreenBlit(ctx.getRead(0));
-	}))
-			.build());
+	ssao::addComposePass(renderGraph, scenePass, ssaoPasses, screen_GetBackDrop(), pScreenTriangleVBO);
 
 	// Targetting feedback must record inside a pass callback (not during graph setup).
 	renderGraph.addRenderPass(
@@ -1692,6 +1663,8 @@ bool init3DView()
 		pScreenTriangleVBO->upload(sizeof(screenTriangleVertices), screenTriangleVertices);
 	}
 
+	ssao::init();
+
 	return true;
 }
 
@@ -1723,6 +1696,8 @@ void shutdown3DView_FullReset()
 
 	delete pScreenTriangleVBO;
 	pScreenTriangleVBO = nullptr;
+
+	ssao::shutdown();
 }
 
 /// set the view position from save game
