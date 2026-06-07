@@ -4437,9 +4437,9 @@ void gl_context::resolveMsaaColorAttachment(const gfx_api::RenderPassDesc& pass,
 	glDeleteFramebuffers(1, &resolveFBO);
 }
 
-void gl_context::invalidateSceneDepthAttachment(const gfx_api::RenderPassDesc& pass)
+void gl_context::invalidateDepthStencilAttachment(const gfx_api::RenderPassDesc& pass)
 {
-	if (!pass.depthAttachment.has_value() || !gfx_api::attachmentDepthHasStencil(pass.depthAttachment.value()))
+	if (!pass.depthAttachment.has_value())
 	{
 		return;
 	}
@@ -4478,6 +4478,45 @@ void gl_context::invalidateSceneDepthAttachment(const gfx_api::RenderPassDesc& p
 #endif
 }
 
+void gl_context::applyAttachmentStoreOps(const gfx_api::RenderPassDesc& pass, uint32_t passWidth, uint32_t passHeight)
+{
+	const auto storeOpOr = [](const gfx_api::AttachmentDesc& attachment, gfx_api::AttachmentStoreOp defaultOp) {
+		return attachment.storeOp.value_or(defaultOp);
+	};
+
+	if (gfx_api::passNeedsMsaaResolve(pass)
+		&& !pass.colorAttachments.empty()
+		&& storeOpOr(pass.colorAttachments[0], gfx_api::AttachmentStoreOp::Store) == gfx_api::AttachmentStoreOp::DontCare
+		&& pass.resolveAttachment.has_value()
+		&& storeOpOr(pass.resolveAttachment.value(), gfx_api::AttachmentStoreOp::Store) == gfx_api::AttachmentStoreOp::Store)
+	{
+		resolveMsaaColorAttachment(pass, passWidth, passHeight);
+
+		GLenum invalidMsaaColorAp[1];
+		invalidMsaaColorAp[0] = GL_COLOR_ATTACHMENT0;
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, _customPassFBO);
+		if (gles && GLAD_GL_ES_VERSION_3_0)
+		{
+			glInvalidateFramebuffer(GL_READ_FRAMEBUFFER, 1, invalidMsaaColorAp);
+		}
+		else
+		{
+#if defined(GL_ARB_invalidate_subdata)
+			if (!gles && GLAD_GL_ARB_invalidate_subdata && glInvalidateFramebuffer)
+			{
+				glInvalidateFramebuffer(GL_READ_FRAMEBUFFER, 1, invalidMsaaColorAp);
+			}
+#endif
+		}
+	}
+
+	if (pass.depthAttachment.has_value()
+		&& storeOpOr(pass.depthAttachment.value(), gfx_api::AttachmentStoreOp::Store) == gfx_api::AttachmentStoreOp::Invalidate)
+	{
+		invalidateDepthStencilAttachment(pass);
+	}
+}
+
 void gl_context::endSwapchainPass()
 {
 }
@@ -4493,28 +4532,7 @@ void gl_context::endDynamicAttachmentPass()
 		? _activeDynamicPassDesc.viewportSize->second
 		: sceneFramebufferHeight;
 
-	invalidateSceneDepthAttachment(_activeDynamicPassDesc);
-	resolveMsaaColorAttachment(_activeDynamicPassDesc, passWidth, passHeight);
-
-	if (gfx_api::passNeedsMsaaResolve(_activeDynamicPassDesc))
-	{
-		GLenum invalid_msaarbo_ap[1];
-		invalid_msaarbo_ap[0] = GL_COLOR_ATTACHMENT0;
-		glBindFramebuffer(GL_READ_FRAMEBUFFER, _customPassFBO);
-		if (gles && GLAD_GL_ES_VERSION_3_0)
-		{
-			glInvalidateFramebuffer(GL_READ_FRAMEBUFFER, 1, invalid_msaarbo_ap);
-		}
-		else
-		{
-#if defined(GL_ARB_invalidate_subdata)
-			if (!gles && GLAD_GL_ARB_invalidate_subdata && glInvalidateFramebuffer)
-			{
-				glInvalidateFramebuffer(GL_READ_FRAMEBUFFER, 1, invalid_msaarbo_ap);
-			}
-#endif
-		}
-	}
+	applyAttachmentStoreOps(_activeDynamicPassDesc, passWidth, passHeight);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	if (_customPassFBO != 0)

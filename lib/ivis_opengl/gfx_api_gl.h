@@ -439,8 +439,9 @@ private:
 	void endSwapchainPass();
 	void endDynamicAttachmentPass();
 	static void applyAttachmentClears(const gfx_api::RenderPassDesc& pass);
+	void applyAttachmentStoreOps(const gfx_api::RenderPassDesc& pass, uint32_t passWidth, uint32_t passHeight);
 	void resolveMsaaColorAttachment(const gfx_api::RenderPassDesc& pass, uint32_t passWidth, uint32_t passHeight);
-	void invalidateSceneDepthAttachment(const gfx_api::RenderPassDesc& pass);
+	void invalidateDepthStencilAttachment(const gfx_api::RenderPassDesc& pass);
 
 	uint32_t viewportWidth = 0;
 	uint32_t viewportHeight = 0;
