@@ -472,7 +472,6 @@ private:
 	gl_gpurendered_texture *pDefaultDepthTexture = nullptr;
 
 	gl_gpurendered_texture* depthTexture = nullptr;
-	std::vector<GLuint> depthFBO;
 	size_t depthBufferResolution = 4096;
 	size_t depthPassCount = WZ_MAX_SHADOW_CASCADES;
 

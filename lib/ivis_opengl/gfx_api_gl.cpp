@@ -4190,7 +4190,7 @@ bool gl_context::initGLContext()
 
 size_t gl_context::numDepthPasses()
 {
-	return depthFBO.size();
+	return depthPassCount;
 }
 
 bool gl_context::setDepthPassProperties(size_t _numDepthPasses, size_t _depthBufferResolution)
@@ -5175,17 +5175,6 @@ void gl_context::shutdown()
 
 	deleteSceneRenderpass();
 
-#if !defined(WZ_STATIC_GL_BINDINGS)
-	if (glDeleteFramebuffers)
-#endif
-	{
-		if (depthFBO.size() > 0)
-		{
-			glDeleteFramebuffers(static_cast<GLsizei>(depthFBO.size()), depthFBO.data());
-			depthFBO.clear();
-		}
-	}
-
 	if (depthTexture)
 	{
 		delete depthTexture;
@@ -5424,17 +5413,7 @@ size_t gl_context::initDepthPasses(size_t resolution)
 	}
 #endif
 
-	// delete prior depth texture & FBOs (if present)
-#if !defined(WZ_STATIC_GL_BINDINGS)
-	if (glDeleteFramebuffers)
-#endif
-	{
-		if (depthFBO.size() > 0)
-		{
-			glDeleteFramebuffers(static_cast<GLsizei>(depthFBO.size()), depthFBO.data());
-			depthFBO.clear();
-		}
-	}
+	// delete prior depth texture (if present)
 	if (depthTexture)
 	{
 		_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::ShadowMap);
@@ -5461,37 +5440,6 @@ size_t gl_context::initDepthPasses(size_t resolution)
 	glTexParameteri(target, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
 	glTexParameteri(target, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
 	depthTexture->unbind();
-
-	for (auto i = 0; i < depthPassCount; ++i)
-	{
-		GLuint newFBO = 0;
-		glGenFramebuffers(1, &newFBO);
-		depthFBO.push_back(newFBO);
-
-		glBindFramebuffer(GL_FRAMEBUFFER, newFBO);
-		if (depthTexture->isArray())
-		{
-#if !defined(WZ_STATIC_GL_BINDINGS)
-			ASSERT(glFramebufferTextureLayer != nullptr, "glFramebufferTextureLayer is not available?");
-#endif
-			glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthTexture->id(), 0, static_cast<GLint>(i)); // OpenGL 3.0+ / ES 3.0+ only
-		}
-		else
-		{
-			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTexture->id(), 0);
-		}
-		GLenum buf = GL_NONE;
-		glDrawBuffers(1, &buf);
-		glReadBuffer(GL_NONE);
-
-		GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-		if (status != GL_FRAMEBUFFER_COMPLETE)
-		{
-			debug(LOG_ERROR, "Failed to create framebuffer with error: %s", cbframebuffererror(status));
-		}
-
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	}
 
 	return depthPassCount;
 }

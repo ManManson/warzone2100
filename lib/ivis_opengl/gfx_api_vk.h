@@ -720,9 +720,7 @@ struct VkRoot final : gfx_api::context
 
 	// render passes
 	const size_t DEFAULT_RENDER_PASS_ID = 0;
-	const size_t DEPTH_RENDER_PASS_ID = 1;
-	const size_t SCENE_RENDER_PASS_ID = 2;
-	const size_t NUM_RENDERPASS_IDS = 3;
+	const size_t NUM_RENDERPASS_IDS = 1;
 
 	struct PassLayoutKey
 	{
@@ -865,8 +863,7 @@ private:
 	void rebuildPipelinesIfNecessary();
 
 	void createDefaultRenderpass(vk::Format swapchainFormat, vk::Format depthFormat);
-	void createDepthPasses(vk::Format depthFormat);
-	void createDepthPassImagesAndFBOs(vk::Format depthFormat);
+	void createDepthPassImages(vk::Format depthFormat);
 	void createSceneRenderpass(vk::Format sceneFormat, vk::Format depthFormat);
 	void destroySceneRenderpass();
 	void setupSwapchainImages();

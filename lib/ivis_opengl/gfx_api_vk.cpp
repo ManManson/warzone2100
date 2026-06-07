@@ -3063,16 +3063,9 @@ void VkRoot::createDefaultRenderpass(vk::Format swapchainFormat, vk::Format dept
 	}
 }
 
-void VkRoot::createDepthPassImagesAndFBOs(vk::Format depthFormat)
+void VkRoot::createDepthPassImages(vk::Format depthFormat)
 {
-	// destroy depth pass objects
 	auto& frameResources = buffering_mechanism::get_current_resources();
-	for (auto f : renderPasses[DEPTH_RENDER_PASS_ID].fbo)
-	{
-		// Queue for future deletion
-		frameResources.fbo_to_delete.emplace_back(f);
-	}
-	renderPasses[DEPTH_RENDER_PASS_ID].fbo.clear();
 	for (auto& imageView : depthMapCascadeView)
 	{
 		if (buffering_mechanism::isInitialized())
@@ -3129,102 +3122,8 @@ void VkRoot::createDepthPassImagesAndFBOs(vk::Format depthFormat)
 			dev.setDebugUtilsObjectNameEXT(objectNameInfo, vkDynLoader);
 		}
 
-		// FBO for this image view + layer
-		auto cascade_fbo = dev.createFramebuffer(
-			vk::FramebufferCreateInfo()
-			.setAttachmentCount(1)
-			.setPAttachments(&non_unique_imageview_ref)
-			.setLayers(1)
-			.setWidth(depthMapSize)
-			.setHeight(depthMapSize)
-			.setRenderPass(renderPasses[DEPTH_RENDER_PASS_ID].rp)
-			, nullptr, vkDynLoader);
-
 		depthMapCascadeView.push_back(std::move(cascade_view));
-
-		if (debugUtilsExtEnabled)
-		{
-			std::string framebufferName = "<depth cascade frame buffer: " + std::to_string(i) + ">";
-			vk::DebugUtilsObjectNameInfoEXT objectNameInfo;
-			objectNameInfo.setObjectType(vk::ObjectType::eFramebuffer);
-			objectNameInfo.setObjectHandle(uint64_t(static_cast<VkFramebuffer>(cascade_fbo)));
-			objectNameInfo.setPObjectName(framebufferName.c_str());
-			dev.setDebugUtilsObjectNameEXT(objectNameInfo, vkDynLoader);
-		}
-
-		renderPasses[DEPTH_RENDER_PASS_ID].fbo.push_back(cascade_fbo);
 	}
-}
-
-void VkRoot::createDepthPasses(vk::Format depthFormat)
-{
-	auto attachments =
-		std::vector<vk::AttachmentDescription>{
-		vk::AttachmentDescription() // depthAttachment
-			.setFormat(depthFormat)
-			.setSamples(vk::SampleCountFlagBits::e1)
-			.setInitialLayout(vk::ImageLayout::eUndefined)
-			.setFinalLayout(vk::ImageLayout::eDepthStencilReadOnlyOptimal)
-			.setLoadOp(vk::AttachmentLoadOp::eClear)
-			.setStoreOp(vk::AttachmentStoreOp::eStore)
-			.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
-			.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-	};
-	const auto depthAttachmentRef =
-		vk::AttachmentReference()
-		.setAttachment(0)
-		.setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
-
-	const auto subpasses =
-		std::array<vk::SubpassDescription, 1> {
-		vk::SubpassDescription()
-			.setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
-			.setColorAttachmentCount(0)
-			.setPDepthStencilAttachment(&depthAttachmentRef)
-	};
-
-	std::array<vk::SubpassDependency, 2> dependencies {
-		vk::SubpassDependency()
-			.setSrcSubpass(VK_SUBPASS_EXTERNAL)
-			.setDstSubpass(0)
-			.setSrcStageMask(vk::PipelineStageFlagBits::eFragmentShader)
-			.setDstStageMask(vk::PipelineStageFlagBits::eEarlyFragmentTests)
-			.setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
-			.setDstAccessMask(vk::AccessFlagBits::eDepthStencilAttachmentWrite)
-			.setDependencyFlags(vk::DependencyFlagBits::eByRegion)
-		, vk::SubpassDependency()
-			.setSrcSubpass(0)
-			.setDstSubpass(VK_SUBPASS_EXTERNAL)
-			.setSrcStageMask(vk::PipelineStageFlagBits::eLateFragmentTests)
-			.setDstStageMask(vk::PipelineStageFlagBits::eFragmentShader)
-			.setSrcAccessMask(vk::AccessFlagBits::eDepthStencilAttachmentWrite)
-			.setDstAccessMask(vk::AccessFlagBits::eShaderRead)
-			.setDependencyFlags(vk::DependencyFlagBits::eByRegion)
-	};
-
-	auto createInfo = vk::RenderPassCreateInfo()
-		.setAttachmentCount(static_cast<uint32_t>(attachments.size()))
-		.setPAttachments(attachments.data())
-		.setSubpassCount(static_cast<uint32_t>(subpasses.size()))
-		.setPSubpasses(subpasses.data())
-		.setDependencyCount(static_cast<uint32_t>(dependencies.size()))
-		.setPDependencies(dependencies.data());
-
-	renderPasses[DEPTH_RENDER_PASS_ID].rp_compat_info = std::make_shared<VkhRenderPassCompat>(createInfo);
-	renderPasses[DEPTH_RENDER_PASS_ID].rp = dev.createRenderPass(createInfo, nullptr, vkDynLoader);
-	renderPasses[DEPTH_RENDER_PASS_ID].msaaSamples = vk::SampleCountFlagBits::e1;
-
-	if (debugUtilsExtEnabled)
-	{
-		std::string renderpassName = "<depth map render pass>";
-		vk::DebugUtilsObjectNameInfoEXT objectNameInfo;
-		objectNameInfo.setObjectType(vk::ObjectType::eRenderPass);
-		objectNameInfo.setObjectHandle(uint64_t(static_cast<VkRenderPass>(renderPasses[DEPTH_RENDER_PASS_ID].rp)));
-		objectNameInfo.setPObjectName(renderpassName.c_str());
-		dev.setDebugUtilsObjectNameEXT(objectNameInfo, vkDynLoader);
-	}
-
-	createDepthPassImagesAndFBOs(depthFormat);
 }
 
 void VkRoot::destroySceneRenderpass()
@@ -3234,16 +3133,6 @@ void VkRoot::destroySceneRenderpass()
 	_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneDepth);
 	_sceneDepthSurface.reset();
 	_sceneMsaaSurface.reset();
-
-	// destroy scene pass objects
-	if (SCENE_RENDER_PASS_ID < renderPasses.size())
-	{
-		for (auto f : renderPasses[SCENE_RENDER_PASS_ID].fbo)
-		{
-			dev.destroyFramebuffer(f, nullptr, vkDynLoader);
-		}
-		renderPasses[SCENE_RENDER_PASS_ID].fbo.clear();
-	}
 
 	if (sceneDepthStencilView)
 	{
@@ -3282,11 +3171,6 @@ void VkRoot::destroySceneRenderpass()
 		pSceneImage->destroy(dev, allocator, vkDynLoader); // because the buffering_mechanism may be gone by the time this is called...
 		delete pSceneImage;
 		pSceneImage = nullptr;
-	}
-	if ((SCENE_RENDER_PASS_ID < renderPasses.size()) && renderPasses[SCENE_RENDER_PASS_ID].rp)
-	{
-		dev.destroyRenderPass(renderPasses[SCENE_RENDER_PASS_ID].rp, nullptr, vkDynLoader);
-		renderPasses[SCENE_RENDER_PASS_ID].rp = vk::RenderPass();
 	}
 }
 
@@ -3898,26 +3782,13 @@ void VkRoot::shutdown()
 		}
 		createdPipelines.clear();
 
-		// destroy depth pass objects
-		if (DEPTH_RENDER_PASS_ID < renderPasses.size())
-		{
-			for (auto f : renderPasses[DEPTH_RENDER_PASS_ID].fbo)
-			{
-				dev.destroyFramebuffer(f, nullptr, vkDynLoader);
-			}
-			renderPasses[DEPTH_RENDER_PASS_ID].fbo.clear();
-		}
 		depthMapCascadeView.clear();
 		if (pDepthMapImage)
 		{
+			_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::ShadowMap);
 			pDepthMapImage->destroy(dev, allocator, vkDynLoader); // because the buffering_mechanism is gone at this point...
 			delete pDepthMapImage;
 			pDepthMapImage = nullptr;
-		}
-		if ((DEPTH_RENDER_PASS_ID < renderPasses.size()) && renderPasses[DEPTH_RENDER_PASS_ID].rp)
-		{
-			dev.destroyRenderPass(renderPasses[DEPTH_RENDER_PASS_ID].rp, nullptr, vkDynLoader);
-			renderPasses[DEPTH_RENDER_PASS_ID].rp = vk::RenderPass();
 		}
 
 		// destroy default depth map texture
@@ -5100,7 +4971,7 @@ bool VkRoot::_initialize(const gfx_api::backend_Impl_Factory& impl, int32_t anti
 	getQueues();
 
 	ASSERT(renderPasses.empty(), "Non-empty renderPasses vector?");
-	renderPasses = { RenderPassDetails(DEFAULT_RENDER_PASS_ID), RenderPassDetails(DEPTH_RENDER_PASS_ID), RenderPassDetails(SCENE_RENDER_PASS_ID) };
+	renderPasses = { RenderPassDetails(DEFAULT_RENDER_PASS_ID) };
 
 	try {
 		createSwapchain(true);
@@ -5122,7 +4993,7 @@ bool VkRoot::_initialize(const gfx_api::backend_Impl_Factory& impl, int32_t anti
 		depthMapSize = getVKSuggestedDefaultDepthBufferResolution(physDeviceProps, memprops);
 	}
 
-	createDepthPasses(depthBufferFormat); // TODO: Handle failures?
+	createDepthPassImages(depthBufferFormat);
 
 	pDefaultDepthMapTexture = new VkDepthMapImage(*this, 1, 4, depthBufferFormat, "<default depth map>");
 	const auto imageMemoryBarriers_TransitionDefaultDepthImage = std::array<vk::ImageMemoryBarrier, 1> {
@@ -7212,7 +7083,7 @@ bool VkRoot::setDepthPassProperties(size_t _numDepthPasses, size_t _depthBufferR
 	depthPassCount = _numDepthPasses;
 	depthMapSize = static_cast<uint32_t>(_depthBufferResolution);
 
-	createDepthPassImagesAndFBOs(depthBufferFormat);
+	createDepthPassImages(depthBufferFormat);
 
 	return true;
 }
