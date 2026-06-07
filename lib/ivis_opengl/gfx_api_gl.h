@@ -357,6 +357,7 @@ struct gl_context final : public gfx_api::context
 	virtual gfx_api::abstract_texture* getSceneTexture() override;
 	virtual gfx_api::abstract_texture* getPipelineSurface(gfx_api::PipelineSurfaceId id) override;
 	virtual bool isSceneMSAAEnabled() const override;
+	virtual bool isMultisampledColorAttachment(gfx_api::abstract_texture* texture) const override;
 	virtual gfx_api::pixel_format getDepthStencilFormat() const override;
 	virtual gfx_api::abstract_texture* acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height) override;
 	virtual void releaseTransientRenderTargets() override;
@@ -408,6 +409,7 @@ private:
 	std::unique_ptr<gl_gpurendered_renderbuffer> create_framebuffer_renderbuffer(GLenum internalFormat, GLsizei samples,
 		uint32_t width, uint32_t height, const std::string& filename);
 	std::unique_ptr<gfx_api::abstract_texture> createTransientColorRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height, const std::string& debugName);
+	std::unique_ptr<gfx_api::abstract_texture> createTransientDepthRenderTarget(uint32_t width, uint32_t height, const std::string& debugName);
 	bool createDefaultTextures();
 	bool createSceneRenderpass();
 	void deleteSceneRenderpass();
@@ -430,11 +432,9 @@ private:
 	bool setSwapIntervalInternal(gfx_api::context::swap_interval_mode mode);
 
 	void beginSwapchainPass(const gfx_api::RenderPassDesc& pass);
-	void beginDepthCascadePass(const gfx_api::RenderPassDesc& pass);
 	void beginScenePass(const gfx_api::RenderPassDesc& pass);
 	void beginDynamicAttachmentPass(const gfx_api::RenderPassDesc& pass);
 	void endSwapchainPass();
-	void endDepthCascadePass();
 	void endScenePass();
 	void endDynamicAttachmentPass();
 	static void applyAttachmentClears(const gfx_api::RenderPassDesc& pass);

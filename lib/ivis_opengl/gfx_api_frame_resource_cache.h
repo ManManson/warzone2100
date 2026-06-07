@@ -89,6 +89,8 @@ struct ImageViewResourceKey
 };
 
 /// Per-frame pool of reusable transient images (LegitVulkan ImageCache pattern).
+/// Color transients use uncompressed color pixel_format values; depth transients use
+/// pixel_format::FORMAT_D24_UNORM_S8 (backend maps to the real depth/stencil format).
 ///
 /// Lifecycle (callers must preserve this ordering):
 /// 1. releaseAll() at frame graph reset (start of accumulation).

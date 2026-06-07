@@ -45,6 +45,8 @@ public:
 	RenderPassBuilder& colorAttachment(abstract_texture* tex, bool clear);
 	RenderPassBuilder& transientColorAttachment(AttachmentLoadOp loadOp = AttachmentLoadOp::Clear,
 		ClearValue clearValue = ClearValue::colorClear());
+	RenderPassBuilder& transientDepthAttachment(AttachmentLoadOp loadOp = AttachmentLoadOp::Clear,
+		ClearValue clearValue = ClearValue::depthStencilClear());
 	RenderPassBuilder& swapchainAttachment(AttachmentLoadOp loadOp = AttachmentLoadOp::Load,
 		ClearValue clearValue = ClearValue::colorClear());
 

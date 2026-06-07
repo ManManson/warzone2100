@@ -13,7 +13,6 @@ struct RenderPassDesc;
 enum class ResolvedPassRoute
 {
 	Swapchain,
-	DepthCascade,
 	SceneFramebuffer,
 	DynamicAttachments
 };
@@ -31,5 +30,14 @@ bool canExtendSwapchainBatch(const RenderPassDesc& pass);
 
 /// Load op of the first swapchain color attachment, if any.
 nonstd::optional<AttachmentLoadOp> getSwapchainColorLoadOp(const RenderPassDesc& pass);
+
+/// True when the pass has no color attachments and a resolved depth attachment.
+bool passIsDepthOnly(const RenderPassDesc& pass);
+
+/// True when resolveAttachment is set and the first color attachment is multisampled.
+bool passNeedsMsaaResolve(const RenderPassDesc& pass);
+
+/// True when the resolved depth attachment includes a stencil component (scene depth, not shadow map).
+bool attachmentDepthHasStencil(const AttachmentDesc& attachment);
 
 } // namespace gfx_api

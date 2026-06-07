@@ -246,6 +246,7 @@ struct perFrameResources_t
 	std::vector</*WZ_vk::UniqueBuffer*/vk::Buffer> buffer_to_delete;
 	std::vector</*WZ_vk::UniqueImage*/vk::Image> image_to_delete;
 	std::vector<WZ_vk::UniqueImageView> image_view_to_delete;
+	std::vector<vk::DeviceMemory> devicememory_to_free;
 	std::vector<VmaAllocation> vmamemory_to_free;
 	std::vector<VkPSO*> pso_to_delete;
 	std::vector<vk::Framebuffer> fbo_to_delete;
@@ -614,6 +615,28 @@ struct VkAttachmentImage final : public gfx_api::abstract_texture
 	virtual size_t backend_internal_value() const override;
 };
 
+/// Owned depth/stencil image for per-frame transient pool allocations.
+struct VkTransientDepthStencilImage final : public gfx_api::abstract_texture
+{
+	vk::Device dev;
+	vk::Image image = {};
+	vk::DeviceMemory memory = {};
+	vk::ImageView view = {};
+	vk::Format imageFormat = vk::Format::eUndefined;
+	uint32_t width = 0;
+	uint32_t height = 0;
+
+#if defined(WZ_DEBUG_GFX_API_LEAKS)
+	std::string debugName;
+#endif
+
+	VkTransientDepthStencilImage(const VkRoot& root, uint32_t w, uint32_t h, vk::Format format, const std::string& filename);
+	~VkTransientDepthStencilImage() override;
+	void bind() override;
+	bool isArray() const override { return false; }
+	size_t backend_internal_value() const override;
+};
+
 struct QueueFamilyIndices
 {
 	optional<uint32_t> graphicsFamily;
@@ -707,6 +730,8 @@ struct VkRoot final : gfx_api::context
 		std::vector<gfx_api::AttachmentLoadOp> colorLoadOps;
 		optional<vk::Format> depthFormat;
 		gfx_api::AttachmentLoadOp depthLoadOp = gfx_api::AttachmentLoadOp::DontCare;
+		/// Layout after endRenderPass; shadow-map depth-only passes use ReadOnly for shader sampling.
+		vk::ImageLayout depthFinalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 		uint32_t width = 0;
 		uint32_t height = 0;
 
@@ -871,6 +896,7 @@ public:
 	virtual gfx_api::abstract_texture* getSceneTexture() override;
 	virtual gfx_api::abstract_texture* getPipelineSurface(gfx_api::PipelineSurfaceId id) override;
 	virtual bool isSceneMSAAEnabled() const override;
+	virtual bool isMultisampledColorAttachment(gfx_api::abstract_texture* texture) const override;
 	virtual gfx_api::pixel_format getDepthStencilFormat() const override;
 	virtual gfx_api::abstract_texture* acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height) override;
 	virtual void releaseTransientRenderTargets() override;
@@ -941,6 +967,7 @@ private:
 	void ensureRenderPassPSOCapacity(size_t requiredCount);
 	size_t getOrCreatePassRenderPassId(const PassLayoutKey& key);
 	vk::Format getAttachmentVkFormat(gfx_api::abstract_texture* texture) const;
+	vk::ImageView getAttachmentImageView(const gfx_api::AttachmentDesc& attachment) const;
 	void destroyCustomRenderPasses();
 	void resetImageLayoutTracker();
 	void setImageLayout(gfx_api::abstract_texture* texture, vk::ImageLayout layout);
@@ -956,11 +983,9 @@ private:
 	void deferDestroyFramebuffer(vk::Framebuffer framebuffer);
 	void endActiveSwapchainRenderPassIfNeeded();
 	void beginSwapchainPass(gfx_api::RenderPassDesc& pass);
-	void beginDepthCascadePass(gfx_api::RenderPassDesc& pass);
 	void beginScenePass(gfx_api::RenderPassDesc& pass);
 	void beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass);
 	void endSwapchainPass();
-	void endDepthCascadePass();
 	void endScenePass();
 	void endDynamicAttachmentPass();
 private:
@@ -993,6 +1018,7 @@ private:
 	uint32_t _customPassHeight = 0;
 	std::vector<gfx_api::abstract_texture*> _activeCustomColorOutputs;
 	optional<gfx_api::abstract_texture*> _activeCustomDepthOutput = nullopt;
+	vk::ImageLayout _activeCustomDepthFinalLayout = vk::ImageLayout::eUndefined;
 
 	std::unordered_map<gfx_api::abstract_texture*, vk::ImageLayout> _imageLayoutTracker;
 };

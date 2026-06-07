@@ -947,6 +947,11 @@ void perFrameResources_t::clean()
 		dev.destroyImage(image, nullptr, *pVkDynLoader);
 	}
 	image_to_delete.clear();
+	for (auto memory : devicememory_to_free)
+	{
+		dev.freeMemory(memory, nullptr, *pVkDynLoader);
+	}
+	devicememory_to_free.clear();
 	perPSO_dynamicUniformBufferDescriptorSets.clear();
 	for (auto allocation : vmamemory_to_free)
 	{
@@ -2879,6 +2884,53 @@ static void createDepthStencilImage(const vk::PhysicalDevice& physicalDevice, co
 										 vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil,
 										 depthStencilImage, depthStencilMemory, depthStencilView,
 										 vkDynLoader, loggingKey);
+}
+
+// MARK: VkTransientDepthStencilImage
+
+VkTransientDepthStencilImage::VkTransientDepthStencilImage(const VkRoot& root, uint32_t w, uint32_t h, vk::Format format, const std::string& filename)
+	: dev(root.dev)
+	, imageFormat(format)
+	, width(w)
+	, height(h)
+{
+#if defined(WZ_DEBUG_GFX_API_LEAKS)
+	debugName = filename;
+#endif
+
+	createDepthStencilImage(root.physicalDevice, root.memprops, root.dev,
+		vk::Extent2D(w, h), vk::SampleCountFlagBits::e1, format,
+		image, memory, view, root.vkDynLoader, filename.c_str());
+}
+
+VkTransientDepthStencilImage::~VkTransientDepthStencilImage()
+{
+	if (buffering_mechanism::isInitialized())
+	{
+		auto& frameResources = buffering_mechanism::get_current_resources();
+		if (view)
+		{
+			frameResources.image_view_to_delete.emplace_back(view);
+			view = vk::ImageView();
+		}
+		if (image)
+		{
+			frameResources.image_to_delete.emplace_back(image);
+			image = vk::Image();
+		}
+		if (memory)
+		{
+			frameResources.devicememory_to_free.emplace_back(memory);
+			memory = vk::DeviceMemory();
+		}
+	}
+}
+
+void VkTransientDepthStencilImage::bind() { }
+
+size_t VkTransientDepthStencilImage::backend_internal_value() const
+{
+	return static_cast<size_t>(VulkanBackendInternalTextureType::AttachmentImage);
 }
 
 // throws a vk::SystemError on an unrecoverable error (like OOM)
@@ -6143,21 +6195,35 @@ bool VkRoot::isSceneMSAAEnabled() const
 	return msaaSamples != vk::SampleCountFlagBits::e1;
 }
 
+bool VkRoot::isMultisampledColorAttachment(gfx_api::abstract_texture* texture) const
+{
+	if (auto* attachmentImage = dynamic_cast<VkAttachmentImage*>(texture))
+	{
+		return attachmentImage->samples != vk::SampleCountFlagBits::e1;
+	}
+	return false;
+}
+
 gfx_api::pixel_format VkRoot::getDepthStencilFormat() const
 {
-	return gfx_api::pixel_format::invalid;
+	return gfx_api::pixel_format::FORMAT_D24_UNORM_S8;
 }
 
 gfx_api::abstract_texture* VkRoot::acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height)
 {
 	ASSERT_OR_RETURN(nullptr, width > 0 && height > 0, "Invalid transient render target dimensions");
-	ASSERT_OR_RETURN(nullptr, is_uncompressed_format(format), "Unsupported transient render target format");
+	ASSERT_OR_RETURN(nullptr, is_transient_render_target_format(format), "Unsupported transient render target format");
 
 	static uint32_t transientTargetId = 0;
 	const gfx_api::ImageResourceKey key = gfx_api::ImageResourceKey::color2d(format, width, height);
 	const std::string debugName = "<transient_rt_" + std::to_string(transientTargetId++) + ">";
 
 	gfx_api::abstract_texture* texture = _frameResourceCache.acquireImage(key, [this, format, width, height, debugName]() -> std::unique_ptr<gfx_api::abstract_texture> {
+		if (format == gfx_api::pixel_format::FORMAT_D24_UNORM_S8)
+		{
+			return std::unique_ptr<gfx_api::abstract_texture>(
+				new VkTransientDepthStencilImage(*this, width, height, depthBufferFormat, debugName));
+		}
 		const vk::Format vkFormat = get_format(format);
 		return std::unique_ptr<gfx_api::abstract_texture>(new VkRenderedImage(*this, width, height, vkFormat, debugName));
 	});
@@ -6311,7 +6377,7 @@ void VkRoot::trackCustomPassOutputLayouts()
 	}
 	if (_activeCustomDepthOutput.has_value() && _activeCustomDepthOutput.value() != nullptr)
 	{
-		setImageLayout(_activeCustomDepthOutput.value(), vk::ImageLayout::eDepthStencilAttachmentOptimal);
+		setImageLayout(_activeCustomDepthOutput.value(), _activeCustomDepthFinalLayout);
 	}
 	_activeCustomColorOutputs.clear();
 	_activeCustomDepthOutput.reset();
@@ -6323,6 +6389,7 @@ bool VkRoot::PassLayoutKey::operator==(const PassLayoutKey& other) const
 		&& colorLoadOps == other.colorLoadOps
 		&& depthFormat == other.depthFormat
 		&& depthLoadOp == other.depthLoadOp
+		&& depthFinalLayout == other.depthFinalLayout
 		&& width == other.width
 		&& height == other.height;
 }
@@ -6353,24 +6420,36 @@ vk::Format VkRoot::getAttachmentVkFormat(gfx_api::abstract_texture* texture) con
 	{
 		return attachmentImage->imageFormat;
 	}
+	if (auto* transientDepth = dynamic_cast<VkTransientDepthStencilImage*>(texture))
+	{
+		return transientDepth->imageFormat;
+	}
 	debug(LOG_FATAL, "Unsupported attachment texture type for custom pass");
 	return vk::Format::eUndefined;
 }
 
-static vk::ImageView getAttachmentImageView(gfx_api::abstract_texture* texture)
+vk::ImageView VkRoot::getAttachmentImageView(const gfx_api::AttachmentDesc& attachment) const
 {
-	ASSERT_OR_RETURN(vk::ImageView(), texture != nullptr, "Null attachment texture");
-	if (auto* renderedImage = dynamic_cast<VkRenderedImage*>(texture))
+	ASSERT_OR_RETURN(vk::ImageView(), attachment.texture != nullptr, "Null attachment texture");
+	if (auto* renderedImage = dynamic_cast<VkRenderedImage*>(attachment.texture))
 	{
 		return renderedImage->view.get();
 	}
-	if (auto* depthImage = dynamic_cast<VkDepthMapImage*>(texture))
+	if (auto* depthImage = dynamic_cast<VkDepthMapImage*>(attachment.texture))
 	{
+		if (attachment.arrayLayer < depthMapCascadeView.size())
+		{
+			return depthMapCascadeView[attachment.arrayLayer].get();
+		}
 		return depthImage->view.get();
 	}
-	if (auto* attachmentImage = dynamic_cast<VkAttachmentImage*>(texture))
+	if (auto* attachmentImage = dynamic_cast<VkAttachmentImage*>(attachment.texture))
 	{
 		return attachmentImage->view;
+	}
+	if (auto* transientDepth = dynamic_cast<VkTransientDepthStencilImage*>(attachment.texture))
+	{
+		return transientDepth->view;
 	}
 	debug(LOG_FATAL, "Unsupported attachment texture type for custom pass");
 	return vk::ImageView();
@@ -6441,16 +6520,19 @@ size_t VkRoot::getOrCreatePassRenderPassId(const PassLayoutKey& key)
 	{
 		const uint32_t depthAttachmentIndex = static_cast<uint32_t>(attachments.size());
 		const vk::AttachmentLoadOp vkDepthLoadOp = toVkAttachmentLoadOp(key.depthLoadOp);
+		const vk::AttachmentStoreOp depthStoreOp = (key.depthFinalLayout == vk::ImageLayout::eDepthStencilReadOnlyOptimal)
+			? vk::AttachmentStoreOp::eStore
+			: vk::AttachmentStoreOp::eDontCare;
 		attachments.push_back(
 			vk::AttachmentDescription()
 				.setFormat(key.depthFormat.value())
 				.setSamples(vk::SampleCountFlagBits::e1)
 				.setLoadOp(vkDepthLoadOp)
-				.setStoreOp(vk::AttachmentStoreOp::eDontCare)
-				.setStencilLoadOp(vkDepthLoadOp)
+				.setStoreOp(depthStoreOp)
+				.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
 				.setInitialLayout(initialDepthAttachmentLayout(key.depthLoadOp))
-				.setFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
+				.setFinalLayout(key.depthFinalLayout)
 		);
 		depthStencilAttachmentRef = vk::AttachmentReference()
 			.setAttachment(depthAttachmentIndex)
@@ -6476,24 +6558,53 @@ size_t VkRoot::getOrCreatePassRenderPassId(const PassLayoutKey& key)
 			.setPDepthStencilAttachment(depthStencilAttachmentRef.has_value() ? &depthStencilAttachmentRef.value() : nullptr)
 	};
 
-	const auto dependencies = std::array<vk::SubpassDependency, 2> {
-		vk::SubpassDependency()
-			.setSrcSubpass(VK_SUBPASS_EXTERNAL)
-			.setDstSubpass(0)
-			.setSrcStageMask(vk::PipelineStageFlagBits::eFragmentShader)
-			.setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
-			.setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
-			.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
-			.setDependencyFlags(vk::DependencyFlagBits::eByRegion),
-		vk::SubpassDependency()
-			.setSrcSubpass(VK_SUBPASS_EXTERNAL)
-			.setDstSubpass(0)
-			.setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests)
-			.setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests)
-			.setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite)
-			.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentRead)
-			.setDependencyFlags(vk::DependencyFlagBits::eByRegion)
-	};
+	std::vector<vk::SubpassDependency> dependencies;
+	if (key.colorFormats.empty() && key.depthFormat.has_value())
+	{
+		dependencies.push_back(
+			vk::SubpassDependency()
+				.setSrcSubpass(VK_SUBPASS_EXTERNAL)
+				.setDstSubpass(0)
+				.setSrcStageMask(vk::PipelineStageFlagBits::eFragmentShader)
+				.setDstStageMask(vk::PipelineStageFlagBits::eEarlyFragmentTests)
+				.setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
+				.setDstAccessMask(vk::AccessFlagBits::eDepthStencilAttachmentWrite)
+				.setDependencyFlags(vk::DependencyFlagBits::eByRegion)
+		);
+		dependencies.push_back(
+			vk::SubpassDependency()
+				.setSrcSubpass(0)
+				.setDstSubpass(VK_SUBPASS_EXTERNAL)
+				.setSrcStageMask(vk::PipelineStageFlagBits::eLateFragmentTests)
+				.setDstStageMask(vk::PipelineStageFlagBits::eFragmentShader)
+				.setSrcAccessMask(vk::AccessFlagBits::eDepthStencilAttachmentWrite)
+				.setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+				.setDependencyFlags(vk::DependencyFlagBits::eByRegion)
+		);
+	}
+	else
+	{
+		dependencies.push_back(
+			vk::SubpassDependency()
+				.setSrcSubpass(VK_SUBPASS_EXTERNAL)
+				.setDstSubpass(0)
+				.setSrcStageMask(vk::PipelineStageFlagBits::eFragmentShader)
+				.setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+				.setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
+				.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
+				.setDependencyFlags(vk::DependencyFlagBits::eByRegion)
+		);
+		dependencies.push_back(
+			vk::SubpassDependency()
+				.setSrcSubpass(VK_SUBPASS_EXTERNAL)
+				.setDstSubpass(0)
+				.setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests)
+				.setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests)
+				.setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite)
+				.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentRead)
+				.setDependencyFlags(vk::DependencyFlagBits::eByRegion)
+		);
+	}
 
 	auto createInfo = vk::RenderPassCreateInfo()
 		.setAttachmentCount(static_cast<uint32_t>(attachments.size()))
@@ -6598,6 +6709,13 @@ optional<std::pair<uint32_t, uint32_t>> VkRoot::getRenderTargetDimensions(gfx_ap
 		if (attachmentImage->width > 0 && attachmentImage->height > 0)
 		{
 			return std::make_pair(attachmentImage->width, attachmentImage->height);
+		}
+	}
+	if (auto* transientDepth = dynamic_cast<VkTransientDepthStencilImage*>(texture))
+	{
+		if (transientDepth->width > 0 && transientDepth->height > 0)
+		{
+			return std::make_pair(transientDepth->width, transientDepth->height);
 		}
 	}
 	if (texture == pSceneImage && swapchainSize.width > 0 && swapchainSize.height > 0)
@@ -6940,40 +7058,6 @@ void VkRoot::beginSwapchainPass(gfx_api::RenderPassDesc& pass)
 	currentPSO = nullptr;
 }
 
-void VkRoot::beginDepthCascadePass(gfx_api::RenderPassDesc& pass)
-{
-	ASSERT_OR_RETURN(, pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr,
-		"Depth cascade pass missing depth attachment");
-	const size_t idx = pass.depthAttachment->arrayLayer;
-	buffering_mechanism::get_current_resources().ensureDrawCmdBufferBegun();
-	frameHasDrawCommands = true;
-
-	auto& depthRenderPass = renderPasses[DEPTH_RENDER_PASS_ID];
-	ASSERT_OR_RETURN(, idx < depthRenderPass.fbo.size(), "Invalid depth pass #: %zu (exceeds depthPass FBOs count: %zu)", idx, depthRenderPass.fbo.size());
-
-	const auto depthPassExtent = vk::Extent2D(depthMapSize, depthMapSize);
-	const auto& depthClear = pass.depthAttachment.has_value()
-		? pass.depthAttachment->clearValue
-		: gfx_api::ClearValue::depthStencilClear();
-	const auto clearValue = std::array<vk::ClearValue, 1> {
-		vk::ClearValue(vk::ClearDepthStencilValue(depthClear.depth, depthClear.stencil))
-	};
-	buffering_mechanism::get_current_resources().drawCmdBuffer().beginRenderPass(
-		vk::RenderPassBeginInfo()
-		.setFramebuffer(depthRenderPass.fbo[idx])
-		.setClearValueCount(static_cast<uint32_t>(clearValue.size()))
-		.setPClearValues(clearValue.data())
-		.setRenderPass(depthRenderPass.rp)
-		.setRenderArea(vk::Rect2D(vk::Offset2D(), depthPassExtent)),
-		vk::SubpassContents::eInline,
-		vkDynLoader);
-	applyViewport(buffering_mechanism::get_current_resources().drawCmdBuffer(),
-		depthMapSize, depthMapSize, 0.f, 1.f);
-
-	currentRenderPassId = DEPTH_RENDER_PASS_ID;
-	currentPSO = nullptr;
-}
-
 void VkRoot::beginScenePass(gfx_api::RenderPassDesc& pass)
 {
 	buffering_mechanism::get_current_resources().ensureDrawCmdBufferBegun();
@@ -7027,7 +7111,15 @@ void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass)
 	{
 		layoutKey.depthFormat = getAttachmentVkFormat(pass.depthAttachment->texture);
 		layoutKey.depthLoadOp = pass.depthAttachment->loadOp;
+		if (pass.colorAttachments.empty() && isDepthInputTexture(pass.depthAttachment->texture))
+		{
+			layoutKey.depthFinalLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
+		}
 	}
+
+	_activeCustomDepthFinalLayout = layoutKey.depthFormat.has_value()
+		? layoutKey.depthFinalLayout
+		: vk::ImageLayout::eUndefined;
 
 	_activeCustomRenderPassId = getOrCreatePassRenderPassId(layoutKey);
 	_customPassWidth = passWidth;
@@ -7059,11 +7151,11 @@ void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass)
 	fboAttachments.reserve(pass.colorAttachments.size() + (pass.depthAttachment.has_value() ? 1 : 0));
 	for (const auto& colorAttachment : pass.colorAttachments)
 	{
-		fboAttachments.push_back(getAttachmentImageView(colorAttachment.texture));
+		fboAttachments.push_back(getAttachmentImageView(colorAttachment));
 	}
 	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
 	{
-		fboAttachments.push_back(getAttachmentImageView(pass.depthAttachment->texture));
+		fboAttachments.push_back(getAttachmentImageView(pass.depthAttachment.value()));
 	}
 
 	_activeCustomFramebuffer = dev.createFramebuffer(
@@ -7112,18 +7204,6 @@ void VkRoot::endSwapchainPass()
 	endActiveSwapchainRenderPassIfNeeded();
 }
 
-void VkRoot::endDepthCascadePass()
-{
-	ASSERT_OR_RETURN(, currentRenderPassId == DEPTH_RENDER_PASS_ID, "Depth pass end while wrong render pass is active");
-	buffering_mechanism::get_current_resources().drawCmdBuffer().endRenderPass(vkDynLoader);
-	if (pDepthMapImage != nullptr)
-	{
-		setImageLayout(pDepthMapImage, vk::ImageLayout::eDepthStencilReadOnlyOptimal);
-	}
-	currentRenderPassId = DEFAULT_RENDER_PASS_ID;
-	currentPSO = nullptr;
-}
-
 void VkRoot::endScenePass()
 {
 	ASSERT_OR_RETURN(, currentRenderPassId == SCENE_RENDER_PASS_ID, "Scene pass end while wrong render pass is active");
@@ -7159,9 +7239,6 @@ void VkRoot::beginPass(gfx_api::RenderPassDesc& pass)
 	case gfx_api::ResolvedPassRoute::Swapchain:
 		beginSwapchainPass(pass);
 		break;
-	case gfx_api::ResolvedPassRoute::DepthCascade:
-		beginDepthCascadePass(pass);
-		break;
 	case gfx_api::ResolvedPassRoute::SceneFramebuffer:
 		beginScenePass(pass);
 		break;
@@ -7179,9 +7256,6 @@ void VkRoot::endPass()
 	{
 	case gfx_api::ResolvedPassRoute::Swapchain:
 		endSwapchainPass();
-		break;
-	case gfx_api::ResolvedPassRoute::DepthCascade:
-		endDepthCascadePass();
 		break;
 	case gfx_api::ResolvedPassRoute::SceneFramebuffer:
 		endScenePass();

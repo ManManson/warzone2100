@@ -105,6 +105,17 @@ struct AttachmentDesc
 		return desc;
 	}
 
+	/// Per-frame pooled depth/stencil target; texture is filled in during pass resolution.
+	static AttachmentDesc transientDepth(AttachmentLoadOp op = AttachmentLoadOp::Clear,
+		ClearValue clear = ClearValue::depthStencilClear())
+	{
+		AttachmentDesc desc;
+		desc.source = AttachmentSource::Transient;
+		desc.loadOp = op;
+		desc.clearValue = clear;
+		return desc;
+	}
+
 	/// Current swapchain / default framebuffer color target.
 	static AttachmentDesc swapchain(AttachmentLoadOp op = AttachmentLoadOp::Load,
 		ClearValue clear = ClearValue::colorClear())

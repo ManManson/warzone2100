@@ -148,8 +148,14 @@ bool resolveTransientAttachments(RenderPassDesc& pass, gfx_api::context& ctx, ui
 
 	if (pass.depthAttachment.has_value() && pass.depthAttachment->isTransient())
 	{
-		ASSERT(false, "Transient depth attachments are not supported yet for pass \"%s\"", pass.debugName.c_str());
-		return false;
+		const auto depthFormat = ctx.getDepthStencilFormat();
+		ASSERT_OR_RETURN(false, depthFormat != pixel_format::invalid,
+			"Transient depth attachment on pass \"%s\" requires a valid depth/stencil format",
+			pass.debugName.c_str());
+		if (!resolveTransientAttachment(ctx, pass.depthAttachment.value(), width, height, depthFormat))
+		{
+			return false;
+		}
 	}
 
 	if (pass.resolveAttachment.has_value())
@@ -185,13 +191,6 @@ bool resolvePassDescription(RenderPassDesc& pass)
 	{
 		ASSERT_OR_RETURN(false, passHasSwapchainColorAttachment(pass),
 			"Swapchain pass \"%s\" must declare a swapchain color attachment", pass.debugName.c_str());
-	}
-	if (route == ResolvedPassRoute::DepthCascade)
-	{
-		ASSERT_OR_RETURN(false, pass.depthAttachment.has_value()
-			&& pass.depthAttachment->source == AttachmentSource::Texture
-			&& pass.depthAttachment->texture != nullptr,
-			"Depth cascade pass \"%s\" could not resolve depth attachment", pass.debugName.c_str());
 	}
 	if (route == ResolvedPassRoute::SceneFramebuffer)
 	{
@@ -252,16 +251,38 @@ ResolvedPassRoute routeResolvedPass(const RenderPassDesc& pass)
 		}
 	}
 
-	const bool depthOnly = !hasColor
-		&& pass.depthAttachment.has_value()
-		&& pass.depthAttachment->source == AttachmentSource::Texture
-		&& pass.depthAttachment->texture != nullptr;
-	if (depthOnly)
-	{
-		return ResolvedPassRoute::DepthCascade;
-	}
-
 	return ResolvedPassRoute::DynamicAttachments;
+}
+
+bool passIsDepthOnly(const RenderPassDesc& pass)
+{
+	return pass.colorAttachments.empty()
+		&& pass.depthAttachment.has_value()
+		&& pass.depthAttachment->texture != nullptr;
+}
+
+bool passNeedsMsaaResolve(const RenderPassDesc& pass)
+{
+	if (!pass.resolveAttachment.has_value() || pass.resolveAttachment->texture == nullptr)
+	{
+		return false;
+	}
+	if (pass.colorAttachments.empty() || pass.colorAttachments[0].texture == nullptr)
+	{
+		return false;
+	}
+	return gfx_api::context::get().isMultisampledColorAttachment(pass.colorAttachments[0].texture);
+}
+
+bool attachmentDepthHasStencil(const AttachmentDesc& attachment)
+{
+	if (attachment.texture == nullptr)
+	{
+		return false;
+	}
+	auto& ctx = gfx_api::context::get();
+	// Shadow map is depth-component only; scene depth and transient depth use D24S8.
+	return attachment.texture != ctx.getPipelineSurface(PipelineSurfaceId::ShadowMap);
 }
 
 } // namespace gfx_api

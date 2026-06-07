@@ -2600,6 +2600,11 @@ std::unique_ptr<gfx_api::abstract_texture> gl_context::createTransientColorRende
 		create_framebuffer_color_texture(internalFormat, glFormat, GL_UNSIGNED_BYTE, width, height, debugName));
 }
 
+std::unique_ptr<gfx_api::abstract_texture> gl_context::createTransientDepthRenderTarget(uint32_t width, uint32_t height, const std::string& debugName)
+{
+	return create_framebuffer_renderbuffer(GL_DEPTH24_STENCIL8, 0, width, height, debugName);
+}
+
 gfx_api::buffer * gl_context::create_buffer_object(const gfx_api::buffer::usage &usage, const buffer_storage_hint& hint /*= buffer_storage_hint::static_draw*/, const std::string& debugName /*= ""*/)
 {
 	return new gl_buffer(usage, hint);
@@ -4226,9 +4231,18 @@ bool gl_context::isSceneMSAAEnabled() const
 	return multisamples > 0 && _sceneMsaaSurface != nullptr;
 }
 
+bool gl_context::isMultisampledColorAttachment(gfx_api::abstract_texture* texture) const
+{
+	if (auto* renderbuffer = dynamic_cast<gl_gpurendered_renderbuffer*>(texture))
+	{
+		return renderbuffer->isMultisampled();
+	}
+	return false;
+}
+
 gfx_api::pixel_format gl_context::getDepthStencilFormat() const
 {
-	return gfx_api::pixel_format::invalid;
+	return gfx_api::pixel_format::FORMAT_D24_UNORM_S8;
 }
 
 [[noreturn]] static void glContextHandleOOMError()
@@ -4274,7 +4288,11 @@ void gl_context::applyAttachmentClears(const gfx_api::RenderPassDesc& pass)
 	}
 	if (pass.depthAttachment.has_value() && pass.depthAttachment->shouldClear())
 	{
-		clearFlags |= GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+		clearFlags |= GL_DEPTH_BUFFER_BIT;
+		if (gfx_api::attachmentDepthHasStencil(pass.depthAttachment.value()))
+		{
+			clearFlags |= GL_STENCIL_BUFFER_BIT;
+		}
 	}
 	if (clearFlags != 0)
 	{
@@ -4304,25 +4322,6 @@ void gl_context::beginSwapchainPass(const gfx_api::RenderPassDesc& pass)
 	}
 }
 
-void gl_context::beginDepthCascadePass(const gfx_api::RenderPassDesc& pass)
-{
-	ASSERT_OR_RETURN(, pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr,
-		"Depth cascade pass missing depth attachment");
-	const size_t idx = pass.depthAttachment->arrayLayer;
-	const gfx_api::AttachmentLoadOp depthLoadOp = pass.depthAttachment.has_value()
-		? pass.depthAttachment->loadOp
-		: gfx_api::AttachmentLoadOp::Clear;
-	ASSERT_OR_RETURN(, idx < depthFBO.size(), "Invalid depth pass #: %zu", idx);
-	glBindFramebuffer(GL_FRAMEBUFFER, depthFBO[idx]);
-	glViewport(0, 0, static_cast<GLsizei>(depthBufferResolution), static_cast<GLsizei>(depthBufferResolution));
-	set_depth_range(0.f, 1.f);
-	if (depthLoadOp == gfx_api::AttachmentLoadOp::Clear)
-	{
-		glDepthMask(GL_TRUE);
-		glClear(GL_DEPTH_BUFFER_BIT);
-	}
-}
-
 void gl_context::beginScenePass(const gfx_api::RenderPassDesc& pass)
 {
 	glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO[sceneFBOIdx]);
@@ -4343,6 +4342,7 @@ void gl_context::beginDynamicAttachmentPass(const gfx_api::RenderPassDesc& pass)
 	const uint32_t passWidth = pass.viewportSize->first;
 	const uint32_t passHeight = pass.viewportSize->second;
 
+	set_depth_range(0.f, 1.f);
 	glGenFramebuffers(1, &_customPassFBO);
 	glBindFramebuffer(GL_FRAMEBUFFER, _customPassFBO);
 
@@ -4368,9 +4368,12 @@ void gl_context::beginDynamicAttachmentPass(const gfx_api::RenderPassDesc& pass)
 
 	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
 	{
+		const GLenum depthAttachmentPoint = gfx_api::attachmentDepthHasStencil(pass.depthAttachment.value())
+			? GL_DEPTH_STENCIL_ATTACHMENT
+			: GL_DEPTH_ATTACHMENT;
 		if (auto* depthRenderbuffer = dynamic_cast<gl_gpurendered_renderbuffer*>(pass.depthAttachment->texture))
 		{
-			glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, depthRenderbuffer->id());
+			glFramebufferRenderbuffer(GL_FRAMEBUFFER, depthAttachmentPoint, GL_RENDERBUFFER, depthRenderbuffer->id());
 		}
 		else
 		{
@@ -4378,12 +4381,12 @@ void gl_context::beginDynamicAttachmentPass(const gfx_api::RenderPassDesc& pass)
 			ASSERT_OR_RETURN(, depthTexture != nullptr, "Dynamic pass depth attachment must be a GPU-rendered texture or renderbuffer");
 			if (depthTexture->isArray())
 			{
-				glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, depthTexture->id(), 0,
+				glFramebufferTextureLayer(GL_FRAMEBUFFER, depthAttachmentPoint, depthTexture->id(), 0,
 					static_cast<GLint>(pass.depthAttachment->arrayLayer));
 			}
 			else
 			{
-				glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, depthTexture->target(), depthTexture->id(), 0);
+				glFramebufferTexture2D(GL_FRAMEBUFFER, depthAttachmentPoint, depthTexture->target(), depthTexture->id(), 0);
 			}
 		}
 	}
@@ -4396,6 +4399,7 @@ void gl_context::beginDynamicAttachmentPass(const gfx_api::RenderPassDesc& pass)
 	{
 		const GLenum none = GL_NONE;
 		glDrawBuffers(1, &none);
+		glReadBuffer(GL_NONE);
 	}
 
 	const GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
@@ -4410,11 +4414,6 @@ void gl_context::beginDynamicAttachmentPass(const gfx_api::RenderPassDesc& pass)
 
 void gl_context::endSwapchainPass()
 {
-}
-
-void gl_context::endDepthCascadePass()
-{
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void gl_context::endScenePass()
@@ -4519,9 +4518,6 @@ void gl_context::beginPass(gfx_api::RenderPassDesc& pass)
 	case gfx_api::ResolvedPassRoute::Swapchain:
 		beginSwapchainPass(pass);
 		break;
-	case gfx_api::ResolvedPassRoute::DepthCascade:
-		beginDepthCascadePass(pass);
-		break;
 	case gfx_api::ResolvedPassRoute::SceneFramebuffer:
 		beginScenePass(pass);
 		break;
@@ -4539,9 +4535,6 @@ void gl_context::endPass()
 	{
 	case gfx_api::ResolvedPassRoute::Swapchain:
 		endSwapchainPass();
-		break;
-	case gfx_api::ResolvedPassRoute::DepthCascade:
-		endDepthCascadePass();
 		break;
 	case gfx_api::ResolvedPassRoute::SceneFramebuffer:
 		endScenePass();
@@ -5667,13 +5660,17 @@ gfx_api::abstract_texture* gl_context::getSceneTexture()
 gfx_api::abstract_texture* gl_context::acquireTransientRenderTarget(gfx_api::pixel_format format, uint32_t width, uint32_t height)
 {
 	ASSERT_OR_RETURN(nullptr, width > 0 && height > 0, "Invalid transient render target dimensions");
-	ASSERT_OR_RETURN(nullptr, is_uncompressed_format(format), "Unsupported transient render target format");
+	ASSERT_OR_RETURN(nullptr, is_transient_render_target_format(format), "Unsupported transient render target format");
 
 	static uint32_t transientTargetId = 0;
 	const gfx_api::ImageResourceKey key = gfx_api::ImageResourceKey::color2d(format, width, height);
 	const std::string debugName = "<transient_rt_" + std::to_string(transientTargetId++) + ">";
 
 	return _frameResourceCache.acquireImage(key, [this, format, width, height, debugName]() {
+		if (format == gfx_api::pixel_format::FORMAT_D24_UNORM_S8)
+		{
+			return createTransientDepthRenderTarget(width, height, debugName);
+		}
 		return createTransientColorRenderTarget(format, width, height, debugName);
 	});
 }

@@ -414,6 +414,7 @@ namespace gfx_api
 		virtual gfx_api::abstract_texture* getSceneTexture() { return nullptr; }
 		virtual gfx_api::abstract_texture* getPipelineSurface(PipelineSurfaceId id) { return nullptr; }
 		virtual bool isSceneMSAAEnabled() const { return false; }
+		virtual bool isMultisampledColorAttachment(abstract_texture* texture) const { return false; }
 		virtual pixel_format getDepthStencilFormat() const { return pixel_format::invalid; }
 
 		// Transient offscreen render targets pooled via FrameResourceCache (LegitVulkan ImageCache).

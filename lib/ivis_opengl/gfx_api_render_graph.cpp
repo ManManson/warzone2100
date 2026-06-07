@@ -43,6 +43,12 @@ RenderPassBuilder& RenderPassBuilder::transientColorAttachment(AttachmentLoadOp 
 	return *this;
 }
 
+RenderPassBuilder& RenderPassBuilder::transientDepthAttachment(AttachmentLoadOp loadOp, ClearValue clearValue)
+{
+	_desc.depthAttachment = AttachmentDesc::transientDepth(loadOp, clearValue);
+	return *this;
+}
+
 RenderPassBuilder& RenderPassBuilder::swapchainAttachment(AttachmentLoadOp loadOp, ClearValue clearValue)
 {
 	_desc.colorAttachments.push_back(AttachmentDesc::swapchain(loadOp, clearValue));
