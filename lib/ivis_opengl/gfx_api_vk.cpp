@@ -6195,33 +6195,23 @@ void VkRoot::emitPrePassBarriers(const gfx_api::CompiledPass& pass)
 	}
 }
 
-void VkRoot::trackCustomPassOutputLayouts()
+void VkRoot::applyCompiledPostPassLayouts(const gfx_api::CompiledPass& pass)
 {
-	if (_activeCustomResolveOutput.has_value() && _activeCustomResolveOutput.value() != nullptr
-		&& _activeCustomLayoutKey.resolveStoreOp == gfx_api::AttachmentStoreOp::Store)
+	for (const gfx_api::LayoutStateUpdate& update : pass.postPassLayoutUpdates)
 	{
-		setImageLayout(_activeCustomResolveOutput.value(), vk::ImageLayout::eShaderReadOnlyOptimal);
-	}
-	else
-	{
-		for (size_t i = 0; i < _activeCustomColorOutputs.size(); ++i)
+		if (update.texture == nullptr)
 		{
-			const gfx_api::AttachmentStoreOp colorStoreOp = (i < _activeCustomLayoutKey.colorStoreOps.size())
-				? _activeCustomLayoutKey.colorStoreOps[i]
-				: gfx_api::AttachmentStoreOp::Store;
-			if (colorStoreOp == gfx_api::AttachmentStoreOp::Store)
-			{
-				setImageLayout(_activeCustomColorOutputs[i], vk::ImageLayout::eShaderReadOnlyOptimal);
-			}
+			continue;
 		}
+		const vk::ImageLayout vkLayout = toVkImageLayout(update.layout);
+		setImageLayout(update.texture, vkLayout);
+#if defined(DEBUG)
+		const vk::ImageLayout trackedLayout = getImageLayout(update.texture);
+		ASSERT(trackedLayout == vkLayout,
+			"Layout tracker mismatch after post-pass update for texture %p (expected %d, got %d)",
+			static_cast<void*>(update.texture), static_cast<int>(vkLayout), static_cast<int>(trackedLayout));
+#endif
 	}
-	if (_activeCustomDepthOutput.has_value() && _activeCustomDepthOutput.value() != nullptr)
-	{
-		setImageLayout(_activeCustomDepthOutput.value(), _activeCustomLayoutKey.depthFinalLayout);
-	}
-	_activeCustomColorOutputs.clear();
-	_activeCustomDepthOutput.reset();
-	_activeCustomResolveOutput.reset();
 }
 
 bool VkRoot::PassLayoutKey::operator==(const PassLayoutKey& other) const
@@ -7087,28 +7077,6 @@ void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass)
 	frameHasDrawCommands = true;
 
 	vk::CommandBuffer drawCmdBuffer = buffering_mechanism::get_current_resources().drawCmdBuffer();
-	_activeCustomColorOutputs.clear();
-	_activeCustomColorOutputs.reserve(pass.colorAttachments.size());
-	for (const auto& colorAttachment : pass.colorAttachments)
-	{
-		_activeCustomColorOutputs.push_back(colorAttachment.texture);
-	}
-	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
-	{
-		_activeCustomDepthOutput = pass.depthAttachment->texture;
-	}
-	else
-	{
-		_activeCustomDepthOutput.reset();
-	}
-	if (pass.resolveAttachment.has_value() && pass.resolveAttachment->texture != nullptr)
-	{
-		_activeCustomResolveOutput = pass.resolveAttachment->texture;
-	}
-	else
-	{
-		_activeCustomResolveOutput.reset();
-	}
 
 	std::vector<vk::ImageView> fboAttachments;
 	const size_t resolveAttachmentCount = pass.resolveAttachment.has_value() ? 1 : 0;
@@ -7192,12 +7160,15 @@ void VkRoot::endSwapchainPass()
 	endActiveSwapchainRenderPassIfNeeded();
 }
 
-void VkRoot::endDynamicAttachmentPass()
+void VkRoot::endDynamicAttachmentPass(const gfx_api::CompiledPass* compiledPass)
 {
 	ASSERT_OR_RETURN(, _customPassActive, "Dynamic attachment pass end without an active pass");
 	buffering_mechanism::get_current_resources().drawCmdBuffer().endRenderPass(vkDynLoader);
 	_activeCustomFramebuffer = vk::Framebuffer();
-	trackCustomPassOutputLayouts();
+	if (compiledPass != nullptr)
+	{
+		applyCompiledPostPassLayouts(*compiledPass);
+	}
 	currentRenderPassId = DEFAULT_RENDER_PASS_ID;
 	currentPSO = nullptr;
 	_customPassActive = false;
@@ -7220,7 +7191,7 @@ void VkRoot::beginPass(gfx_api::RenderPassDesc& pass)
 	}
 }
 
-void VkRoot::endPass()
+void VkRoot::endPass(const gfx_api::CompiledPass* compiledPass)
 {
 	ASSERT_OR_RETURN(, hasActivePass, "endPass called without an active pass");
 
@@ -7230,7 +7201,7 @@ void VkRoot::endPass()
 		endSwapchainPass();
 		break;
 	case gfx_api::ResolvedPassRoute::DynamicAttachments:
-		endDynamicAttachmentPass();
+		endDynamicAttachmentPass(compiledPass);
 		break;
 	}
 

@@ -876,7 +876,7 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 			{
 				pass.recordFunc(passContext);
 			}
-			endPass();
+			endPass(&compiledPass);
 			++passIndex;
 			continue;
 		}

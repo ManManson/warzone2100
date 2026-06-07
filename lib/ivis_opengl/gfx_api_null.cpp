@@ -433,7 +433,7 @@ void null_context::beginPass(gfx_api::RenderPassDesc& pass)
 	frameHasDrawCommands = true;
 }
 
-void null_context::endPass()
+void null_context::endPass(const gfx_api::CompiledPass* /*compiledPass*/)
 {
 }
 

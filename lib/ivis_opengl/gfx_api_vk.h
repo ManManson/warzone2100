@@ -892,7 +892,7 @@ public:
 	virtual size_t numDepthPasses() override;
 	virtual bool setDepthPassProperties(size_t numDepthPasses, size_t depthBufferResolution) override;
 	virtual void beginPass(gfx_api::RenderPassDesc& pass) override;
-	virtual void endPass() override;
+	virtual void endPass(const gfx_api::CompiledPass* compiledPass = nullptr) override;
 	virtual void submitFrame() override;
 	virtual size_t getDepthPassDimensions(size_t idx) override;
 	virtual gfx_api::abstract_texture* getDepthTexture() override;
@@ -987,7 +987,7 @@ private:
 		vk::ImageLayout newLayout, vk::PipelineStageFlags srcStage, vk::PipelineStageFlags dstStage,
 		vk::AccessFlags srcAccess, vk::AccessFlags dstAccess);
 	void emitPrePassBarriers(const gfx_api::CompiledPass& pass) override;
-	void trackCustomPassOutputLayouts();
+	void applyCompiledPostPassLayouts(const gfx_api::CompiledPass& pass);
 	void applyViewport(vk::CommandBuffer cmdBuffer, uint32_t width, uint32_t height, float minDepth, float maxDepth);
 	void deferDestroyFramebuffer(vk::Framebuffer framebuffer);
 	void clearFramebufferCache();
@@ -995,7 +995,7 @@ private:
 	void beginSwapchainPass(gfx_api::RenderPassDesc& pass);
 	void beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass);
 	void endSwapchainPass();
-	void endDynamicAttachmentPass();
+	void endDynamicAttachmentPass(const gfx_api::CompiledPass* compiledPass = nullptr);
 private:
 	size_t depthPassCount = WZ_MAX_SHADOW_CASCADES;
 	std::string formattedRendererInfoString;
@@ -1025,9 +1025,6 @@ private:
 	vk::Framebuffer _activeCustomFramebuffer;
 	uint32_t _customPassWidth = 0;
 	uint32_t _customPassHeight = 0;
-	std::vector<gfx_api::abstract_texture*> _activeCustomColorOutputs;
-	optional<gfx_api::abstract_texture*> _activeCustomDepthOutput = nullopt;
-	optional<gfx_api::abstract_texture*> _activeCustomResolveOutput = nullopt;
 	PassLayoutKey _activeCustomLayoutKey;
 
 	std::unordered_map<gfx_api::abstract_texture*, vk::ImageLayout> _imageLayoutTracker;

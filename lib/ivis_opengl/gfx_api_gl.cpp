@@ -4620,7 +4620,7 @@ void gl_context::beginPass(gfx_api::RenderPassDesc& pass)
 	}
 }
 
-void gl_context::endPass()
+void gl_context::endPass(const gfx_api::CompiledPass* /*compiledPass*/)
 {
 	ASSERT_OR_RETURN(, hasActivePass, "endPass called without an active pass");
 
