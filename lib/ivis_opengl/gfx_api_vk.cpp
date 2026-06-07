@@ -193,7 +193,8 @@ enum class VulkanBackendInternalTextureType : size_t
 	TextureArray,
 	DepthMap,
 	RenderedImage,
-	AttachmentImage
+	AttachmentImage,
+	TransientDepthStencil,
 };
 
 // MARK: General helper functions
@@ -2909,6 +2910,14 @@ VkTransientDepthStencilImage::VkTransientDepthStencilImage(const VkRoot& root, u
 	createDepthStencilImage(root.physicalDevice, root.memprops, root.dev,
 		vk::Extent2D(w, h), vk::SampleCountFlagBits::e1, format,
 		image, memory, view, root.vkDynLoader, filename.c_str(), true);
+
+	const auto depthSampleViewCreateInfo = vk::ImageViewCreateInfo()
+		.setImage(image)
+		.setViewType(vk::ImageViewType::e2D)
+		.setFormat(format)
+		.setComponents(vk::ComponentMapping())
+		.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1));
+	depthSampleView = dev.createImageView(depthSampleViewCreateInfo, nullptr, root.vkDynLoader);
 }
 
 VkTransientDepthStencilImage::~VkTransientDepthStencilImage()
@@ -2920,6 +2929,11 @@ VkTransientDepthStencilImage::~VkTransientDepthStencilImage()
 		{
 			frameResources.image_view_to_delete.emplace_back(view);
 			view = vk::ImageView();
+		}
+		if (depthSampleView)
+		{
+			frameResources.image_view_to_delete.emplace_back(depthSampleView);
+			depthSampleView = vk::ImageView();
 		}
 		if (image)
 		{
@@ -2938,7 +2952,7 @@ void VkTransientDepthStencilImage::bind() { }
 
 size_t VkTransientDepthStencilImage::backend_internal_value() const
 {
-	return static_cast<size_t>(VulkanBackendInternalTextureType::AttachmentImage);
+	return static_cast<size_t>(VulkanBackendInternalTextureType::TransientDepthStencil);
 }
 
 // throws a vk::SystemError on an unrecoverable error (like OOM)
@@ -5665,6 +5679,7 @@ void VkRoot::bind_textures(const std::vector<gfx_api::texture_input>& attribute_
 	for (auto* texture : textures)
 	{
 		vk::ImageView imageView;
+		vk::ImageLayout imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 		if (texture != nullptr)
 		{
 			auto texture_type = static_cast<VulkanBackendInternalTextureType>(texture->backend_internal_value());
@@ -5691,6 +5706,11 @@ void VkRoot::bind_textures(const std::vector<gfx_api::texture_input>& attribute_
 					ASSERT(target_type == gfx_api::pixel_format_target::texture_2d, "Unexpected target type: (%d)", static_cast<int>(target_type));
 					imageView = static_cast<VkAttachmentImage*>(texture)->view;
 					break;
+				case VulkanBackendInternalTextureType::TransientDepthStencil:
+					ASSERT(target_type == gfx_api::pixel_format_target::texture_2d, "Unexpected target type: (%d)", static_cast<int>(target_type));
+					imageView = static_cast<VkTransientDepthStencilImage*>(texture)->depthSampleView;
+					imageLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
+					break;
 				case VulkanBackendInternalTextureType::Invalid:
 					debug(LOG_FATAL, "Invalid internal texture type??");
 					break;
@@ -5713,7 +5733,6 @@ void VkRoot::bind_textures(const std::vector<gfx_api::texture_input>& attribute_
 			}
 		}
 
-		vk::ImageLayout imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 		switch (attribute_descriptions.at(i).target)
 		{
 			case gfx_api::pixel_format_target::texture_2d:
@@ -6039,6 +6058,14 @@ vk::Image VkRoot::getVkImageHandle(gfx_api::abstract_texture* texture) const
 	{
 		return depthImage->object;
 	}
+	if (auto* attachmentImage = dynamic_cast<VkAttachmentImage*>(texture))
+	{
+		return attachmentImage->image;
+	}
+	if (auto* transientDepth = dynamic_cast<VkTransientDepthStencilImage*>(texture))
+	{
+		return transientDepth->image;
+	}
 	if (auto* vkTexture = dynamic_cast<VkTexture*>(texture))
 	{
 		return vkTexture->object;
@@ -6056,6 +6083,19 @@ vk::ImageAspectFlags VkRoot::getVkImageAspect(gfx_api::abstract_texture* texture
 	if (dynamic_cast<VkDepthMapImage*>(texture) != nullptr)
 	{
 		return vk::ImageAspectFlagBits::eDepth;
+	}
+	if (dynamic_cast<VkTransientDepthStencilImage*>(texture) != nullptr)
+	{
+		// Combined D/S images require both aspects in pipeline barriers unless
+		// separateDepthStencilLayouts is enabled. Shader sampling uses depthSampleView instead.
+		return vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
+	}
+	if (auto* attachmentImage = dynamic_cast<VkAttachmentImage*>(texture))
+	{
+		if (attachmentImage->imageFormat == depthBufferFormat)
+		{
+			return vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
+		}
 	}
 	return vk::ImageAspectFlagBits::eColor;
 }
