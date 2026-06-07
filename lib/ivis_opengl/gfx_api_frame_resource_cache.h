@@ -92,11 +92,16 @@ struct ImageViewResourceKey
 /// Color transients use uncompressed color pixel_format values; depth transients use
 /// pixel_format::FORMAT_D24_UNORM_S8 (backend maps to the real depth/stencil format).
 ///
+/// Resource cache trilogy (Vulkan dynamic passes):
+/// - Render passes: PassLayoutKey → getOrCreatePassRenderPassId (cached vk::RenderPass)
+/// - Transient images: FrameResourceCache (this header)
+/// - Framebuffers: FramebufferResourceCache (this header)
+///
 /// Lifecycle (callers must preserve this ordering):
 /// 1. releaseAll() at frame graph reset (start of accumulation).
-/// 2. acquireImage() while building/executing the graph for the frame.
+/// 2. acquireImage() / FramebufferResourceCache::acquire() while executing the graph.
 /// 3. submitFrame() on the backend (Vulkan: buffering_mechanism::swap waits on the frame fence).
-/// 4. purgeUnused() after submit — safe to drop images not acquired this frame.
+/// 4. purgeUnused() after submit — safe to drop images/framebuffers not acquired this frame.
 ///
 /// Vulkan: destroyed cache entries defer GPU resource deletion via texture destructors
 /// (perFrameResources_t deletion queues, cleaned on the next buffering swap).
@@ -126,6 +131,57 @@ private:
 	};
 
 	std::vector<std::pair<ImageResourceKey, ImageCacheEntry>> _imageCache;
+};
+
+/// Key for pooled Vulkan framebuffer instances (render pass + attachment views + size).
+struct FramebufferResourceKey
+{
+	size_t renderPassId = 0;
+	uint32_t width = 0;
+	uint32_t height = 0;
+	/// VkImageView handles stored as uint64_t for backend-neutral cache code.
+	std::vector<uint64_t> attachmentViewHandles;
+
+	bool operator<(const FramebufferResourceKey& other) const
+	{
+		return std::tie(renderPassId, width, height, attachmentViewHandles)
+			< std::tie(other.renderPassId, other.width, other.height, other.attachmentViewHandles);
+	}
+
+	bool operator==(const FramebufferResourceKey& other) const
+	{
+		return renderPassId == other.renderPassId
+			&& width == other.width
+			&& height == other.height
+			&& attachmentViewHandles == other.attachmentViewHandles;
+	}
+};
+
+/// Per-frame pool of reusable Vulkan framebuffers for dynamic attachment passes.
+/// Lifecycle mirrors FrameResourceCache: releaseAll at graph reset, acquire during passes,
+/// purgeUnused after submitFrame. Purge/clear callbacks defer GPU destruction until safe.
+class FramebufferResourceCache
+{
+public:
+	using CreateFramebufferFn = std::function<uint64_t()>;
+	using PurgeFramebufferFn = std::function<void(uint64_t)>;
+
+	uint64_t acquire(const FramebufferResourceKey& key, CreateFramebufferFn createFn);
+
+	void releaseAll();
+
+	void purgeUnused(const PurgeFramebufferFn& onPurge = PurgeFramebufferFn());
+
+	void clear(const PurgeFramebufferFn& onPurge = PurgeFramebufferFn());
+
+private:
+	struct FramebufferCacheEntry
+	{
+		size_t usedCount = 0;
+		std::vector<uint64_t> framebuffers;
+	};
+
+	std::vector<std::pair<FramebufferResourceKey, FramebufferCacheEntry>> _framebufferCache;
 };
 
 } // namespace gfx_api

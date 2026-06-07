@@ -987,6 +987,7 @@ private:
 	void trackCustomPassOutputLayouts();
 	void applyViewport(vk::CommandBuffer cmdBuffer, uint32_t width, uint32_t height, float minDepth, float maxDepth);
 	void deferDestroyFramebuffer(vk::Framebuffer framebuffer);
+	void clearFramebufferCache();
 	void endActiveSwapchainRenderPassIfNeeded();
 	void beginSwapchainPass(gfx_api::RenderPassDesc& pass);
 	void beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass);
@@ -1010,6 +1011,7 @@ private:
 	std::unique_ptr<VkAttachmentImage> _sceneMsaaSurface;
 	gfx_api::PipelineSurfaceRegistry _pipelineSurfaces;
 	gfx_api::FrameResourceCache _frameResourceCache;
+	gfx_api::FramebufferResourceCache _framebufferCache;
 
 	std::vector<PassLayoutKey> _passLayoutKeys;
 	float _viewportMinDepth = 0.f;

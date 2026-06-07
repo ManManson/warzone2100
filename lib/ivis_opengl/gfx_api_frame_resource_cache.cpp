@@ -111,4 +111,89 @@ void FrameResourceCache::clear(const PurgeImageFn& onPurge)
 	_imageCache.clear();
 }
 
+uint64_t FramebufferResourceCache::acquire(const FramebufferResourceKey& key, CreateFramebufferFn createFn)
+{
+	auto cacheIt = std::find_if(_framebufferCache.begin(), _framebufferCache.end(),
+		[&key](const auto& entry) { return entry.first == key; });
+
+	if (cacheIt == _framebufferCache.end())
+	{
+		_framebufferCache.emplace_back(key, FramebufferCacheEntry {});
+		cacheIt = std::prev(_framebufferCache.end());
+	}
+
+	FramebufferCacheEntry& cacheEntry = cacheIt->second;
+	if (cacheEntry.usedCount + 1 > cacheEntry.framebuffers.size())
+	{
+		const uint64_t framebuffer = createFn();
+		ASSERT(framebuffer != 0, "Failed to create framebuffer for frame resource cache");
+		cacheEntry.framebuffers.push_back(framebuffer);
+	}
+
+	return cacheEntry.framebuffers[cacheEntry.usedCount++];
+}
+
+void FramebufferResourceCache::releaseAll()
+{
+	for (auto& cacheEntry : _framebufferCache)
+	{
+		cacheEntry.second.usedCount = 0;
+	}
+}
+
+namespace
+{
+
+void dropExcessFramebuffers(std::vector<uint64_t>& framebuffers, size_t usedCount,
+	const FramebufferResourceCache::PurgeFramebufferFn& onPurge)
+{
+	ASSERT(usedCount <= framebuffers.size(), "Framebuffer cache usedCount exceeds framebuffer count");
+	while (framebuffers.size() > usedCount)
+	{
+		const uint64_t dropped = framebuffers.back();
+		if (onPurge && dropped != 0)
+		{
+			onPurge(dropped);
+		}
+		framebuffers.pop_back();
+	}
+}
+
+} // namespace
+
+void FramebufferResourceCache::purgeUnused(const PurgeFramebufferFn& onPurge)
+{
+	for (auto it = _framebufferCache.begin(); it != _framebufferCache.end(); )
+	{
+		FramebufferCacheEntry& cacheEntry = it->second;
+		dropExcessFramebuffers(cacheEntry.framebuffers, cacheEntry.usedCount, onPurge);
+		if (cacheEntry.usedCount == 0)
+		{
+			it = _framebufferCache.erase(it);
+		}
+		else
+		{
+			++it;
+		}
+	}
+}
+
+void FramebufferResourceCache::clear(const PurgeFramebufferFn& onPurge)
+{
+	if (onPurge)
+	{
+		for (auto& cacheEntry : _framebufferCache)
+		{
+			for (const uint64_t framebuffer : cacheEntry.second.framebuffers)
+			{
+				if (framebuffer != 0)
+				{
+					onPurge(framebuffer);
+				}
+			}
+		}
+	}
+	_framebufferCache.clear();
+}
+
 } // namespace gfx_api

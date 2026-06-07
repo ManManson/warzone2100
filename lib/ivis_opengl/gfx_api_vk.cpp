@@ -3065,6 +3065,8 @@ void VkRoot::createDefaultRenderpass(vk::Format swapchainFormat, vk::Format dept
 
 void VkRoot::createDepthPassImages(vk::Format depthFormat)
 {
+	clearFramebufferCache();
+
 	auto& frameResources = buffering_mechanism::get_current_resources();
 	for (auto& imageView : depthMapCascadeView)
 	{
@@ -3128,6 +3130,8 @@ void VkRoot::createDepthPassImages(vk::Format depthFormat)
 
 void VkRoot::destroySceneRenderpass()
 {
+	clearFramebufferCache();
+
 	_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneColor);
 	_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneMSAAColor);
 	_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneDepth);
@@ -3768,6 +3772,7 @@ void VkRoot::shutdown()
 			_imageLayoutTracker.erase(texture);
 		}
 	});
+	clearFramebufferCache();
 
 	destroySwapchainAndSwapchainSpecificStuff(true);
 
@@ -3904,7 +3909,6 @@ void VkRoot::finalizeActiveRecording()
 
 	if (_customPassActive)
 	{
-		deferDestroyFramebuffer(_activeCustomFramebuffer);
 		_activeCustomFramebuffer = vk::Framebuffer();
 		_customPassActive = false;
 	}
@@ -5973,6 +5977,7 @@ gfx_api::abstract_texture* VkRoot::acquireTransientRenderTarget(gfx_api::pixel_f
 void VkRoot::releaseTransientRenderTargets()
 {
 	_frameResourceCache.releaseAll();
+	_framebufferCache.releaseAll();
 	resetImageLayoutTracker();
 }
 
@@ -5983,6 +5988,9 @@ void VkRoot::purgeFrameResources()
 		{
 			_imageLayoutTracker.erase(texture);
 		}
+	});
+	_framebufferCache.purgeUnused([this](uint64_t framebufferHandle) {
+		deferDestroyFramebuffer(vk::Framebuffer(reinterpret_cast<VkFramebuffer>(static_cast<uintptr_t>(framebufferHandle))));
 	});
 }
 
@@ -6545,6 +6553,13 @@ void VkRoot::deferDestroyFramebuffer(vk::Framebuffer framebuffer)
 	buffering_mechanism::get_current_resources().fbo_to_delete.emplace_back(framebuffer);
 }
 
+void VkRoot::clearFramebufferCache()
+{
+	_framebufferCache.clear([this](uint64_t framebufferHandle) {
+		deferDestroyFramebuffer(vk::Framebuffer(reinterpret_cast<VkFramebuffer>(static_cast<uintptr_t>(framebufferHandle))));
+	});
+}
+
 void VkRoot::endActiveSwapchainRenderPassIfNeeded()
 {
 	if (_swapchainRenderPassActive)
@@ -6557,6 +6572,8 @@ void VkRoot::endActiveSwapchainRenderPassIfNeeded()
 
 void VkRoot::destroyCustomRenderPasses()
 {
+	clearFramebufferCache();
+
 	if (!dev)
 	{
 		_passLayoutKeys.clear();
@@ -7039,15 +7056,33 @@ void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass)
 		fboAttachments.push_back(getAttachmentImageView(pass.resolveAttachment.value()));
 	}
 
-	_activeCustomFramebuffer = dev.createFramebuffer(
-		vk::FramebufferCreateInfo()
-			.setAttachmentCount(static_cast<uint32_t>(fboAttachments.size()))
-			.setPAttachments(fboAttachments.data())
-			.setWidth(passWidth)
-			.setHeight(passHeight)
-			.setLayers(1)
-			.setRenderPass(renderPasses[_activeCustomRenderPassId].rp),
-		nullptr, vkDynLoader);
+	gfx_api::FramebufferResourceKey framebufferKey;
+	framebufferKey.renderPassId = _activeCustomRenderPassId;
+	framebufferKey.width = passWidth;
+	framebufferKey.height = passHeight;
+	framebufferKey.attachmentViewHandles.reserve(fboAttachments.size());
+	for (const vk::ImageView& attachmentView : fboAttachments)
+	{
+		const VkImageView imageViewHandle = attachmentView;
+		framebufferKey.attachmentViewHandles.push_back(
+			static_cast<uint64_t>(reinterpret_cast<uintptr_t>(imageViewHandle)));
+	}
+
+	const vk::RenderPass renderPass = renderPasses[_activeCustomRenderPassId].rp;
+	const uint64_t cachedFramebufferHandle = _framebufferCache.acquire(framebufferKey, [&]() -> uint64_t {
+		const vk::Framebuffer framebuffer = dev.createFramebuffer(
+			vk::FramebufferCreateInfo()
+				.setAttachmentCount(static_cast<uint32_t>(fboAttachments.size()))
+				.setPAttachments(fboAttachments.data())
+				.setWidth(passWidth)
+				.setHeight(passHeight)
+				.setLayers(1)
+				.setRenderPass(renderPass),
+			nullptr, vkDynLoader);
+		const VkFramebuffer framebufferHandle = framebuffer;
+		return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(framebufferHandle));
+	});
+	_activeCustomFramebuffer = vk::Framebuffer(reinterpret_cast<VkFramebuffer>(static_cast<uintptr_t>(cachedFramebufferHandle)));
 
 	std::vector<vk::ClearValue> clearValues;
 	clearValues.reserve(pass.colorAttachments.size() + 1);
@@ -7089,7 +7124,6 @@ void VkRoot::endDynamicAttachmentPass()
 {
 	ASSERT_OR_RETURN(, _customPassActive, "Dynamic attachment pass end without an active pass");
 	buffering_mechanism::get_current_resources().drawCmdBuffer().endRenderPass(vkDynLoader);
-	deferDestroyFramebuffer(_activeCustomFramebuffer);
 	_activeCustomFramebuffer = vk::Framebuffer();
 	trackCustomPassOutputLayouts();
 	currentRenderPassId = DEFAULT_RENDER_PASS_ID;
