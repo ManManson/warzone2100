@@ -427,7 +427,7 @@ bool null_context::_initialize(const gfx_api::backend_Impl_Factory& impl, int32_
 	return true;
 }
 
-void null_context::beginPass(gfx_api::RenderPassDesc& pass)
+void null_context::beginPass(gfx_api::RenderPassDesc& pass, const gfx_api::CompiledPass* /*compiledPass*/)
 {
 	(void)pass;
 	frameHasDrawCommands = true;

@@ -6053,13 +6053,6 @@ vk::ImageAspectFlags VkRoot::getVkImageAspect(gfx_api::abstract_texture* texture
 	return vk::ImageAspectFlagBits::eColor;
 }
 
-bool VkRoot::isDepthInputTexture(gfx_api::abstract_texture* texture) const
-{
-	const auto surfaceId = _pipelineSurfaces.findSurfaceId(texture);
-	return surfaceId.has_value()
-		&& _pipelineSurfaces.meta(surfaceId.value()).usage == gfx_api::PipelineSurfaceUsage::DepthOnly;
-}
-
 namespace
 {
 
@@ -6136,6 +6129,30 @@ CompiledBarrierRecipe getCompiledBarrierRecipe(gfx_api::CompileImageLayout oldLa
 		break;
 	}
 	return recipe;
+}
+
+void applyCompiledRenderPassLayoutsToKey(VkRoot::PassLayoutKey& layoutKey, const gfx_api::CompiledPass& compiledPass,
+	const gfx_api::RenderPassDesc& pass)
+{
+	const gfx_api::CompiledPassLayoutMetadata& metadata = compiledPass.renderPassLayouts;
+	layoutKey.colorFinalLayouts.clear();
+	layoutKey.colorFinalLayouts.reserve(metadata.colorFinalLayouts.size());
+	for (const gfx_api::CompileImageLayout colorFinalLayout : metadata.colorFinalLayouts)
+	{
+		layoutKey.colorFinalLayouts.push_back(toVkImageLayout(colorFinalLayout));
+	}
+	if (metadata.resolveFinalLayout.has_value())
+	{
+		layoutKey.resolveFinalLayout = toVkImageLayout(metadata.resolveFinalLayout.value());
+	}
+	else
+	{
+		layoutKey.resolveFinalLayout.reset();
+	}
+	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
+	{
+		layoutKey.depthFinalLayout = toVkImageLayout(metadata.depthFinalLayout);
+	}
 }
 
 } // namespace
@@ -6227,6 +6244,8 @@ bool VkRoot::PassLayoutKey::operator==(const PassLayoutKey& other) const
 		&& depthLoadOp == other.depthLoadOp
 		&& depthStoreOp == other.depthStoreOp
 		&& depthFinalLayout == other.depthFinalLayout
+		&& colorFinalLayouts == other.colorFinalLayouts
+		&& resolveFinalLayout == other.resolveFinalLayout
 		&& width == other.width
 		&& height == other.height;
 }
@@ -6400,7 +6419,9 @@ size_t VkRoot::getOrCreatePassRenderPassId(const PassLayoutKey& key)
 				.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
 				.setInitialLayout(initialColorAttachmentLayout(key.colorLoadOps[0]))
-				.setFinalLayout(colorFinalLayoutFromStoreOp(msaaColorStoreOp))
+				.setFinalLayout((!key.colorFinalLayouts.empty())
+					? key.colorFinalLayouts[0]
+					: colorFinalLayoutFromStoreOp(msaaColorStoreOp))
 		);
 
 		const vk::AttachmentLoadOp vkDepthLoadOp = toVkAttachmentLoadOp(key.depthLoadOp);
@@ -6427,7 +6448,9 @@ size_t VkRoot::getOrCreatePassRenderPassId(const PassLayoutKey& key)
 				.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
 				.setInitialLayout(vk::ImageLayout::eUndefined)
-				.setFinalLayout(colorFinalLayoutFromStoreOp(key.resolveStoreOp))
+				.setFinalLayout(key.resolveFinalLayout.has_value()
+					? key.resolveFinalLayout.value()
+					: colorFinalLayoutFromStoreOp(key.resolveStoreOp))
 		);
 	}
 	else
@@ -6451,7 +6474,9 @@ size_t VkRoot::getOrCreatePassRenderPassId(const PassLayoutKey& key)
 					.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 					.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
 					.setInitialLayout(initialColorAttachmentLayout(key.colorLoadOps[i]))
-					.setFinalLayout(colorFinalLayoutFromStoreOp(colorStoreOp))
+					.setFinalLayout((i < key.colorFinalLayouts.size())
+						? key.colorFinalLayouts[i]
+						: colorFinalLayoutFromStoreOp(colorStoreOp))
 			);
 		}
 
@@ -7031,7 +7056,7 @@ void VkRoot::beginSwapchainPass(gfx_api::RenderPassDesc& pass)
 	currentPSO = nullptr;
 }
 
-void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass)
+void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass, const gfx_api::CompiledPass* compiledPass)
 {
 	ASSERT_OR_RETURN(, !_customPassActive, "Dynamic attachment pass begin while already active");
 	ASSERT_OR_RETURN(, pass.viewportSize.has_value(), "Dynamic attachment pass requires resolved viewportSize");
@@ -7064,6 +7089,14 @@ void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass)
 		layoutKey.depthFormat = getAttachmentVkFormat(pass.depthAttachment->texture);
 		layoutKey.depthLoadOp = pass.depthAttachment->loadOp;
 		layoutKey.depthStoreOp = attachmentStoreOpOr(pass.depthAttachment.value());
+	}
+
+	if (compiledPass != nullptr)
+	{
+		applyCompiledRenderPassLayoutsToKey(layoutKey, *compiledPass, pass);
+	}
+	else if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
+	{
 		layoutKey.depthFinalLayout = depthFinalLayoutFromStoreOp(layoutKey.depthStoreOp);
 	}
 
@@ -7174,7 +7207,7 @@ void VkRoot::endDynamicAttachmentPass(const gfx_api::CompiledPass* compiledPass)
 	_customPassActive = false;
 }
 
-void VkRoot::beginPass(gfx_api::RenderPassDesc& pass)
+void VkRoot::beginPass(gfx_api::RenderPassDesc& pass, const gfx_api::CompiledPass* compiledPass)
 {
 	ASSERT_OR_RETURN(, !hasActivePass, "beginPass called while another pass is active");
 	hasActivePass = true;
@@ -7186,7 +7219,7 @@ void VkRoot::beginPass(gfx_api::RenderPassDesc& pass)
 		beginSwapchainPass(pass);
 		break;
 	case gfx_api::ResolvedPassRoute::DynamicAttachments:
-		beginDynamicAttachmentPass(pass);
+		beginDynamicAttachmentPass(pass, compiledPass);
 		break;
 	}
 }

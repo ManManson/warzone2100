@@ -350,7 +350,7 @@ struct gl_context final : public gfx_api::context
 
 	virtual size_t numDepthPasses() override;
 	virtual bool setDepthPassProperties(size_t numDepthPasses, size_t depthBufferResolution) override;
-	virtual void beginPass(gfx_api::RenderPassDesc& pass) override;
+	virtual void beginPass(gfx_api::RenderPassDesc& pass, const gfx_api::CompiledPass* compiledPass = nullptr) override;
 	virtual void endPass(const gfx_api::CompiledPass* compiledPass = nullptr) override;
 	virtual void submitFrame() override;
 	virtual size_t getDepthPassDimensions(size_t idx) override;

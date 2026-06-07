@@ -871,7 +871,7 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 		if (routeResolvedPass(pass) != ResolvedPassRoute::Swapchain)
 		{
 			emitPrePassBarriers(compiledPass);
-			beginPass(pass);
+			beginPass(pass, &compiledPass);
 			if (pass.recordFunc)
 			{
 				pass.recordFunc(passContext);

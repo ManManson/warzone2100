@@ -734,8 +734,10 @@ struct VkRoot final : gfx_api::context
 		optional<vk::Format> depthFormat;
 		gfx_api::AttachmentLoadOp depthLoadOp = gfx_api::AttachmentLoadOp::DontCare;
 		gfx_api::AttachmentStoreOp depthStoreOp = gfx_api::AttachmentStoreOp::DontCare;
-		/// Layout after endRenderPass; derived from depthStoreOp at pass begin.
+		/// Layout after endRenderPass; from compile renderPassLayouts when available.
 		vk::ImageLayout depthFinalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+		std::vector<vk::ImageLayout> colorFinalLayouts;
+		optional<vk::ImageLayout> resolveFinalLayout;
 		uint32_t width = 0;
 		uint32_t height = 0;
 
@@ -891,7 +893,7 @@ public:
 
 	virtual size_t numDepthPasses() override;
 	virtual bool setDepthPassProperties(size_t numDepthPasses, size_t depthBufferResolution) override;
-	virtual void beginPass(gfx_api::RenderPassDesc& pass) override;
+	virtual void beginPass(gfx_api::RenderPassDesc& pass, const gfx_api::CompiledPass* compiledPass = nullptr) override;
 	virtual void endPass(const gfx_api::CompiledPass* compiledPass = nullptr) override;
 	virtual void submitFrame() override;
 	virtual size_t getDepthPassDimensions(size_t idx) override;
@@ -980,7 +982,6 @@ private:
 	vk::ImageLayout getImageLayout(gfx_api::abstract_texture* texture) const;
 	vk::Image getVkImageHandle(gfx_api::abstract_texture* texture) const;
 	vk::ImageAspectFlags getVkImageAspect(gfx_api::abstract_texture* texture) const;
-	bool isDepthInputTexture(gfx_api::abstract_texture* texture) const;
 	void transitionImageLayout(vk::CommandBuffer cmdBuffer, gfx_api::abstract_texture* texture, vk::ImageLayout newLayout,
 		vk::PipelineStageFlags srcStage, vk::PipelineStageFlags dstStage, vk::AccessFlags srcAccess, vk::AccessFlags dstAccess);
 	void transitionImageLayout(vk::CommandBuffer cmdBuffer, gfx_api::abstract_texture* texture, vk::ImageLayout oldLayout,
@@ -993,7 +994,7 @@ private:
 	void clearFramebufferCache();
 	void endActiveSwapchainRenderPassIfNeeded();
 	void beginSwapchainPass(gfx_api::RenderPassDesc& pass);
-	void beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass);
+	void beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass, const gfx_api::CompiledPass* compiledPass = nullptr);
 	void endSwapchainPass();
 	void endDynamicAttachmentPass(const gfx_api::CompiledPass* compiledPass = nullptr);
 private:

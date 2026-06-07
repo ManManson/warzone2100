@@ -407,7 +407,7 @@ namespace gfx_api
 		static bool isInitialized();
 		virtual size_t numDepthPasses() { return 0; }
 		virtual bool setDepthPassProperties(size_t numDepthPasses, size_t depthBufferResolution) { return false; }
-		virtual void beginPass(RenderPassDesc& pass) = 0;
+		virtual void beginPass(RenderPassDesc& pass, const CompiledPass* compiledPass = nullptr) = 0;
 		virtual void endPass(const CompiledPass* compiledPass = nullptr) = 0;
 		virtual void submitFrame() = 0;
 		virtual size_t getDepthPassDimensions(size_t idx) { return 0; }

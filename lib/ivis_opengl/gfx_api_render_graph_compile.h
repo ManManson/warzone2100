@@ -35,6 +35,14 @@ struct LayoutStateUpdate
 	CompileImageLayout layout = CompileImageLayout::Undefined;
 };
 
+/// Render-pass attachment final layouts derived at compile time (feeds VK PassLayoutKey).
+struct CompiledPassLayoutMetadata
+{
+	CompileImageLayout depthFinalLayout = CompileImageLayout::DepthAttachment;
+	std::vector<CompileImageLayout> colorFinalLayouts;
+	nonstd::optional<CompileImageLayout> resolveFinalLayout;
+};
+
 struct CompiledPass
 {
 	RenderPassDesc desc;
@@ -43,6 +51,7 @@ struct CompiledPass
 	std::vector<ResolvedRead> resolvedReads;
 	std::vector<ImageBarrierOp> prePassBarriers;
 	std::vector<LayoutStateUpdate> postPassLayoutUpdates;
+	CompiledPassLayoutMetadata renderPassLayouts;
 };
 
 enum class PostPassAttachmentKind : uint8_t

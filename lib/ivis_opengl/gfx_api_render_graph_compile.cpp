@@ -101,6 +101,42 @@ CompileImageLayout getReadTargetLayout(const ResolvedRead& read)
 	return read.isDepth ? CompileImageLayout::DepthReadOnly : CompileImageLayout::ShaderReadOnly;
 }
 
+void populateCompiledPassLayoutMetadata(CompiledPass& compiledPass)
+{
+	const RenderPassDesc& pass = compiledPass.desc;
+	CompiledPassLayoutMetadata& metadata = compiledPass.renderPassLayouts;
+	metadata.colorFinalLayouts.clear();
+	metadata.resolveFinalLayout.reset();
+	metadata.depthFinalLayout = CompileImageLayout::DepthAttachment;
+
+	for (size_t i = 0; i < pass.colorAttachments.size(); ++i)
+	{
+		const AttachmentDesc& colorAttachment = pass.colorAttachments[i];
+		const auto layout = getAttachmentPostPassLayout(pass, colorAttachment, PostPassAttachmentKind::Color, i);
+		metadata.colorFinalLayouts.push_back(layout.value_or(CompileImageLayout::ColorAttachment));
+	}
+
+	if (pass.resolveAttachment.has_value())
+	{
+		const auto layout = getAttachmentPostPassLayout(pass, pass.resolveAttachment.value(),
+			PostPassAttachmentKind::Resolve);
+		if (layout.has_value())
+		{
+			metadata.resolveFinalLayout = layout.value();
+		}
+	}
+
+	if (pass.depthAttachment.has_value())
+	{
+		const auto layout = getAttachmentPostPassLayout(pass, pass.depthAttachment.value(),
+			PostPassAttachmentKind::Depth);
+		if (layout.has_value())
+		{
+			metadata.depthFinalLayout = layout.value();
+		}
+	}
+}
+
 void applyPostPassLayoutUpdates(CompiledPass& compiledPass, LayoutStateMap& layoutState)
 {
 	const RenderPassDesc& pass = compiledPass.desc;
@@ -150,6 +186,7 @@ bool planLayoutTimeline(std::vector<CompiledPass>& passes)
 	{
 		compiledPass.prePassBarriers.clear();
 		compiledPass.postPassLayoutUpdates.clear();
+		compiledPass.renderPassLayouts = CompiledPassLayoutMetadata {};
 		if (compiledPass.skipped)
 		{
 			continue;
@@ -193,6 +230,7 @@ bool planLayoutTimeline(std::vector<CompiledPass>& passes)
 		}
 
 		applyPostPassLayoutUpdates(compiledPass, layoutState);
+		populateCompiledPassLayoutMetadata(compiledPass);
 	}
 
 	return true;

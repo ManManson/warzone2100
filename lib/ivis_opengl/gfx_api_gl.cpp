@@ -4602,7 +4602,7 @@ void gl_context::endDynamicAttachmentPass()
 	_customPassActive = false;
 }
 
-void gl_context::beginPass(gfx_api::RenderPassDesc& pass)
+void gl_context::beginPass(gfx_api::RenderPassDesc& pass, const gfx_api::CompiledPass* /*compiledPass*/)
 {
 	ASSERT_OR_RETURN(, !hasActivePass, "beginPass called while another pass is active");
 	hasActivePass = true;
