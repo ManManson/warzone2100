@@ -258,8 +258,13 @@ bool attachmentDepthHasStencil(const AttachmentDesc& attachment)
 		return false;
 	}
 	auto& ctx = gfx_api::context::get();
-	// Shadow map is depth-component only; scene depth and transient depth use D24S8.
-	return attachment.texture != ctx.getPipelineSurface(PipelineSurfaceId::ShadowMap);
+	const auto surfaceId = ctx.findPipelineSurfaceId(attachment.texture);
+	if (surfaceId.has_value())
+	{
+		return ctx.pipelineSurfaceMeta(surfaceId.value()).usage == PipelineSurfaceUsage::DepthStencil;
+	}
+	// Transient depth attachments use D24S8.
+	return true;
 }
 
 } // namespace gfx_api

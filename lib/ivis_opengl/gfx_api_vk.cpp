@@ -3211,11 +3211,14 @@ void VkRoot::createSceneRenderpass(vk::Format sceneFormat, vk::Format depthForma
 		swapchainSize.width, swapchainSize.height, msaaSamples, "<scene depth stencil>");
 	_pipelineSurfaces.registerSurface(gfx_api::PipelineSurfaceId::SceneColor, pSceneImage);
 	_pipelineSurfaces.registerSurface(gfx_api::PipelineSurfaceId::SceneDepth, _sceneDepthSurface.get());
+	const uint32_t sceneSamples = static_cast<uint32_t>(msaaSamples);
+	_pipelineSurfaces.setSurfaceSamples(gfx_api::PipelineSurfaceId::SceneDepth, sceneSamples);
 	if (msaaEnabled)
 	{
 		_sceneMsaaSurface = std::make_unique<VkAttachmentImage>(sceneMSAAImage, sceneMSAAView, sceneFormat,
 			swapchainSize.width, swapchainSize.height, msaaSamples, "<scene msaa color>");
 		_pipelineSurfaces.registerSurface(gfx_api::PipelineSurfaceId::SceneMSAAColor, _sceneMsaaSurface.get());
+		_pipelineSurfaces.setSurfaceSamples(gfx_api::PipelineSurfaceId::SceneMSAAColor, sceneSamples);
 	}
 	else
 	{
@@ -5913,6 +5916,16 @@ gfx_api::abstract_texture* VkRoot::getPipelineSurface(gfx_api::PipelineSurfaceId
 	return _pipelineSurfaces.get(id);
 }
 
+gfx_api::PipelineSurfaceMeta VkRoot::pipelineSurfaceMeta(gfx_api::PipelineSurfaceId id) const
+{
+	return _pipelineSurfaces.meta(id);
+}
+
+nonstd::optional<gfx_api::PipelineSurfaceId> VkRoot::findPipelineSurfaceId(gfx_api::abstract_texture* texture) const
+{
+	return _pipelineSurfaces.findSurfaceId(texture);
+}
+
 bool VkRoot::isSceneMSAAEnabled() const
 {
 	return msaaSamples != vk::SampleCountFlagBits::e1;
@@ -6034,7 +6047,9 @@ vk::ImageAspectFlags VkRoot::getVkImageAspect(gfx_api::abstract_texture* texture
 
 bool VkRoot::isDepthInputTexture(gfx_api::abstract_texture* texture) const
 {
-	return dynamic_cast<VkDepthMapImage*>(texture) != nullptr;
+	const auto surfaceId = _pipelineSurfaces.findSurfaceId(texture);
+	return surfaceId.has_value()
+		&& _pipelineSurfaces.meta(surfaceId.value()).usage == gfx_api::PipelineSurfaceUsage::DepthOnly;
 }
 
 void VkRoot::transitionImageLayout(vk::CommandBuffer cmdBuffer, gfx_api::abstract_texture* texture, vk::ImageLayout newLayout,
@@ -6912,7 +6927,9 @@ void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass)
 	{
 		layoutKey.depthFormat = getAttachmentVkFormat(pass.depthAttachment->texture);
 		layoutKey.depthLoadOp = pass.depthAttachment->loadOp;
-		if (pass.colorAttachments.empty() && isDepthInputTexture(pass.depthAttachment->texture))
+		if (pass.colorAttachments.empty()
+			&& gfx_api::passIsDepthOnly(pass)
+			&& isDepthInputTexture(pass.depthAttachment->texture))
 		{
 			layoutKey.depthFinalLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
 		}

@@ -4226,6 +4226,16 @@ gfx_api::abstract_texture* gl_context::getPipelineSurface(gfx_api::PipelineSurfa
 	return _pipelineSurfaces.get(id);
 }
 
+gfx_api::PipelineSurfaceMeta gl_context::pipelineSurfaceMeta(gfx_api::PipelineSurfaceId id) const
+{
+	return _pipelineSurfaces.meta(id);
+}
+
+nonstd::optional<gfx_api::PipelineSurfaceId> gl_context::findPipelineSurfaceId(gfx_api::abstract_texture* texture) const
+{
+	return _pipelineSurfaces.findSurfaceId(texture);
+}
+
 bool gl_context::isSceneMSAAEnabled() const
 {
 	return multisamples > 0 && _sceneMsaaSurface != nullptr;
@@ -5522,9 +5532,12 @@ bool gl_context::createSceneRenderpass()
 
 	_pipelineSurfaces.registerSurface(gfx_api::PipelineSurfaceId::SceneColor, sceneTexture);
 	_pipelineSurfaces.registerSurface(gfx_api::PipelineSurfaceId::SceneDepth, _sceneDepthStencilSurface.get());
+	const uint32_t sceneSamples = (samples > 0) ? static_cast<uint32_t>(samples) : 1u;
+	_pipelineSurfaces.setSurfaceSamples(gfx_api::PipelineSurfaceId::SceneDepth, sceneSamples);
 	if (_sceneMsaaSurface != nullptr)
 	{
 		_pipelineSurfaces.registerSurface(gfx_api::PipelineSurfaceId::SceneMSAAColor, _sceneMsaaSurface.get());
+		_pipelineSurfaces.setSurfaceSamples(gfx_api::PipelineSurfaceId::SceneMSAAColor, sceneSamples);
 	}
 	else
 	{
