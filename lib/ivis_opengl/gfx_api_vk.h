@@ -49,6 +49,7 @@
 
 #include "gfx_api.h"
 #include "gfx_api_frame_resource_cache.h"
+#include "gfx_api_pass_resolve.h"
 #include <algorithm>
 #include <sstream>
 #include <map>
@@ -759,7 +760,7 @@ struct VkRoot final : gfx_api::context
 	bool debugUtilsExtEnabled = false;
 
 	bool frameHasDrawCommands = false;
-	gfx_api::RenderPassType activePassType = gfx_api::RenderPassType::Default;
+	gfx_api::ResolvedPassRoute activePassRoute = gfx_api::ResolvedPassRoute::Swapchain;
 	bool hasActivePass = false;
 	const size_t maxErrorHandlingDepth = 10;
 	std::vector<vk::Result> errorHandlingDepth;
@@ -927,6 +928,14 @@ private:
 	void applyViewport(vk::CommandBuffer cmdBuffer, uint32_t width, uint32_t height, float minDepth, float maxDepth);
 	void deferDestroyFramebuffer(vk::Framebuffer framebuffer);
 	void endActiveSwapchainRenderPassIfNeeded();
+	void beginSwapchainPass(gfx_api::RenderPassDesc& pass);
+	void beginDepthCascadePass(gfx_api::RenderPassDesc& pass);
+	void beginScenePass(gfx_api::RenderPassDesc& pass);
+	void beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass);
+	void endSwapchainPass();
+	void endDepthCascadePass();
+	void endScenePass();
+	void endDynamicAttachmentPass();
 private:
 	size_t depthPassCount = WZ_MAX_SHADOW_CASCADES;
 	std::string formattedRendererInfoString;

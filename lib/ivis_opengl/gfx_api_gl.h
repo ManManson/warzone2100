@@ -21,6 +21,7 @@
 
 #include "gfx_api.h"
 #include "gfx_api_frame_resource_cache.h"
+#include "gfx_api_pass_resolve.h"
 
 #if defined(__EMSCRIPTEN__)
 # define WZ_STATIC_GL_BINDINGS
@@ -400,10 +401,20 @@ private:
 	uint32_t getSuggestedDefaultDepthBufferResolution() const;
 	bool setSwapIntervalInternal(gfx_api::context::swap_interval_mode mode);
 
+	void beginSwapchainPass(const gfx_api::RenderPassDesc& pass);
+	void beginDepthCascadePass(const gfx_api::RenderPassDesc& pass);
+	void beginScenePass(const gfx_api::RenderPassDesc& pass);
+	void beginDynamicAttachmentPass(const gfx_api::RenderPassDesc& pass);
+	void endSwapchainPass();
+	void endDepthCascadePass();
+	void endScenePass();
+	void endDynamicAttachmentPass();
+	static void applyAttachmentClears(const gfx_api::RenderPassDesc& pass);
+
 	uint32_t viewportWidth = 0;
 	uint32_t viewportHeight = 0;
 	std::vector<bool> enabledVertexAttribIndexes;
-	gfx_api::RenderPassType activePassType = gfx_api::RenderPassType::Default;
+	gfx_api::ResolvedPassRoute activePassRoute = gfx_api::ResolvedPassRoute::Swapchain;
 	bool hasActivePass = false;
 	bool frameHasDrawCommands = false;
 	size_t frameNum = 0;

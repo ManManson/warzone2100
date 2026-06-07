@@ -301,4 +301,24 @@ bool resolvePassDescription(RenderPassDesc& pass)
 	return true;
 }
 
+ResolvedPassRoute routeResolvedPass(const RenderPassDesc& pass)
+{
+	for (const auto& colorAttachment : pass.colorAttachments)
+	{
+		if (colorAttachment.isSwapchain())
+		{
+			return ResolvedPassRoute::Swapchain;
+		}
+	}
+	if (pass.type == RenderPassType::Depth)
+	{
+		return ResolvedPassRoute::DepthCascade;
+	}
+	if (pass.type == RenderPassType::Scene)
+	{
+		return ResolvedPassRoute::SceneFramebuffer;
+	}
+	return ResolvedPassRoute::DynamicAttachments;
+}
+
 } // namespace gfx_api
