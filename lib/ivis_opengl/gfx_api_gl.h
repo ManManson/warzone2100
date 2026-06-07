@@ -306,6 +306,9 @@ private:
 	void set_constants(const gfx_api::constant_buffer_type<SHADER_DEBUG_TEXTURE2D_QUAD>& cbuf);
 	void set_constants(const gfx_api::constant_buffer_type<SHADER_DEBUG_TEXTURE2DARRAY_QUAD>& cbuf);
 	void set_constants(const gfx_api::constant_buffer_type<SHADER_WORLD_TO_SCREEN>& cbuf);
+	void set_constants(const gfx_api::constant_buffer_type<SHADER_SSAO_GENERATE>& cbuf);
+	void set_constants(const gfx_api::constant_buffer_type<SHADER_SSAO_BLUR>& cbuf);
+	void set_constants(const gfx_api::constant_buffer_type<SHADER_SCENE_COMPOSE_SSAO>& cbuf);
 };
 
 struct gl_context final : public gfx_api::context

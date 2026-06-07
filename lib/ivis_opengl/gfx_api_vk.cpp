@@ -1229,6 +1229,9 @@ static const std::map<SHADER_MODE, shader_infos> spv_files
 	std::make_pair(SHADER_LINE, shader_infos{ "shaders/vk/line.vert.spv", "shaders/vk/rect.frag.spv" }),
 	std::make_pair(SHADER_TEXT, shader_infos{ "shaders/vk/rect.vert.spv", "shaders/vk/text.frag.spv" }),
 	std::make_pair(SHADER_WORLD_TO_SCREEN, shader_infos{ "shaders/vk/world_to_screen.vert.spv", "shaders/vk/world_to_screen.frag.spv" }),
+	std::make_pair(SHADER_SSAO_GENERATE, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/ssao_generate.frag.spv" }),
+	std::make_pair(SHADER_SSAO_BLUR, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/ssao_blur.frag.spv" }),
+	std::make_pair(SHADER_SCENE_COMPOSE_SSAO, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/scene_compose_ssao.frag.spv" }),
 	std::make_pair(SHADER_DEBUG_TEXTURE2D_QUAD, shader_infos{ "shaders/vk/quad_texture2d.vert.spv", "shaders/vk/quad_texture2d.frag.spv" }),
 	std::make_pair(SHADER_DEBUG_TEXTURE2DARRAY_QUAD, shader_infos{ "shaders/vk/quad_texture2darray.vert.spv", "shaders/vk/quad_texture2darray.frag.spv" })
 };

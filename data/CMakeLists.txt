@@ -130,6 +130,10 @@ file(GLOB VK_SHADERS
 	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/quad_texture2darray.frag"
 	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/world_to_screen.vert"
 	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/world_to_screen.frag"
+	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/postprocess_fullscreen.vert"
+	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/ssao_generate.frag"
+	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/ssao_blur.frag"
+	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/scene_compose_ssao.frag"
 )
 
 set(SHADER_LIST "")

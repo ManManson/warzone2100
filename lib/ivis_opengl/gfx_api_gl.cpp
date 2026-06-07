@@ -955,7 +955,24 @@ static const std::map<SHADER_MODE, program_data> shader_to_file_table =
 	std::make_pair(SHADER_DEBUG_TEXTURE2DARRAY_QUAD, program_data{ "Debug texture array quad program", "shaders/quad_texture2darray.vert", "shaders/quad_texture2darray.frag",
 		{ "transformationMatrix", "uvTransformMatrix", "swizzle", "color", "layer", "texture" } }),
 	std::make_pair(SHADER_WORLD_TO_SCREEN, program_data{ "World to screen quad program", "shaders/world_to_screen.vert", "shaders/world_to_screen.frag",
-		{ "gamma" } })
+		{ "gamma" } }),
+	std::make_pair(SHADER_SSAO_GENERATE, program_data{ "SSAO generate program", "shaders/postprocess_fullscreen.vert", "shaders/ssao_generate.frag",
+		{ "invProjectionMatrix", "params", "kernel" },
+		{
+			{"depthTexture", 0},
+			{"noiseTexture", 1}
+		} }),
+	std::make_pair(SHADER_SSAO_BLUR, program_data{ "SSAO blur program", "shaders/postprocess_fullscreen.vert", "shaders/ssao_blur.frag",
+		{ "blurDirection" },
+		{
+			{"occlusionTexture", 0}
+		} }),
+	std::make_pair(SHADER_SCENE_COMPOSE_SSAO, program_data{ "Scene compose SSAO program", "shaders/postprocess_fullscreen.vert", "shaders/scene_compose_ssao.frag",
+		{ "ssaoIntensity" },
+		{
+			{"sceneTexture", 0},
+			{"ssaoTexture", 1}
+		} })
 };
 
 enum SHADER_VERSION
@@ -1246,7 +1263,10 @@ desc(createInfo.state_desc), vertex_buffer_desc(createInfo.attribute_description
 		uniform_binding_entry<SHADER_TEXT>(),
 		uniform_binding_entry<SHADER_DEBUG_TEXTURE2D_QUAD>(),
 		uniform_binding_entry<SHADER_DEBUG_TEXTURE2DARRAY_QUAD>(),
-		uniform_binding_entry<SHADER_WORLD_TO_SCREEN>()
+		uniform_binding_entry<SHADER_WORLD_TO_SCREEN>(),
+		uniform_binding_entry<SHADER_SSAO_GENERATE>(),
+		uniform_binding_entry<SHADER_SSAO_BLUR>(),
+		uniform_binding_entry<SHADER_SCENE_COMPOSE_SSAO>()
 	};
 
 	for (auto& uniform_block : createInfo.uniform_blocks)
@@ -2359,6 +2379,23 @@ void gl_pipeline_state_object::set_constants(const gfx_api::constant_buffer_type
 void gl_pipeline_state_object::set_constants(const gfx_api::constant_buffer_type<SHADER_WORLD_TO_SCREEN>& cbuf)
 {
 	setUniforms(0, cbuf.gamma);
+}
+
+void gl_pipeline_state_object::set_constants(const gfx_api::constant_buffer_type<SHADER_SSAO_GENERATE>& cbuf)
+{
+	setUniforms(0, cbuf.invProjectionMatrix);
+	setUniforms(1, cbuf.params);
+	setUniforms(2, cbuf.kernel, gfx_api::SSAO_KERNEL_SIZE);
+}
+
+void gl_pipeline_state_object::set_constants(const gfx_api::constant_buffer_type<SHADER_SSAO_BLUR>& cbuf)
+{
+	setUniforms(0, cbuf.blurDirection);
+}
+
+void gl_pipeline_state_object::set_constants(const gfx_api::constant_buffer_type<SHADER_SCENE_COMPOSE_SSAO>& cbuf)
+{
+	setUniforms(0, cbuf.ssaoIntensity);
 }
 
 GLint get_size(const gfx_api::vertex_attribute_type& type)

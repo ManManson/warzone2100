@@ -1362,6 +1362,63 @@ namespace gfx_api
 		>
 	>,
 	std::tuple<texture_description<0, sampler_type::bilinear, pixel_format_target::texture_2d>>, SHADER_WORLD_TO_SCREEN>;
+
+	static constexpr size_t SSAO_KERNEL_SIZE = 16;
+
+	template<>
+	struct constant_buffer_type<SHADER_SSAO_GENERATE>
+	{
+		glm::mat4 invProjectionMatrix;
+		glm::vec4 params;
+		glm::vec4 kernel[SSAO_KERNEL_SIZE];
+	};
+
+	using SSAOGeneratePSO = typename gfx_api::pipeline_state_helper<rasterizer_state<REND_OPAQUE, DEPTH_CMP_ALWAYS_WRT_OFF, 255, polygon_offset::disabled, stencil_mode::stencil_disabled, cull_mode::none>, primitive_type::triangles, index_type::u16,
+	std::tuple<constant_buffer_type<SHADER_SSAO_GENERATE>>,
+	std::tuple<
+		vertex_buffer_description<2 * sizeof(gfxFloat), gfx_api::vertex_attribute_input_rate::vertex,
+			vertex_attribute_description<position, gfx_api::vertex_attribute_type::float2, 0>
+		>
+	>,
+	std::tuple<
+		texture_description<0, sampler_type::bilinear, pixel_format_target::texture_2d>,
+		texture_description<1, sampler_type::bilinear, pixel_format_target::texture_2d>
+	>, SHADER_SSAO_GENERATE>;
+
+	template<>
+	struct constant_buffer_type<SHADER_SSAO_BLUR>
+	{
+		glm::vec2 blurDirection;
+		glm::vec2 padding;
+	};
+
+	using SSAOBlurPSO = typename gfx_api::pipeline_state_helper<rasterizer_state<REND_OPAQUE, DEPTH_CMP_ALWAYS_WRT_OFF, 255, polygon_offset::disabled, stencil_mode::stencil_disabled, cull_mode::none>, primitive_type::triangles, index_type::u16,
+	std::tuple<constant_buffer_type<SHADER_SSAO_BLUR>>,
+	std::tuple<
+		vertex_buffer_description<2 * sizeof(gfxFloat), gfx_api::vertex_attribute_input_rate::vertex,
+			vertex_attribute_description<position, gfx_api::vertex_attribute_type::float2, 0>
+		>
+	>,
+	std::tuple<texture_description<0, sampler_type::bilinear, pixel_format_target::texture_2d>>, SHADER_SSAO_BLUR>;
+
+	template<>
+	struct constant_buffer_type<SHADER_SCENE_COMPOSE_SSAO>
+	{
+		float ssaoIntensity;
+		glm::vec3 padding;
+	};
+
+	using SceneComposeSSAOPSO = typename gfx_api::pipeline_state_helper<rasterizer_state<REND_OPAQUE, DEPTH_CMP_ALWAYS_WRT_OFF, 255, polygon_offset::disabled, stencil_mode::stencil_disabled, cull_mode::none>, primitive_type::triangles, index_type::u16,
+	std::tuple<constant_buffer_type<SHADER_SCENE_COMPOSE_SSAO>>,
+	std::tuple<
+		vertex_buffer_description<2 * sizeof(gfxFloat), gfx_api::vertex_attribute_input_rate::vertex,
+			vertex_attribute_description<position, gfx_api::vertex_attribute_type::float2, 0>
+		>
+	>,
+	std::tuple<
+		texture_description<0, sampler_type::bilinear, pixel_format_target::texture_2d>,
+		texture_description<1, sampler_type::bilinear, pixel_format_target::texture_2d>
+	>, SHADER_SCENE_COMPOSE_SSAO>;
 }
 
 static inline int to_int(gfx_api::context::swap_interval_mode mode)
