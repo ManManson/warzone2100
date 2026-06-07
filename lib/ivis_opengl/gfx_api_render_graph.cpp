@@ -165,6 +165,26 @@ RenderPassDesc makeDepthCascadePass(size_t cascadeIndex, const std::string& debu
 	return pass;
 }
 
+RenderPassDesc makeDepthPrePass(const std::string& debugName, RenderPassDesc::RecordFunc recordFunc)
+{
+	auto& ctx = gfx_api::context::get();
+	RenderPassDesc pass;
+	pass.debugName = debugName;
+	pass.recordFunc = std::move(recordFunc);
+
+	pass.depthAttachment = AttachmentDesc::transientDepth(
+		AttachmentLoadOp::Clear, ClearValue::depthStencilClear());
+	pass.depthAttachment->storeOp = AttachmentStoreOp::Store;
+
+	abstract_texture* sceneColor = ctx.getPipelineSurface(PipelineSurfaceId::SceneColor);
+	const auto dims = ctx.getRenderTargetDimensions(sceneColor);
+	if (dims.has_value())
+	{
+		pass.viewportSize = dims;
+	}
+	return pass;
+}
+
 RenderPassDesc makeScenePass(const std::string& debugName, RenderPassDesc::RecordFunc recordFunc)
 {
 	auto& ctx = gfx_api::context::get();
