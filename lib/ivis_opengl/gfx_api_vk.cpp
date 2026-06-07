@@ -6060,12 +6060,91 @@ bool VkRoot::isDepthInputTexture(gfx_api::abstract_texture* texture) const
 		&& _pipelineSurfaces.meta(surfaceId.value()).usage == gfx_api::PipelineSurfaceUsage::DepthOnly;
 }
 
-void VkRoot::transitionImageLayout(vk::CommandBuffer cmdBuffer, gfx_api::abstract_texture* texture, vk::ImageLayout newLayout,
-	vk::PipelineStageFlags srcStage, vk::PipelineStageFlags dstStage, vk::AccessFlags srcAccess, vk::AccessFlags dstAccess)
+namespace
+{
+
+vk::ImageLayout toVkImageLayout(gfx_api::CompileImageLayout layout)
+{
+	switch (layout)
+	{
+	case gfx_api::CompileImageLayout::Undefined:
+		return vk::ImageLayout::eUndefined;
+	case gfx_api::CompileImageLayout::ShaderReadOnly:
+		return vk::ImageLayout::eShaderReadOnlyOptimal;
+	case gfx_api::CompileImageLayout::DepthReadOnly:
+		return vk::ImageLayout::eDepthStencilReadOnlyOptimal;
+	case gfx_api::CompileImageLayout::ColorAttachment:
+		return vk::ImageLayout::eColorAttachmentOptimal;
+	case gfx_api::CompileImageLayout::DepthAttachment:
+		return vk::ImageLayout::eDepthStencilAttachmentOptimal;
+	case gfx_api::CompileImageLayout::Present:
+		return vk::ImageLayout::ePresentSrcKHR;
+	}
+	return vk::ImageLayout::eUndefined;
+}
+
+struct CompiledBarrierRecipe
+{
+	vk::PipelineStageFlags srcStage = vk::PipelineStageFlagBits::eTopOfPipe;
+	vk::PipelineStageFlags dstStage = vk::PipelineStageFlagBits::eFragmentShader;
+	vk::AccessFlags srcAccess {};
+	vk::AccessFlags dstAccess = vk::AccessFlagBits::eShaderRead;
+};
+
+CompiledBarrierRecipe getCompiledBarrierRecipe(gfx_api::CompileImageLayout oldLayout,
+	gfx_api::CompileImageLayout newLayout, bool isDepth)
+{
+	CompiledBarrierRecipe recipe;
+	recipe.dstStage = vk::PipelineStageFlagBits::eFragmentShader;
+	recipe.dstAccess = vk::AccessFlagBits::eShaderRead;
+
+	if (isDepth || newLayout == gfx_api::CompileImageLayout::DepthReadOnly)
+	{
+		recipe.srcStage = vk::PipelineStageFlagBits::eLateFragmentTests | vk::PipelineStageFlagBits::eFragmentShader;
+		switch (oldLayout)
+		{
+		case gfx_api::CompileImageLayout::Undefined:
+			recipe.srcAccess = vk::AccessFlags();
+			break;
+		case gfx_api::CompileImageLayout::DepthAttachment:
+			recipe.srcAccess = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+			break;
+		case gfx_api::CompileImageLayout::DepthReadOnly:
+			recipe.srcAccess = vk::AccessFlagBits::eShaderRead;
+			break;
+		default:
+			recipe.srcAccess = vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eShaderRead;
+			break;
+		}
+		return recipe;
+	}
+
+	recipe.srcStage = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eFragmentShader;
+	switch (oldLayout)
+	{
+	case gfx_api::CompileImageLayout::Undefined:
+		recipe.srcAccess = vk::AccessFlags();
+		break;
+	case gfx_api::CompileImageLayout::ColorAttachment:
+		recipe.srcAccess = vk::AccessFlagBits::eColorAttachmentWrite;
+		break;
+	case gfx_api::CompileImageLayout::ShaderReadOnly:
+		recipe.srcAccess = vk::AccessFlagBits::eShaderRead;
+		break;
+	default:
+		recipe.srcAccess = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eShaderRead;
+		break;
+	}
+	return recipe;
+}
+
+} // namespace
+
+void VkRoot::transitionImageLayout(vk::CommandBuffer cmdBuffer, gfx_api::abstract_texture* texture, vk::ImageLayout oldLayout,
+	vk::ImageLayout newLayout, vk::PipelineStageFlags srcStage, vk::PipelineStageFlags dstStage,
+	vk::AccessFlags srcAccess, vk::AccessFlags dstAccess)
 {
 	ASSERT_OR_RETURN(, texture != nullptr, "Null texture for layout transition");
-
-	const vk::ImageLayout oldLayout = getImageLayout(texture);
 	if (oldLayout == newLayout)
 	{
 		return;
@@ -6085,6 +6164,12 @@ void VkRoot::transitionImageLayout(vk::CommandBuffer cmdBuffer, gfx_api::abstrac
 	setImageLayout(texture, newLayout);
 }
 
+void VkRoot::transitionImageLayout(vk::CommandBuffer cmdBuffer, gfx_api::abstract_texture* texture, vk::ImageLayout newLayout,
+	vk::PipelineStageFlags srcStage, vk::PipelineStageFlags dstStage, vk::AccessFlags srcAccess, vk::AccessFlags dstAccess)
+{
+	transitionImageLayout(cmdBuffer, texture, getImageLayout(texture), newLayout, srcStage, dstStage, srcAccess, dstAccess);
+}
+
 void VkRoot::emitPrePassBarriers(const gfx_api::CompiledPass& pass)
 {
 	if (pass.prePassBarriers.empty())
@@ -6095,31 +6180,18 @@ void VkRoot::emitPrePassBarriers(const gfx_api::CompiledPass& pass)
 	buffering_mechanism::get_current_resources().ensureDrawCmdBufferBegun();
 	vk::CommandBuffer drawCmdBuffer = buffering_mechanism::get_current_resources().drawCmdBuffer();
 
-	for (const gfx_api::ImageBarrierOp& barrier : pass.prePassBarriers)
+	for (const gfx_api::ImageBarrierOp& barrierOp : pass.prePassBarriers)
 	{
-		if (barrier.texture == nullptr)
+		if (barrierOp.texture == nullptr || barrierOp.oldLayout == barrierOp.newLayout)
 		{
 			continue;
 		}
 
-		if (barrier.isDepth)
-		{
-			transitionImageLayout(
-				drawCmdBuffer, barrier.texture, vk::ImageLayout::eDepthStencilReadOnlyOptimal,
-				vk::PipelineStageFlagBits::eLateFragmentTests | vk::PipelineStageFlagBits::eFragmentShader,
-				vk::PipelineStageFlagBits::eFragmentShader,
-				vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eShaderRead,
-				vk::AccessFlagBits::eShaderRead);
-		}
-		else
-		{
-			transitionImageLayout(
-				drawCmdBuffer, barrier.texture, vk::ImageLayout::eShaderReadOnlyOptimal,
-				vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eFragmentShader,
-				vk::PipelineStageFlagBits::eFragmentShader,
-				vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eShaderRead,
-				vk::AccessFlagBits::eShaderRead);
-		}
+		const vk::ImageLayout vkOldLayout = toVkImageLayout(barrierOp.oldLayout);
+		const vk::ImageLayout vkNewLayout = toVkImageLayout(barrierOp.newLayout);
+		const CompiledBarrierRecipe recipe = getCompiledBarrierRecipe(barrierOp.oldLayout, barrierOp.newLayout, barrierOp.isDepth);
+		transitionImageLayout(drawCmdBuffer, barrierOp.texture, vkOldLayout, vkNewLayout,
+			recipe.srcStage, recipe.dstStage, recipe.srcAccess, recipe.dstAccess);
 	}
 }
 

@@ -983,6 +983,9 @@ private:
 	bool isDepthInputTexture(gfx_api::abstract_texture* texture) const;
 	void transitionImageLayout(vk::CommandBuffer cmdBuffer, gfx_api::abstract_texture* texture, vk::ImageLayout newLayout,
 		vk::PipelineStageFlags srcStage, vk::PipelineStageFlags dstStage, vk::AccessFlags srcAccess, vk::AccessFlags dstAccess);
+	void transitionImageLayout(vk::CommandBuffer cmdBuffer, gfx_api::abstract_texture* texture, vk::ImageLayout oldLayout,
+		vk::ImageLayout newLayout, vk::PipelineStageFlags srcStage, vk::PipelineStageFlags dstStage,
+		vk::AccessFlags srcAccess, vk::AccessFlags dstAccess);
 	void emitPrePassBarriers(const gfx_api::CompiledPass& pass) override;
 	void trackCustomPassOutputLayouts();
 	void applyViewport(vk::CommandBuffer cmdBuffer, uint32_t width, uint32_t height, float minDepth, float maxDepth);
