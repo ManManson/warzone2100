@@ -41,6 +41,7 @@
 
 #include "gfx_api_vk.h"
 #include "gfx_api_pass_resolve.h"
+#include "gfx_api_render_graph_compile.h"
 #include "lib/framework/physfs_ext.h"
 #include "lib/framework/wzapp.h"
 #include "lib/exceptionhandler/dumpinfo.h"
@@ -6079,17 +6080,29 @@ void VkRoot::transitionImageLayout(vk::CommandBuffer cmdBuffer, gfx_api::abstrac
 
 void VkRoot::transitionInputTextures(const gfx_api::RenderPassDesc& pass, vk::CommandBuffer cmdBuffer)
 {
-	for (gfx_api::abstract_texture* inputTexture : pass.inputTextures)
+	const std::vector<gfx_api::RenderPassDesc>* graphPasses = executingGraphPasses();
+	if (graphPasses == nullptr)
 	{
-		if (inputTexture == nullptr)
+		return;
+	}
+
+	std::vector<gfx_api::ResolvedRead> resolvedReads;
+	if (!gfx_api::resolvePassReads(*graphPasses, executingPassIndex(), resolvedReads))
+	{
+		return;
+	}
+
+	for (const gfx_api::ResolvedRead& read : resolvedReads)
+	{
+		if (read.texture == nullptr)
 		{
 			continue;
 		}
 
-		if (isDepthInputTexture(inputTexture))
+		if (read.isDepth)
 		{
 			transitionImageLayout(
-				cmdBuffer, inputTexture, vk::ImageLayout::eDepthStencilReadOnlyOptimal,
+				cmdBuffer, read.texture, vk::ImageLayout::eDepthStencilReadOnlyOptimal,
 				vk::PipelineStageFlagBits::eLateFragmentTests | vk::PipelineStageFlagBits::eFragmentShader,
 				vk::PipelineStageFlagBits::eFragmentShader,
 				vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eShaderRead,
@@ -6098,7 +6111,7 @@ void VkRoot::transitionInputTextures(const gfx_api::RenderPassDesc& pass, vk::Co
 		else
 		{
 			transitionImageLayout(
-				cmdBuffer, inputTexture, vk::ImageLayout::eShaderReadOnlyOptimal,
+				cmdBuffer, read.texture, vk::ImageLayout::eShaderReadOnlyOptimal,
 				vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eFragmentShader,
 				vk::PipelineStageFlagBits::eFragmentShader,
 				vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eShaderRead,

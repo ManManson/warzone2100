@@ -221,7 +221,7 @@ TITLECODE titleLoop()
 		// so queue the backdrop explicitly when it is re-enabled mid-frame.
 		pie_GetFrameRenderGraph().addRenderPass(
 			gfx_api::makeSwapchainPass("Backdrop", gfx_api::AttachmentLoadOp::Clear,
-				[]
+				[](const gfx_api::RenderPassContext&)
 				{
 					screen_Display();
 				}));
@@ -301,7 +301,7 @@ TITLECODE titleLoop()
 		pie_GetFrameRenderGraph().addRenderPass(
 			gfx_api::makeSwapchainPass("TitleUI",
 				screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear,
-				[currentForRender]
+				[currentForRender](const gfx_api::RenderPassContext&)
 				{
 					currentForRender->render();
 				}));
@@ -340,7 +340,7 @@ void presentLoadingScreenForCurrentFrame()
 	{
 		pie_GetFrameRenderGraph().addRenderPass(
 			gfx_api::makeSwapchainPass("LoadingBackdrop", gfx_api::AttachmentLoadOp::Clear,
-				[]
+				[](const gfx_api::RenderPassContext&)
 				{
 					screen_Display();
 				}));
@@ -349,7 +349,7 @@ void presentLoadingScreenForCurrentFrame()
 	pie_GetFrameRenderGraph().addRenderPass(
 		gfx_api::makeSwapchainPass("LoadingScreen",
 			screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear,
-			[]
+			[](const gfx_api::RenderPassContext&)
 			{
 				renderLoadingScreenPass();
 			}));

@@ -1366,7 +1366,7 @@ void displayWorld()
 		{
 			pie_GetFrameRenderGraph().addRenderPass(
 				gfx_api::makeSwapchainPass("GameStartFade", gfx_api::AttachmentLoadOp::Load,
-					[]
+					[](const gfx_api::RenderPassContext&)
 					{
 						fadeStartOfGame();
 					}));

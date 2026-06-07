@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gfx_api_attachment.h"
+#include "gfx_api_render_graph.h"
 
 #include <nonstd/optional.hpp>
 
@@ -14,6 +15,15 @@ enum class ResolvedPassRoute
 {
 	Swapchain,
 	DynamicAttachments
+};
+
+struct PassOutputView
+{
+	abstract_texture* texture = nullptr;
+	uint32_t arrayLayer = 0;
+	uint32_t mipLevel = 0;
+	bool isDepth = false;
+	bool isMultisampled = false;
 };
 
 /// Resolve attachment sources, transient allocations, and viewport dimensions.
@@ -38,5 +48,11 @@ bool passNeedsMsaaResolve(const RenderPassDesc& pass);
 
 /// True when the resolved depth attachment includes a stencil component (scene depth, not shadow map).
 bool attachmentDepthHasStencil(const AttachmentDesc& attachment);
+
+/// Resolve a producer pass output attachment for readPassOutput().
+nonstd::optional<PassOutputView> getPassOutputAttachment(
+	const RenderPassDesc& producer,
+	AttachmentRole role,
+	uint32_t colorIndex = 0);
 
 } // namespace gfx_api

@@ -340,7 +340,7 @@ static GAMECODE renderLoop()
 		}
 		pie_GetFrameRenderGraph().addRenderPass(
 			gfx_api::makeSwapchainPass("InGameUI", gfx_api::AttachmentLoadOp::Load,
-				[]
+				[](const gfx_api::RenderPassContext&)
 				{
 				wzPerfBegin(PERF_GUI, "User interface");
 				WZ_PROFILE_SCOPE(DrawUI);

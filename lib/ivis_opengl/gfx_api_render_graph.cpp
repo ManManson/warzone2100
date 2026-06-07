@@ -8,10 +8,11 @@
 namespace gfx_api
 {
 
-void RenderGraph::addRenderPass(RenderPassDesc desc)
+PassHandle RenderGraph::addRenderPass(RenderPassDesc desc)
 {
 	ASSERT(!_executing, "Cannot add passes during execute()");
 	_render_passes.push_back(std::move(desc));
+	return _render_passes.size() - 1;
 }
 
 RenderPassBuilder RenderPassBuilder::create(const std::string& debugName)
@@ -82,10 +83,38 @@ RenderPassBuilder& RenderPassBuilder::viewport(uint32_t w, uint32_t h)
 	return *this;
 }
 
+RenderPassBuilder& RenderPassBuilder::readTexture(abstract_texture* tex)
+{
+	ReadDesc read;
+	read.source = ReadSource::ExplicitTexture;
+	read.texture = tex;
+	_desc.reads.push_back(read);
+	return *this;
+}
+
+RenderPassBuilder& RenderPassBuilder::readSurface(PipelineSurfaceId id)
+{
+	ReadDesc read;
+	read.source = ReadSource::PipelineSurface;
+	read.pipelineSurface = id;
+	_desc.reads.push_back(read);
+	return *this;
+}
+
+RenderPassBuilder& RenderPassBuilder::readPassOutput(PassHandle producer, AttachmentRole role, uint32_t colorIndex)
+{
+	ReadDesc read;
+	read.source = ReadSource::PassOutput;
+	read.producerPass = producer;
+	read.producerRole = role;
+	read.attachmentIndex = colorIndex;
+	_desc.reads.push_back(read);
+	return *this;
+}
+
 RenderPassBuilder& RenderPassBuilder::inputTexture(abstract_texture* tex)
 {
-	_desc.inputTextures.push_back(tex);
-	return *this;
+	return readTexture(tex);
 }
 
 RenderPassBuilder& RenderPassBuilder::record(RenderPassDesc::RecordFunc func)

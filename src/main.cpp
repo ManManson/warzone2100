@@ -1281,7 +1281,7 @@ void mainLoop()
 			pie_GetFrameRenderGraph().addRenderPass(
 				gfx_api::makeSwapchainPass("VideoPlayback",
 					screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear,
-					[]
+					[](const gfx_api::RenderPassContext&)
 					{
 						videoLoop(); // Display the video if necessary
 					}));

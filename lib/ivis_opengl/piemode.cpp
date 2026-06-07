@@ -109,7 +109,7 @@ void pie_ScreenFrameRenderBegin()
 	{
 		pie_GetFrameRenderGraph().addRenderPass(
 			gfx_api::makeSwapchainPass("Backdrop", gfx_api::AttachmentLoadOp::Clear,
-				[]
+				[](const gfx_api::RenderPassContext&)
 				{
 					screen_Display();
 				}));

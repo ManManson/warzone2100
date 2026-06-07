@@ -267,4 +267,76 @@ bool attachmentDepthHasStencil(const AttachmentDesc& attachment)
 	return true;
 }
 
+nonstd::optional<PassOutputView> getPassOutputAttachment(
+	const RenderPassDesc& producer,
+	AttachmentRole role,
+	uint32_t colorIndex)
+{
+	auto& ctx = gfx_api::context::get();
+	PassOutputView view;
+
+	switch (role)
+	{
+	case AttachmentRole::PrimaryColor:
+		if (passNeedsMsaaResolve(producer))
+		{
+			if (!producer.resolveAttachment.has_value() || producer.resolveAttachment->texture == nullptr)
+			{
+				return nonstd::nullopt;
+			}
+			view.texture = producer.resolveAttachment->texture;
+			view.mipLevel = producer.resolveAttachment->mipLevel;
+			view.arrayLayer = producer.resolveAttachment->arrayLayer;
+		}
+		else if (!producer.colorAttachments.empty() && producer.colorAttachments[0].texture != nullptr)
+		{
+			view.texture = producer.colorAttachments[0].texture;
+			view.mipLevel = producer.colorAttachments[0].mipLevel;
+			view.arrayLayer = producer.colorAttachments[0].arrayLayer;
+			view.isMultisampled = ctx.isMultisampledColorAttachment(view.texture);
+		}
+		else
+		{
+			return nonstd::nullopt;
+		}
+		break;
+	case AttachmentRole::Resolve:
+		if (!producer.resolveAttachment.has_value() || producer.resolveAttachment->texture == nullptr)
+		{
+			return nonstd::nullopt;
+		}
+		view.texture = producer.resolveAttachment->texture;
+		view.mipLevel = producer.resolveAttachment->mipLevel;
+		view.arrayLayer = producer.resolveAttachment->arrayLayer;
+		break;
+	case AttachmentRole::Color:
+		if (colorIndex >= producer.colorAttachments.size()
+			|| producer.colorAttachments[colorIndex].texture == nullptr)
+		{
+			return nonstd::nullopt;
+		}
+		view.texture = producer.colorAttachments[colorIndex].texture;
+		view.mipLevel = producer.colorAttachments[colorIndex].mipLevel;
+		view.arrayLayer = producer.colorAttachments[colorIndex].arrayLayer;
+		view.isMultisampled = ctx.isMultisampledColorAttachment(view.texture);
+		break;
+	case AttachmentRole::Depth:
+		if (!producer.depthAttachment.has_value() || producer.depthAttachment->texture == nullptr)
+		{
+			return nonstd::nullopt;
+		}
+		view.texture = producer.depthAttachment->texture;
+		view.mipLevel = producer.depthAttachment->mipLevel;
+		view.arrayLayer = producer.depthAttachment->arrayLayer;
+		view.isDepth = true;
+		break;
+	}
+
+	if (view.texture == nullptr)
+	{
+		return nonstd::nullopt;
+	}
+	return view;
+}
+
 } // namespace gfx_api

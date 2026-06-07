@@ -23,6 +23,7 @@
 #include "gfx_api_gl.h"
 #include "gfx_api_null.h"
 #include "gfx_api_pass_resolve.h"
+#include "gfx_api_render_graph_compile.h"
 #include "gfx_api_image_compress_priv.h"
 #include "gfx_api_image_basis_priv.h"
 #include "gfx_api_mipmap_priv.h"
@@ -842,12 +843,14 @@ bool gfx_api::context::loadTextureArrayLayerFromBaseImages(gfx_api::texture_arra
 void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 {
 	setRenderGraphExecuting(true);
+	setExecutingGraphPass(&passes, 0);
 
 	bool executedAnyPass = false;
 
 	for (size_t passIndex = 0; passIndex < passes.size(); )
 	{
 		RenderPassDesc& pass = passes[passIndex];
+		setExecutingGraphPass(&passes, passIndex);
 		debugStringMarker(pass.debugName.c_str());
 
 		if (!resolvePassDescription(pass))
@@ -857,13 +860,14 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 		}
 
 		executedAnyPass = true;
+		const RenderPassContext passContext = buildRenderPassContext(passes, passIndex);
 
 		if (routeResolvedPass(pass) != ResolvedPassRoute::Swapchain)
 		{
 			beginPass(pass);
 			if (pass.recordFunc)
 			{
-				pass.recordFunc();
+				pass.recordFunc(passContext);
 			}
 			endPass();
 			++passIndex;
@@ -889,13 +893,15 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 		beginPass(passes[batchStart]);
 		for (size_t batchIndex = batchStart; batchIndex < batchEnd; ++batchIndex)
 		{
+			setExecutingGraphPass(&passes, batchIndex);
 			if (batchIndex != batchStart)
 			{
 				debugStringMarker(passes[batchIndex].debugName.c_str());
 			}
 			if (passes[batchIndex].recordFunc)
 			{
-				passes[batchIndex].recordFunc();
+				const RenderPassContext batchContext = buildRenderPassContext(passes, batchIndex);
+				passes[batchIndex].recordFunc(batchContext);
 			}
 		}
 		endPass();
@@ -909,5 +915,6 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 
 	purgeFrameResources();
 
+	setExecutingGraphPass(nullptr, 0);
 	setRenderGraphExecuting(false);
 }

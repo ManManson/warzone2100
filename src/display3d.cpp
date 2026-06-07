@@ -1054,7 +1054,7 @@ void draw3DScene()
 		std::move(
 			gfx_api::RenderPassBuilder::create("3DSceneOverlays")
 				.swapchainAttachment(gfx_api::AttachmentLoadOp::Load)
-				.record([]
+				.record([](const gfx_api::RenderPassContext&)
 	{
 	pie_BeginInterface();
 
@@ -1193,7 +1193,7 @@ void draw3DScene()
 		std::move(
 			gfx_api::RenderPassBuilder::create("3DSceneDebugOverlays")
 				.swapchainAttachment(gfx_api::AttachmentLoadOp::Load)
-				.record([]
+				.record([](const gfx_api::RenderPassContext&)
 	{
 	showDroidSensorRanges(); //shows sensor data for units/droids/whatever...-Q 5-10-05
 	if (CauseCrash)
@@ -1533,7 +1533,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 				gfx_api::makeDepthCascadePass(i, "ShadowCascade" + std::to_string(i),
 					[cascadeProjMatrix = shadowCascades[i].projectionMatrix,
 							cascadeViewMatrix = shadowCascades[i].viewMatrix,
-							cameraPos, shadowCascadesInfo]
+							cameraPos, shadowCascadesInfo](const gfx_api::RenderPassContext&)
 			{
 				if (bDrawTerrainShadows)
 				{
@@ -1548,7 +1548,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	renderGraph.addRenderPass(
 		gfx_api::makeScenePass("ScenePass",
 			[perspectiveViewMatrix, viewMatrix, cameraPos,
-					shadowCascadesInfo, baseViewMatrix, perspectiveMatrix]
+					shadowCascadesInfo, baseViewMatrix, perspectiveMatrix](const gfx_api::RenderPassContext&)
 	{
 		// now we are about to draw the terrain
 		wzPerfBegin(PERF_TERRAIN, "3D scene - terrain");
@@ -1601,8 +1601,8 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 						gfx_api::RenderPassBuilder::create("CustomSceneCopyValidate")
 							.viewport(sceneDims->first, sceneDims->second)
 							.colorAttachment(customSceneCopyTarget, true)
-							.inputTexture(sceneTexture)
-							.record([sceneTexture]
+							.readTexture(sceneTexture)
+							.record([sceneTexture](const gfx_api::RenderPassContext&)
 				{
 					WZ_PROFILE_SCOPE(CustomSceneCopyValidate);
 					drawWorldToScreenBlit(sceneTexture);
@@ -1616,7 +1616,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	renderGraph.addRenderPass(
 		gfx_api::makeSwapchainPass("SceneBlit",
 			screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear,
-			[customSceneCopyTarget, sceneTexture]
+			[customSceneCopyTarget, sceneTexture](const gfx_api::RenderPassContext&)
 	{
 		WZ_PROFILE_SCOPE(copyToFBO);
 		gfx_api::abstract_texture* blitSource = customSceneCopyTarget;
@@ -1634,7 +1634,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	// Targetting feedback must record inside a pass callback (not during graph setup).
 	renderGraph.addRenderPass(
 		gfx_api::makeSwapchainPass("TargettingEffects", gfx_api::AttachmentLoadOp::Load,
-			[]
+			[](const gfx_api::RenderPassContext&)
 			{
 				processSensorTarget();
 				processDestinationTarget();

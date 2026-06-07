@@ -484,8 +484,19 @@ namespace gfx_api
 		bool renderGraphExecuting() const { return _renderGraphExecuting; }
 		void setRenderGraphExecuting(bool executing) { _renderGraphExecuting = executing; }
 
+		void setExecutingGraphPass(const std::vector<RenderPassDesc>* passes, size_t passIndex)
+		{
+			_executingGraphPasses = passes;
+			_executingPassIndex = passIndex;
+		}
+
+		const std::vector<RenderPassDesc>* executingGraphPasses() const { return _executingGraphPasses; }
+		size_t executingPassIndex() const { return _executingPassIndex; }
+
 	private:
 		bool _renderGraphExecuting = false;
+		const std::vector<RenderPassDesc>* _executingGraphPasses = nullptr;
+		size_t _executingPassIndex = 0;
 		virtual bool _initialize(const backend_Impl_Factory& impl, int32_t antialiasing, swap_interval_mode mode, optional<float> mipLodBias, uint32_t depthMapResolution) = 0;
 	};
 
