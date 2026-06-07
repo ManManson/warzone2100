@@ -2602,7 +2602,16 @@ std::unique_ptr<gfx_api::abstract_texture> gl_context::createTransientColorRende
 
 std::unique_ptr<gfx_api::abstract_texture> gl_context::createTransientDepthRenderTarget(uint32_t width, uint32_t height, const std::string& debugName)
 {
-	return create_framebuffer_renderbuffer(GL_DEPTH24_STENCIL8, 0, width, height, debugName);
+	gl_gpurendered_texture* depthTexture = create_gpurendered_texture(
+		GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, width, height, debugName);
+	ASSERT_OR_RETURN(nullptr, depthTexture != nullptr, "Failed to create transient depth texture");
+	depthTexture->bind();
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	depthTexture->unbind();
+	return std::unique_ptr<gfx_api::abstract_texture>(depthTexture);
 }
 
 gfx_api::buffer * gl_context::create_buffer_object(const gfx_api::buffer::usage &usage, const buffer_storage_hint& hint /*= buffer_storage_hint::static_draw*/, const std::string& debugName /*= ""*/)

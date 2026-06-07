@@ -2876,12 +2876,19 @@ static void createColorAttachmentImage(const vk::PhysicalDevice& physicalDevice,
 static void createDepthStencilImage(const vk::PhysicalDevice& physicalDevice, const vk::PhysicalDeviceMemoryProperties& memprops, const vk::Device& dev,
 									const vk::Extent2D& swapchainSize, vk::SampleCountFlagBits msaaSamples, vk::Format depthFormat,
 									vk::Image& depthStencilImage, vk::DeviceMemory& depthStencilMemory, vk::ImageView& depthStencilView,
-									const WZ_vk::DispatchLoaderDynamic& vkDynLoader, const char *loggingKey = "depthStencilImage")
+									const WZ_vk::DispatchLoaderDynamic& vkDynLoader, const char *loggingKey = "depthStencilImage",
+									bool enableShaderSampling = false)
 {
+	vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eDepthStencilAttachment;
+	if (enableShaderSampling)
+	{
+		usage |= vk::ImageUsageFlagBits::eSampled;
+	}
+
 	createGPUImageAndViewInternal(physicalDevice, memprops, dev,
 										 swapchainSize, msaaSamples, depthFormat,
 										 // FUTURE TODO: Add vk::ImageUsageFlagBits::eTransientAttachment once we get rid of stencil shadows entirely
-										 vk::ImageUsageFlagBits::eDepthStencilAttachment,
+										 usage,
 										 vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil,
 										 depthStencilImage, depthStencilMemory, depthStencilView,
 										 vkDynLoader, loggingKey);
@@ -2901,7 +2908,7 @@ VkTransientDepthStencilImage::VkTransientDepthStencilImage(const VkRoot& root, u
 
 	createDepthStencilImage(root.physicalDevice, root.memprops, root.dev,
 		vk::Extent2D(w, h), vk::SampleCountFlagBits::e1, format,
-		image, memory, view, root.vkDynLoader, filename.c_str());
+		image, memory, view, root.vkDynLoader, filename.c_str(), true);
 }
 
 VkTransientDepthStencilImage::~VkTransientDepthStencilImage()
