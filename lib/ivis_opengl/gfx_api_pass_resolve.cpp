@@ -192,16 +192,6 @@ bool resolvePassDescription(RenderPassDesc& pass)
 		ASSERT_OR_RETURN(false, passHasSwapchainColorAttachment(pass),
 			"Swapchain pass \"%s\" must declare a swapchain color attachment", pass.debugName.c_str());
 	}
-	if (route == ResolvedPassRoute::SceneFramebuffer)
-	{
-		ASSERT_OR_RETURN(false, !pass.colorAttachments.empty(),
-			"Scene pass \"%s\" could not resolve scene color attachment", pass.debugName.c_str());
-		ASSERT_OR_RETURN(false, pass.depthAttachment.has_value()
-			&& pass.depthAttachment->texture != nullptr,
-			"Scene pass \"%s\" requires a resolved depth attachment",
-			pass.debugName.c_str());
-	}
-
 	if (!resolveTransientAttachments(pass, ctx, width, height))
 	{
 		ASSERT(false, "Failed to resolve transient attachments for pass \"%s\"", pass.debugName.c_str());
@@ -236,19 +226,6 @@ ResolvedPassRoute routeResolvedPass(const RenderPassDesc& pass)
 	if (passHasSwapchainColorAttachment(pass))
 	{
 		return ResolvedPassRoute::Swapchain;
-	}
-
-	const bool hasColor = !pass.colorAttachments.empty();
-	const bool hasDepthTex = pass.depthAttachment.has_value()
-		&& pass.depthAttachment->texture != nullptr;
-	if (hasColor && hasDepthTex)
-	{
-		auto& ctx = gfx_api::context::get();
-		abstract_texture* sceneDepth = ctx.getPipelineSurface(PipelineSurfaceId::SceneDepth);
-		if (sceneDepth != nullptr && pass.depthAttachment->texture == sceneDepth)
-		{
-			return ResolvedPassRoute::SceneFramebuffer;
-		}
 	}
 
 	return ResolvedPassRoute::DynamicAttachments;

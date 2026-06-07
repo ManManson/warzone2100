@@ -4322,14 +4322,6 @@ void gl_context::beginSwapchainPass(const gfx_api::RenderPassDesc& pass)
 	}
 }
 
-void gl_context::beginScenePass(const gfx_api::RenderPassDesc& pass)
-{
-	glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO[sceneFBOIdx]);
-	glViewport(0, 0, static_cast<GLsizei>(sceneFramebufferWidth), static_cast<GLsizei>(sceneFramebufferHeight));
-	set_depth_range(0.f, 1.f);
-	applyAttachmentClears(pass);
-}
-
 void gl_context::beginDynamicAttachmentPass(const gfx_api::RenderPassDesc& pass)
 {
 	ASSERT_OR_RETURN(, !_customPassActive, "Dynamic attachment pass begin while already active");
@@ -4409,15 +4401,40 @@ void gl_context::beginDynamicAttachmentPass(const gfx_api::RenderPassDesc& pass)
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	glDepthMask(GL_TRUE);
 	applyAttachmentClears(pass);
+	_activeDynamicPassDesc = pass;
 	_customPassActive = true;
 }
 
-void gl_context::endSwapchainPass()
+void gl_context::resolveMsaaColorAttachment(const gfx_api::RenderPassDesc& pass, uint32_t passWidth, uint32_t passHeight)
 {
+	if (!gfx_api::passNeedsMsaaResolve(pass))
+	{
+		return;
+	}
+	auto* resolveTexture = dynamic_cast<gl_gpurendered_texture*>(pass.resolveAttachment->texture);
+	ASSERT_OR_RETURN(, resolveTexture != nullptr, "MSAA resolve attachment must be a GPU-rendered texture");
+
+	GLuint resolveFBO = 0;
+	glGenFramebuffers(1, &resolveFBO);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFBO);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, resolveTexture->target(), resolveTexture->id(), 0);
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, _customPassFBO);
+	glBlitFramebuffer(0, 0, static_cast<GLint>(passWidth), static_cast<GLint>(passHeight),
+		0, 0, static_cast<GLint>(passWidth), static_cast<GLint>(passHeight),
+		GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+	glDeleteFramebuffers(1, &resolveFBO);
 }
 
-void gl_context::endScenePass()
+void gl_context::invalidateSceneDepthAttachment(const gfx_api::RenderPassDesc& pass)
 {
+	if (!pass.depthAttachment.has_value() || !gfx_api::attachmentDepthHasStencil(pass.depthAttachment.value()))
+	{
+		return;
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, _customPassFBO);
 	GLenum invalid_ap[2];
 	if (gles && GLAD_GL_ES_VERSION_3_0)
 	{
@@ -4449,22 +4466,31 @@ void gl_context::endScenePass()
 		}
 	}
 #endif
+}
 
-	const bool usingMSAAIntermediate = (_sceneMsaaSurface != nullptr);
-	if (usingMSAAIntermediate)
-	{
-		glBindFramebuffer(GL_READ_FRAMEBUFFER, sceneFBO[sceneFBOIdx]);
-		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, sceneResolveFBO[sceneFBOIdx]);
-		glBlitFramebuffer(0, 0, sceneFramebufferWidth, sceneFramebufferHeight,
-			0, 0, sceneFramebufferWidth, sceneFramebufferHeight,
-			GL_COLOR_BUFFER_BIT,
-			GL_LINEAR);
-	}
+void gl_context::endSwapchainPass()
+{
+}
 
-	if (usingMSAAIntermediate)
+void gl_context::endDynamicAttachmentPass()
+{
+	ASSERT_OR_RETURN(, _customPassActive, "Dynamic attachment pass end without an active pass");
+
+	const uint32_t passWidth = _activeDynamicPassDesc.viewportSize.has_value()
+		? _activeDynamicPassDesc.viewportSize->first
+		: sceneFramebufferWidth;
+	const uint32_t passHeight = _activeDynamicPassDesc.viewportSize.has_value()
+		? _activeDynamicPassDesc.viewportSize->second
+		: sceneFramebufferHeight;
+
+	invalidateSceneDepthAttachment(_activeDynamicPassDesc);
+	resolveMsaaColorAttachment(_activeDynamicPassDesc, passWidth, passHeight);
+
+	if (gfx_api::passNeedsMsaaResolve(_activeDynamicPassDesc))
 	{
 		GLenum invalid_msaarbo_ap[1];
 		invalid_msaarbo_ap[0] = GL_COLOR_ATTACHMENT0;
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, _customPassFBO);
 		if (gles && GLAD_GL_ES_VERSION_3_0)
 		{
 			glInvalidateFramebuffer(GL_READ_FRAMEBUFFER, 1, invalid_msaarbo_ap);
@@ -4480,22 +4506,6 @@ void gl_context::endScenePass()
 		}
 	}
 
-	sceneFBOIdx++;
-	if (sceneFBOIdx >= sceneFBO.size())
-	{
-		sceneFBOIdx = 0;
-	}
-
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	if (sceneFramebufferWidth != viewportWidth || sceneFramebufferHeight != viewportHeight)
-	{
-		glViewport(0, 0, static_cast<GLsizei>(viewportWidth), static_cast<GLsizei>(viewportHeight));
-	}
-}
-
-void gl_context::endDynamicAttachmentPass()
-{
-	ASSERT_OR_RETURN(, _customPassActive, "Dynamic attachment pass end without an active pass");
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	if (_customPassFBO != 0)
 	{
@@ -4503,6 +4513,7 @@ void gl_context::endDynamicAttachmentPass()
 		_customPassFBO = 0;
 	}
 	glViewport(0, 0, static_cast<GLsizei>(viewportWidth), static_cast<GLsizei>(viewportHeight));
+	_activeDynamicPassDesc = gfx_api::RenderPassDesc();
 	_customPassActive = false;
 }
 
@@ -4518,9 +4529,6 @@ void gl_context::beginPass(gfx_api::RenderPassDesc& pass)
 	case gfx_api::ResolvedPassRoute::Swapchain:
 		beginSwapchainPass(pass);
 		break;
-	case gfx_api::ResolvedPassRoute::SceneFramebuffer:
-		beginScenePass(pass);
-		break;
 	case gfx_api::ResolvedPassRoute::DynamicAttachments:
 		beginDynamicAttachmentPass(pass);
 		break;
@@ -4535,9 +4543,6 @@ void gl_context::endPass()
 	{
 	case gfx_api::ResolvedPassRoute::Swapchain:
 		endSwapchainPass();
-		break;
-	case gfx_api::ResolvedPassRoute::SceneFramebuffer:
-		endScenePass();
 		break;
 	case gfx_api::ResolvedPassRoute::DynamicAttachments:
 		endDynamicAttachmentPass();
@@ -5502,16 +5507,6 @@ void gl_context::deleteSceneRenderpass()
 	if (glDeleteFramebuffers)
 #endif
 	{
-		if (sceneFBO.size() > 0)
-		{
-			glDeleteFramebuffers(static_cast<GLsizei>(sceneFBO.size()), sceneFBO.data());
-			sceneFBO.clear();
-		}
-		if (sceneResolveFBO.size() > 0)
-		{
-			glDeleteFramebuffers(static_cast<GLsizei>(sceneResolveFBO.size()), sceneResolveFBO.data());
-			sceneResolveFBO.clear();
-		}
 	}
 	_sceneMsaaSurface.reset();
 	if (sceneTexture)
@@ -5574,67 +5569,6 @@ bool gl_context::createSceneRenderpass()
 		sceneFramebufferWidth, sceneFramebufferHeight, "<scene depth stencil>");
 	ASSERT_OR_RETURN(false, _sceneDepthStencilSurface != nullptr, "Failed to create scene depth/stencil renderbuffer");
 	ASSERT_GL_NOERRORS_OR_RETURN(false);
-
-	const size_t numSceneFBOs = 2;
-	for (auto i = 0; i < numSceneFBOs; ++i)
-	{
-		GLuint newFBO = 0;
-		glGenFramebuffers(1, &newFBO);
-		ASSERT_GL_NOERRORS_OR_RETURN(false);
-		sceneFBO.push_back(newFBO);
-
-		glBindFramebuffer(GL_FRAMEBUFFER, newFBO);
-		ASSERT_GL_NOERRORS_OR_RETURN(false);
-		if (samples > 0)
-		{
-			glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, _sceneMsaaSurface->id());
-			ASSERT_GL_NOERRORS_OR_RETURN(false);
-		}
-		else
-		{
-			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneTexture->id(), 0);
-			ASSERT_GL_NOERRORS_OR_RETURN(false);
-		}
-		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, _sceneDepthStencilSurface->id());
-		ASSERT_GL_NOERRORS_OR_RETURN(false);
-
-		GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-		if (status != GL_FRAMEBUFFER_COMPLETE)
-		{
-			debug(LOG_ERROR, "Failed to create scene framebuffer[%d] (%" PRIu32 " x %" PRIu32 ", samples: %d) with error: %s", i, sceneFramebufferWidth, sceneFramebufferHeight, static_cast<int>(samples), cbframebuffererror(status));
-			encounteredError = true;
-		}
-		ASSERT_GL_NOERRORS_OR_RETURN(false);
-
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		ASSERT_GL_NOERRORS_OR_RETURN(false);
-
-		if (samples > 0)
-		{
-			// Must also create a sceneResolveFBO for resolving MSAA
-			GLuint newResolveRBO = 0;
-			glGenFramebuffers(1, &newResolveRBO);
-			ASSERT_GL_NOERRORS_OR_RETURN(false);
-			sceneResolveFBO.push_back(newResolveRBO);
-
-			glBindFramebuffer(GL_FRAMEBUFFER, newResolveRBO);
-			ASSERT_GL_NOERRORS_OR_RETURN(false);
-			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneTexture->id(), 0);
-			ASSERT_GL_NOERRORS_OR_RETURN(false);
-			// shouldn't need a depth/stencil buffer
-
-			status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-			if (status != GL_FRAMEBUFFER_COMPLETE)
-			{
-				debug(LOG_ERROR, "Failed to create scene resolve framebuffer[%d] (%" PRIu32 " x %" PRIu32 ", samples: %d) with error: %s", i, sceneFramebufferWidth, sceneFramebufferHeight, static_cast<int>(samples), cbframebuffererror(status));
-				encounteredError = true;
-			}
-			ASSERT_GL_NOERRORS_OR_RETURN(false);
-
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-			ASSERT_GL_NOERRORS_OR_RETURN(false);
-		}
-	}
 
 	ASSERT_GL_NOERRORS_OR_RETURN(false);
 

@@ -728,6 +728,9 @@ struct VkRoot final : gfx_api::context
 	{
 		std::vector<vk::Format> colorFormats;
 		std::vector<gfx_api::AttachmentLoadOp> colorLoadOps;
+		std::vector<vk::SampleCountFlagBits> colorSamples;
+		optional<vk::Format> resolveFormat;
+		gfx_api::AttachmentLoadOp resolveLoadOp = gfx_api::AttachmentLoadOp::DontCare;
 		optional<vk::Format> depthFormat;
 		gfx_api::AttachmentLoadOp depthLoadOp = gfx_api::AttachmentLoadOp::DontCare;
 		/// Layout after endRenderPass; shadow-map depth-only passes use ReadOnly for shader sampling.
@@ -967,6 +970,7 @@ private:
 	void ensureRenderPassPSOCapacity(size_t requiredCount);
 	size_t getOrCreatePassRenderPassId(const PassLayoutKey& key);
 	vk::Format getAttachmentVkFormat(gfx_api::abstract_texture* texture) const;
+	vk::SampleCountFlagBits getAttachmentVkSamples(gfx_api::abstract_texture* texture) const;
 	vk::ImageView getAttachmentImageView(const gfx_api::AttachmentDesc& attachment) const;
 	void destroyCustomRenderPasses();
 	void resetImageLayoutTracker();
@@ -983,10 +987,8 @@ private:
 	void deferDestroyFramebuffer(vk::Framebuffer framebuffer);
 	void endActiveSwapchainRenderPassIfNeeded();
 	void beginSwapchainPass(gfx_api::RenderPassDesc& pass);
-	void beginScenePass(gfx_api::RenderPassDesc& pass);
 	void beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass);
 	void endSwapchainPass();
-	void endScenePass();
 	void endDynamicAttachmentPass();
 private:
 	size_t depthPassCount = WZ_MAX_SHADOW_CASCADES;
@@ -1018,6 +1020,7 @@ private:
 	uint32_t _customPassHeight = 0;
 	std::vector<gfx_api::abstract_texture*> _activeCustomColorOutputs;
 	optional<gfx_api::abstract_texture*> _activeCustomDepthOutput = nullopt;
+	optional<gfx_api::abstract_texture*> _activeCustomResolveOutput = nullopt;
 	vk::ImageLayout _activeCustomDepthFinalLayout = vk::ImageLayout::eUndefined;
 
 	std::unordered_map<gfx_api::abstract_texture*, vk::ImageLayout> _imageLayoutTracker;

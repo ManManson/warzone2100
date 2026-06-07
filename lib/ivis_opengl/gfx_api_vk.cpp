@@ -40,6 +40,7 @@
 //
 
 #include "gfx_api_vk.h"
+#include "gfx_api_pass_resolve.h"
 #include "lib/framework/physfs_ext.h"
 #include "lib/framework/wzapp.h"
 #include "lib/exceptionhandler/dumpinfo.h"
@@ -3292,128 +3293,9 @@ void VkRoot::destroySceneRenderpass()
 // throws a vk::SystemError on an unrecoverable error (like OOM)
 void VkRoot::createSceneRenderpass(vk::Format sceneFormat, vk::Format depthFormat)
 {
-	bool msaaEnabled = (msaaSamples != vk::SampleCountFlagBits::e1);
+	const bool msaaEnabled = (msaaSamples != vk::SampleCountFlagBits::e1);
 
-	auto attachments = std::vector<vk::AttachmentDescription>();
-
-	auto appendDepthAttachment = [&]() {
-		attachments.push_back(
-			  vk::AttachmentDescription() // depthStencilAttachment
-			  .setFormat(depthFormat)
-			  .setSamples(msaaSamples)
-			  .setInitialLayout(vk::ImageLayout::eUndefined)
-			  .setFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
-			  .setLoadOp(vk::AttachmentLoadOp::eClear)
-			  .setStoreOp(vk::AttachmentStoreOp::eDontCare)
-			  .setStencilLoadOp(vk::AttachmentLoadOp::eClear)
-			  .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-		);
-	};
-
-	if (msaaEnabled)
-	{
-		// first attachment is the msaa render buffer as the color attachment
-		attachments.push_back(
-			  vk::AttachmentDescription() // msaa color buffer
-			  .setFormat(sceneFormat)
-			  .setSamples(msaaSamples)
-			  .setInitialLayout(vk::ImageLayout::eUndefined)
-			  .setFinalLayout(vk::ImageLayout::eColorAttachmentOptimal)
-			  .setLoadOp(vk::AttachmentLoadOp::eClear)
-			  .setStoreOp(vk::AttachmentStoreOp::eStore)
-			  .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
-			  .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-		);
-
-		appendDepthAttachment(); // should always be second
-	}
-
-	attachments.push_back(
-		  vk::AttachmentDescription() // color (resolved) texture
-		  .setFormat(sceneFormat)
-		  .setSamples(vk::SampleCountFlagBits::e1)
-		  .setInitialLayout(vk::ImageLayout::eUndefined)
-		  .setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-		  .setLoadOp((msaaEnabled) ? vk::AttachmentLoadOp::eDontCare : vk::AttachmentLoadOp::eClear)
-		  .setStoreOp(vk::AttachmentStoreOp::eStore)
-		  .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
-		  .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-	);
-
-	if (!msaaEnabled)
-	{
-		appendDepthAttachment(); // should always be second
-	}
-
-	const size_t numColorAttachmentRef = 1;
-	const auto colorAttachmentRef =
-		std::array<vk::AttachmentReference, numColorAttachmentRef>{
-		vk::AttachmentReference()
-			.setAttachment(0)
-			.setLayout(vk::ImageLayout::eColorAttachmentOptimal)
-	};
-	static_assert(minRequired_ColorAttachments >= numColorAttachmentRef, "minRequired_ColorAttachments must be >= colorAttachmentRef.size()");
-	const auto depthStencilAttachmentRef =
-		vk::AttachmentReference()
-		.setAttachment(1)
-		.setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
-	const auto colorAttachmentResolveRef =
-		vk::AttachmentReference()
-		.setAttachment(2)
-		.setLayout(vk::ImageLayout::eColorAttachmentOptimal);
-
-	const auto subpasses =
-		std::array<vk::SubpassDescription, 1> {
-		vk::SubpassDescription()
-			.setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
-			.setColorAttachmentCount(static_cast<uint32_t>(colorAttachmentRef.size()))
-			.setPColorAttachments(colorAttachmentRef.data())
-			.setPDepthStencilAttachment(&depthStencilAttachmentRef)
-			.setPResolveAttachments((msaaEnabled) ? &colorAttachmentResolveRef : nullptr)
-	};
-
-	std::array<vk::SubpassDependency, 2> dependencies {
-		vk::SubpassDependency()
-			.setSrcSubpass(VK_SUBPASS_EXTERNAL)
-			.setDstSubpass(0)
-			.setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests)
-			.setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests)
-			.setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite)
-			.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentRead)
-			.setDependencyFlags(vk::DependencyFlagBits::eByRegion)
-		, vk::SubpassDependency()
-			.setSrcSubpass(0)
-			.setDstSubpass(VK_SUBPASS_EXTERNAL)
-			.setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
-			.setDstStageMask(vk::PipelineStageFlagBits::eFragmentShader)
-			.setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
-			.setDstAccessMask(vk::AccessFlagBits::eShaderRead)
-			.setDependencyFlags(vk::DependencyFlagBits::eByRegion)
-	};
-
-	auto createInfo = vk::RenderPassCreateInfo()
-		.setAttachmentCount(static_cast<uint32_t>(attachments.size()))
-		.setPAttachments(attachments.data())
-		.setSubpassCount(static_cast<uint32_t>(subpasses.size()))
-		.setPSubpasses(subpasses.data())
-		.setDependencyCount(static_cast<uint32_t>(dependencies.size()))
-		.setPDependencies(dependencies.data());
-
-	renderPasses[SCENE_RENDER_PASS_ID].rp_compat_info = std::make_shared<VkhRenderPassCompat>(createInfo);
-	renderPasses[SCENE_RENDER_PASS_ID].rp = dev.createRenderPass(createInfo, nullptr, vkDynLoader);
-	renderPasses[SCENE_RENDER_PASS_ID].msaaSamples = msaaSamples;
-
-	if (debugUtilsExtEnabled)
-	{
-		std::string renderpassName = "<scene render pass>";
-		vk::DebugUtilsObjectNameInfoEXT objectNameInfo;
-		objectNameInfo.setObjectType(vk::ObjectType::eRenderPass);
-		objectNameInfo.setObjectHandle(uint64_t(static_cast<VkRenderPass>(renderPasses[SCENE_RENDER_PASS_ID].rp)));
-		objectNameInfo.setPObjectName(renderpassName.c_str());
-		dev.setDebugUtilsObjectNameEXT(objectNameInfo, vkDynLoader);
-	}
-
-	// Create scene image + view
+	// Create scene image + view (render passes are built per-pass via getOrCreatePassRenderPassId)
 	pSceneImage = new VkRenderedImage(*this, swapchainSize.width, swapchainSize.height, sceneFormat, "<scene image>");
 
 	if (msaaEnabled)
@@ -3439,36 +3321,6 @@ void VkRoot::createSceneRenderpass(vk::Format sceneFormat, vk::Format depthForma
 	{
 		debug(LOG_ERROR, "Failed to create scene depth stencil image: %s", e.what());
 		throw;
-	}
-
-	// Create an FBO for each frame in flight
-	size_t numSceneFBOs = buffering_mechanism::numFrames();
-	const auto fboAttachments = (msaaEnabled) ? std::vector<vk::ImageView>{sceneMSAAView, sceneDepthStencilView, pSceneImage->view.get()}
-											 : std::vector<vk::ImageView>{pSceneImage->view.get(), sceneDepthStencilView};
-	for (size_t i = 0; i < numSceneFBOs; ++i)
-	{
-		// FBO for this frame in flight
-		auto frame_fbo = dev.createFramebuffer(
-			vk::FramebufferCreateInfo()
-			.setAttachmentCount(static_cast<uint32_t>(fboAttachments.size()))
-			.setPAttachments(fboAttachments.data())
-			.setLayers(1)
-			.setWidth(swapchainSize.width)
-			.setHeight(swapchainSize.height)
-			.setRenderPass(renderPasses[SCENE_RENDER_PASS_ID].rp)
-			, nullptr, vkDynLoader);
-
-		if (debugUtilsExtEnabled)
-		{
-			std::string framebufferName = "<scene frame buffer: " + std::to_string(i) + ">";
-			vk::DebugUtilsObjectNameInfoEXT objectNameInfo;
-			objectNameInfo.setObjectType(vk::ObjectType::eFramebuffer);
-			objectNameInfo.setObjectHandle(uint64_t(static_cast<VkFramebuffer>(frame_fbo)));
-			objectNameInfo.setPObjectName(framebufferName.c_str());
-			dev.setDebugUtilsObjectNameEXT(objectNameInfo, vkDynLoader);
-		}
-
-		renderPasses[SCENE_RENDER_PASS_ID].fbo.push_back(frame_fbo);
 	}
 
 	_sceneDepthSurface = std::make_unique<VkAttachmentImage>(sceneDepthStencilImage, sceneDepthStencilView, depthFormat,
@@ -6371,9 +6223,16 @@ void VkRoot::transitionInputTextures(const gfx_api::RenderPassDesc& pass, vk::Co
 
 void VkRoot::trackCustomPassOutputLayouts()
 {
-	for (gfx_api::abstract_texture* colorOutput : _activeCustomColorOutputs)
+	if (_activeCustomResolveOutput.has_value() && _activeCustomResolveOutput.value() != nullptr)
 	{
-		setImageLayout(colorOutput, vk::ImageLayout::eShaderReadOnlyOptimal);
+		setImageLayout(_activeCustomResolveOutput.value(), vk::ImageLayout::eShaderReadOnlyOptimal);
+	}
+	else
+	{
+		for (gfx_api::abstract_texture* colorOutput : _activeCustomColorOutputs)
+		{
+			setImageLayout(colorOutput, vk::ImageLayout::eShaderReadOnlyOptimal);
+		}
 	}
 	if (_activeCustomDepthOutput.has_value() && _activeCustomDepthOutput.value() != nullptr)
 	{
@@ -6381,12 +6240,16 @@ void VkRoot::trackCustomPassOutputLayouts()
 	}
 	_activeCustomColorOutputs.clear();
 	_activeCustomDepthOutput.reset();
+	_activeCustomResolveOutput.reset();
 }
 
 bool VkRoot::PassLayoutKey::operator==(const PassLayoutKey& other) const
 {
 	return colorFormats == other.colorFormats
 		&& colorLoadOps == other.colorLoadOps
+		&& colorSamples == other.colorSamples
+		&& resolveFormat == other.resolveFormat
+		&& resolveLoadOp == other.resolveLoadOp
 		&& depthFormat == other.depthFormat
 		&& depthLoadOp == other.depthLoadOp
 		&& depthFinalLayout == other.depthFinalLayout
@@ -6426,6 +6289,16 @@ vk::Format VkRoot::getAttachmentVkFormat(gfx_api::abstract_texture* texture) con
 	}
 	debug(LOG_FATAL, "Unsupported attachment texture type for custom pass");
 	return vk::Format::eUndefined;
+}
+
+vk::SampleCountFlagBits VkRoot::getAttachmentVkSamples(gfx_api::abstract_texture* texture) const
+{
+	ASSERT_OR_RETURN(vk::SampleCountFlagBits::e1, texture != nullptr, "Null attachment texture");
+	if (auto* attachmentImage = dynamic_cast<VkAttachmentImage*>(texture))
+	{
+		return attachmentImage->samples;
+	}
+	return vk::SampleCountFlagBits::e1;
 }
 
 vk::ImageView VkRoot::getAttachmentImageView(const gfx_api::AttachmentDesc& attachment) const
@@ -6496,58 +6369,137 @@ size_t VkRoot::getOrCreatePassRenderPassId(const PassLayoutKey& key)
 	const size_t renderPassId = renderPasses.size();
 	renderPasses.push_back(RenderPassDetails(renderPassId));
 
-	std::vector<vk::AttachmentDescription> attachments;
-	attachments.reserve(key.colorFormats.size() + (key.depthFormat.has_value() ? 1 : 0));
+	const bool hasMsaaResolve = key.resolveFormat.has_value();
+	const vk::SampleCountFlagBits msaaSamples = (hasMsaaResolve && !key.colorSamples.empty())
+		? key.colorSamples[0]
+		: vk::SampleCountFlagBits::e1;
 
-	for (size_t i = 0; i < key.colorFormats.size(); ++i)
+	std::vector<vk::AttachmentDescription> attachments;
+	if (hasMsaaResolve)
 	{
-		const vk::AttachmentLoadOp vkLoadOp = toVkAttachmentLoadOp(key.colorLoadOps[i]);
+		ASSERT_OR_RETURN(NUM_RENDERPASS_IDS, key.colorFormats.size() == 1, "MSAA resolve pass expects one color attachment");
+		ASSERT_OR_RETURN(NUM_RENDERPASS_IDS, key.depthFormat.has_value(), "MSAA resolve pass requires depth");
+
+		const vk::AttachmentLoadOp vkColorLoadOp = toVkAttachmentLoadOp(key.colorLoadOps[0]);
 		attachments.push_back(
 			vk::AttachmentDescription()
-				.setFormat(key.colorFormats[i])
-				.setSamples(vk::SampleCountFlagBits::e1)
-				.setLoadOp(vkLoadOp)
+				.setFormat(key.colorFormats[0])
+				.setSamples(msaaSamples)
+				.setLoadOp(vkColorLoadOp)
 				.setStoreOp(vk::AttachmentStoreOp::eStore)
 				.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-				.setInitialLayout(initialColorAttachmentLayout(key.colorLoadOps[i]))
-				.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+				.setInitialLayout(initialColorAttachmentLayout(key.colorLoadOps[0]))
+				.setFinalLayout(vk::ImageLayout::eColorAttachmentOptimal)
 		);
-	}
 
-	optional<vk::AttachmentReference> depthStencilAttachmentRef;
-	if (key.depthFormat.has_value())
-	{
-		const uint32_t depthAttachmentIndex = static_cast<uint32_t>(attachments.size());
 		const vk::AttachmentLoadOp vkDepthLoadOp = toVkAttachmentLoadOp(key.depthLoadOp);
-		const vk::AttachmentStoreOp depthStoreOp = (key.depthFinalLayout == vk::ImageLayout::eDepthStencilReadOnlyOptimal)
-			? vk::AttachmentStoreOp::eStore
-			: vk::AttachmentStoreOp::eDontCare;
 		attachments.push_back(
 			vk::AttachmentDescription()
 				.setFormat(key.depthFormat.value())
-				.setSamples(vk::SampleCountFlagBits::e1)
+				.setSamples(msaaSamples)
 				.setLoadOp(vkDepthLoadOp)
-				.setStoreOp(depthStoreOp)
-				.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+				.setStoreOp(vk::AttachmentStoreOp::eDontCare)
+				.setStencilLoadOp(vkDepthLoadOp)
 				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
 				.setInitialLayout(initialDepthAttachmentLayout(key.depthLoadOp))
-				.setFinalLayout(key.depthFinalLayout)
+				.setFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
 		);
+
+		const vk::AttachmentLoadOp vkResolveLoadOp = toVkAttachmentLoadOp(key.resolveLoadOp);
+		attachments.push_back(
+			vk::AttachmentDescription()
+				.setFormat(key.resolveFormat.value())
+				.setSamples(vk::SampleCountFlagBits::e1)
+				.setLoadOp(vkResolveLoadOp)
+				.setStoreOp(vk::AttachmentStoreOp::eStore)
+				.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+				.setInitialLayout(vk::ImageLayout::eUndefined)
+				.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+		);
+	}
+	else
+	{
+		attachments.reserve(key.colorFormats.size() + (key.depthFormat.has_value() ? 1 : 0));
+		for (size_t i = 0; i < key.colorFormats.size(); ++i)
+		{
+			const vk::SampleCountFlagBits colorSamples = (i < key.colorSamples.size())
+				? key.colorSamples[i]
+				: vk::SampleCountFlagBits::e1;
+			const vk::AttachmentLoadOp vkLoadOp = toVkAttachmentLoadOp(key.colorLoadOps[i]);
+			attachments.push_back(
+				vk::AttachmentDescription()
+					.setFormat(key.colorFormats[i])
+					.setSamples(colorSamples)
+					.setLoadOp(vkLoadOp)
+					.setStoreOp(vk::AttachmentStoreOp::eStore)
+					.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+					.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+					.setInitialLayout(initialColorAttachmentLayout(key.colorLoadOps[i]))
+					.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+			);
+		}
+
+		if (key.depthFormat.has_value())
+		{
+			const vk::AttachmentLoadOp vkDepthLoadOp = toVkAttachmentLoadOp(key.depthLoadOp);
+			const vk::AttachmentStoreOp depthStoreOp = (key.depthFinalLayout == vk::ImageLayout::eDepthStencilReadOnlyOptimal)
+				? vk::AttachmentStoreOp::eStore
+				: vk::AttachmentStoreOp::eDontCare;
+			attachments.push_back(
+				vk::AttachmentDescription()
+					.setFormat(key.depthFormat.value())
+					.setSamples(vk::SampleCountFlagBits::e1)
+					.setLoadOp(vkDepthLoadOp)
+					.setStoreOp(depthStoreOp)
+					.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+					.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+					.setInitialLayout(initialDepthAttachmentLayout(key.depthLoadOp))
+					.setFinalLayout(key.depthFinalLayout)
+			);
+		}
+	}
+
+	optional<vk::AttachmentReference> depthStencilAttachmentRef;
+	optional<vk::AttachmentReference> colorAttachmentResolveRef;
+	if (hasMsaaResolve)
+	{
+		depthStencilAttachmentRef = vk::AttachmentReference()
+			.setAttachment(1)
+			.setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
+		colorAttachmentResolveRef = vk::AttachmentReference()
+			.setAttachment(2)
+			.setLayout(vk::ImageLayout::eColorAttachmentOptimal);
+	}
+	else if (key.depthFormat.has_value())
+	{
+		const uint32_t depthAttachmentIndex = static_cast<uint32_t>(attachments.size()) - 1;
 		depthStencilAttachmentRef = vk::AttachmentReference()
 			.setAttachment(depthAttachmentIndex)
 			.setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
 	}
 
 	std::vector<vk::AttachmentReference> colorAttachmentRefs;
-	colorAttachmentRefs.reserve(key.colorFormats.size());
-	for (uint32_t i = 0; i < static_cast<uint32_t>(key.colorFormats.size()); ++i)
+	if (hasMsaaResolve)
 	{
 		colorAttachmentRefs.push_back(
 			vk::AttachmentReference()
-				.setAttachment(i)
+				.setAttachment(0)
 				.setLayout(vk::ImageLayout::eColorAttachmentOptimal)
 		);
+	}
+	else
+	{
+		colorAttachmentRefs.reserve(key.colorFormats.size());
+		for (uint32_t i = 0; i < static_cast<uint32_t>(key.colorFormats.size()); ++i)
+		{
+			colorAttachmentRefs.push_back(
+				vk::AttachmentReference()
+					.setAttachment(i)
+					.setLayout(vk::ImageLayout::eColorAttachmentOptimal)
+			);
+		}
 	}
 
 	const auto subpasses = std::array<vk::SubpassDescription, 1> {
@@ -6556,6 +6508,7 @@ size_t VkRoot::getOrCreatePassRenderPassId(const PassLayoutKey& key)
 			.setColorAttachmentCount(static_cast<uint32_t>(colorAttachmentRefs.size()))
 			.setPColorAttachments(colorAttachmentRefs.data())
 			.setPDepthStencilAttachment(depthStencilAttachmentRef.has_value() ? &depthStencilAttachmentRef.value() : nullptr)
+			.setPResolveAttachments(colorAttachmentResolveRef.has_value() ? &colorAttachmentResolveRef.value() : nullptr)
 	};
 
 	std::vector<vk::SubpassDependency> dependencies;
@@ -6617,7 +6570,7 @@ size_t VkRoot::getOrCreatePassRenderPassId(const PassLayoutKey& key)
 	auto& renderPassDetails = renderPasses[renderPassId];
 	renderPassDetails.rp_compat_info = std::make_shared<VkhRenderPassCompat>(createInfo);
 	renderPassDetails.rp = dev.createRenderPass(createInfo, nullptr, vkDynLoader);
-	renderPassDetails.msaaSamples = vk::SampleCountFlagBits::e1;
+	renderPassDetails.msaaSamples = hasMsaaResolve ? msaaSamples : vk::SampleCountFlagBits::e1;
 
 	_passLayoutKeys.push_back(key);
 	ensureRenderPassPSOCapacity(renderPasses.size());
@@ -7058,35 +7011,6 @@ void VkRoot::beginSwapchainPass(gfx_api::RenderPassDesc& pass)
 	currentPSO = nullptr;
 }
 
-void VkRoot::beginScenePass(gfx_api::RenderPassDesc& pass)
-{
-	buffering_mechanism::get_current_resources().ensureDrawCmdBufferBegun();
-	frameHasDrawCommands = true;
-
-	auto& sceneRenderPass = renderPasses[SCENE_RENDER_PASS_ID];
-	const auto& depthClear = pass.depthAttachment.has_value()
-		? pass.depthAttachment->clearValue
-		: gfx_api::ClearValue::depthStencilClear();
-	const auto clearValue = std::array<vk::ClearValue, 2> {
-		vk::ClearValue(),
-		vk::ClearValue(vk::ClearDepthStencilValue(depthClear.depth, depthClear.stencil))
-	};
-	buffering_mechanism::get_current_resources().drawCmdBuffer().beginRenderPass(
-		vk::RenderPassBeginInfo()
-		.setFramebuffer(sceneRenderPass.fbo[buffering_mechanism::get_current_frame_num()])
-		.setClearValueCount(static_cast<uint32_t>(clearValue.size()))
-		.setPClearValues(clearValue.data())
-		.setRenderPass(sceneRenderPass.rp)
-		.setRenderArea(vk::Rect2D(vk::Offset2D(), swapchainSize)),
-		vk::SubpassContents::eInline,
-		vkDynLoader);
-	applyViewport(buffering_mechanism::get_current_resources().drawCmdBuffer(),
-		swapchainSize.width, swapchainSize.height, 0.f, 1.f);
-
-	currentRenderPassId = SCENE_RENDER_PASS_ID;
-	currentPSO = nullptr;
-}
-
 void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass)
 {
 	ASSERT_OR_RETURN(, !_customPassActive, "Dynamic attachment pass begin while already active");
@@ -7106,6 +7030,12 @@ void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass)
 		ASSERT_OR_RETURN(, colorAttachment.texture != nullptr, "Unresolved color attachment in dynamic pass");
 		layoutKey.colorFormats.push_back(getAttachmentVkFormat(colorAttachment.texture));
 		layoutKey.colorLoadOps.push_back(colorAttachment.loadOp);
+		layoutKey.colorSamples.push_back(getAttachmentVkSamples(colorAttachment.texture));
+	}
+	if (gfx_api::passNeedsMsaaResolve(pass))
+	{
+		layoutKey.resolveFormat = getAttachmentVkFormat(pass.resolveAttachment->texture);
+		layoutKey.resolveLoadOp = pass.resolveAttachment->loadOp;
 	}
 	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
 	{
@@ -7146,9 +7076,20 @@ void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass)
 	{
 		_activeCustomDepthOutput.reset();
 	}
+	if (pass.resolveAttachment.has_value() && pass.resolveAttachment->texture != nullptr)
+	{
+		_activeCustomResolveOutput = pass.resolveAttachment->texture;
+	}
+	else
+	{
+		_activeCustomResolveOutput.reset();
+	}
 
 	std::vector<vk::ImageView> fboAttachments;
-	fboAttachments.reserve(pass.colorAttachments.size() + (pass.depthAttachment.has_value() ? 1 : 0));
+	const size_t resolveAttachmentCount = pass.resolveAttachment.has_value() ? 1 : 0;
+	fboAttachments.reserve(pass.colorAttachments.size()
+		+ (pass.depthAttachment.has_value() ? 1 : 0)
+		+ resolveAttachmentCount);
 	for (const auto& colorAttachment : pass.colorAttachments)
 	{
 		fboAttachments.push_back(getAttachmentImageView(colorAttachment));
@@ -7156,6 +7097,10 @@ void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass)
 	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
 	{
 		fboAttachments.push_back(getAttachmentImageView(pass.depthAttachment.value()));
+	}
+	if (pass.resolveAttachment.has_value() && pass.resolveAttachment->texture != nullptr)
+	{
+		fboAttachments.push_back(getAttachmentImageView(pass.resolveAttachment.value()));
 	}
 
 	_activeCustomFramebuffer = dev.createFramebuffer(
@@ -7204,18 +7149,6 @@ void VkRoot::endSwapchainPass()
 	endActiveSwapchainRenderPassIfNeeded();
 }
 
-void VkRoot::endScenePass()
-{
-	ASSERT_OR_RETURN(, currentRenderPassId == SCENE_RENDER_PASS_ID, "Scene pass end while wrong render pass is active");
-	buffering_mechanism::get_current_resources().drawCmdBuffer().endRenderPass(vkDynLoader);
-	if (pSceneImage != nullptr)
-	{
-		setImageLayout(pSceneImage, vk::ImageLayout::eShaderReadOnlyOptimal);
-	}
-	currentRenderPassId = DEFAULT_RENDER_PASS_ID;
-	currentPSO = nullptr;
-}
-
 void VkRoot::endDynamicAttachmentPass()
 {
 	ASSERT_OR_RETURN(, _customPassActive, "Dynamic attachment pass end without an active pass");
@@ -7239,9 +7172,6 @@ void VkRoot::beginPass(gfx_api::RenderPassDesc& pass)
 	case gfx_api::ResolvedPassRoute::Swapchain:
 		beginSwapchainPass(pass);
 		break;
-	case gfx_api::ResolvedPassRoute::SceneFramebuffer:
-		beginScenePass(pass);
-		break;
 	case gfx_api::ResolvedPassRoute::DynamicAttachments:
 		beginDynamicAttachmentPass(pass);
 		break;
@@ -7256,9 +7186,6 @@ void VkRoot::endPass()
 	{
 	case gfx_api::ResolvedPassRoute::Swapchain:
 		endSwapchainPass();
-		break;
-	case gfx_api::ResolvedPassRoute::SceneFramebuffer:
-		endScenePass();
 		break;
 	case gfx_api::ResolvedPassRoute::DynamicAttachments:
 		endDynamicAttachmentPass();

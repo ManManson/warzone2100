@@ -13,7 +13,6 @@ struct RenderPassDesc;
 enum class ResolvedPassRoute
 {
 	Swapchain,
-	SceneFramebuffer,
 	DynamicAttachments
 };
 

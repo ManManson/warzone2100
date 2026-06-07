@@ -23,6 +23,7 @@
 #include "gfx_api_frame_resource_cache.h"
 #include "gfx_api_pass_resolve.h"
 #include "gfx_api_pipeline_surfaces.h"
+#include "gfx_api_render_graph.h"
 
 #if defined(__EMSCRIPTEN__)
 # define WZ_STATIC_GL_BINDINGS
@@ -432,12 +433,12 @@ private:
 	bool setSwapIntervalInternal(gfx_api::context::swap_interval_mode mode);
 
 	void beginSwapchainPass(const gfx_api::RenderPassDesc& pass);
-	void beginScenePass(const gfx_api::RenderPassDesc& pass);
 	void beginDynamicAttachmentPass(const gfx_api::RenderPassDesc& pass);
 	void endSwapchainPass();
-	void endScenePass();
 	void endDynamicAttachmentPass();
 	static void applyAttachmentClears(const gfx_api::RenderPassDesc& pass);
+	void resolveMsaaColorAttachment(const gfx_api::RenderPassDesc& pass, uint32_t passWidth, uint32_t passHeight);
+	void invalidateSceneDepthAttachment(const gfx_api::RenderPassDesc& pass);
 
 	uint32_t viewportWidth = 0;
 	uint32_t viewportHeight = 0;
@@ -482,15 +483,13 @@ private:
 	GLint maxMultiSampleBufferFormatSamples = 0;
 	uint32_t multisamples = 0;
 	gl_gpurendered_texture* sceneTexture = nullptr;
-	std::vector<GLuint> sceneFBO;
-	std::vector<GLuint> sceneResolveFBO;
 	std::unique_ptr<gl_gpurendered_renderbuffer> _sceneMsaaSurface;
 	std::unique_ptr<gl_gpurendered_renderbuffer> _sceneDepthStencilSurface;
-	size_t sceneFBOIdx = 0;
 
 	gfx_api::PipelineSurfaceRegistry _pipelineSurfaces;
 	gfx_api::FrameResourceCache _frameResourceCache;
 
 	GLuint _customPassFBO = 0;
 	bool _customPassActive = false;
+	gfx_api::RenderPassDesc _activeDynamicPassDesc;
 };
