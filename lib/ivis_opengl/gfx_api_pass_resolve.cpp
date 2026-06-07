@@ -37,6 +37,12 @@ bool passHasResolvedAttachments(const RenderPassDesc& pass)
 	return pass.depthAttachment.has_value() && attachmentIsResolved(pass.depthAttachment.value());
 }
 
+bool passHasSwapchainColorAttachment(const RenderPassDesc& pass)
+{
+	return std::any_of(pass.colorAttachments.begin(), pass.colorAttachments.end(),
+		[](const AttachmentDesc& attachment) { return attachment.isSwapchain(); });
+}
+
 void tryInferPassDimensions(RenderPassDesc& pass, gfx_api::context& ctx, uint32_t& width, uint32_t& height)
 {
 	if (pass.viewportSize.has_value())
@@ -64,15 +70,28 @@ void tryInferPassDimensions(RenderPassDesc& pass, gfx_api::context& ctx, uint32_
 
 	for (const auto& colorAttachment : pass.colorAttachments)
 	{
-		tryFromTexture(colorAttachment.texture);
+		if (!colorAttachment.isSwapchain())
+		{
+			tryFromTexture(colorAttachment.texture);
+		}
 	}
-	if (pass.depthAttachment.has_value())
+	if (pass.depthAttachment.has_value() && !pass.depthAttachment->isBackendInternal())
 	{
 		tryFromTexture(pass.depthAttachment->texture);
 	}
 	if (pass.resolveAttachment.has_value())
 	{
 		tryFromTexture(pass.resolveAttachment->texture);
+	}
+
+	if ((width == 0 || height == 0) && pass.type == RenderPassType::Depth)
+	{
+		const size_t depthDim = ctx.getDepthPassDimensions(pass.depthPassIndex);
+		if (depthDim > 0)
+		{
+			width = static_cast<uint32_t>(depthDim);
+			height = static_cast<uint32_t>(depthDim);
+		}
 	}
 
 	if (width == 0 || height == 0)
@@ -165,7 +184,8 @@ void applyDefaultPreset(RenderPassDesc& pass, gfx_api::context& ctx)
 	}
 }
 
-void applyTypePreset(RenderPassDesc& pass, gfx_api::context& ctx)
+/// Fill missing attachments for legacy RenderPassType call sites.
+void resolveLegacyAttachments(RenderPassDesc& pass, gfx_api::context& ctx)
 {
 	switch (pass.type)
 	{
@@ -177,9 +197,27 @@ void applyTypePreset(RenderPassDesc& pass, gfx_api::context& ctx)
 		break;
 	case RenderPassType::Default:
 		applyDefaultPreset(pass, ctx);
+		if (!passHasSwapchainColorAttachment(pass) && pass.swapchainLoadOpExplicit)
+		{
+			pass.colorAttachments.push_back(AttachmentDesc::swapchain(pass.swapchainLoadOp));
+		}
 		break;
 	case RenderPassType::Custom:
 		break;
+	}
+}
+
+/// Keep swapchainLoadOp in sync for backends that still read it (removed in a later step).
+void syncSwapchainLoadOpFromAttachments(RenderPassDesc& pass)
+{
+	for (const auto& colorAttachment : pass.colorAttachments)
+	{
+		if (colorAttachment.isSwapchain())
+		{
+			pass.swapchainLoadOp = colorAttachment.loadOp;
+			pass.swapchainLoadOpExplicit = true;
+			return;
+		}
 	}
 }
 
@@ -218,44 +256,46 @@ bool resolvePassDescription(RenderPassDesc& pass)
 {
 	auto& ctx = gfx_api::context::get();
 
-	applyTypePreset(pass, ctx);
+	resolveLegacyAttachments(pass, ctx);
+	syncSwapchainLoadOpFromAttachments(pass);
 
 	uint32_t width = 0;
 	uint32_t height = 0;
 	tryInferPassDimensions(pass, ctx, width, height);
 
-	switch (pass.type)
+	ASSERT_OR_RETURN(false, passHasResolvedAttachments(pass),
+		"Pass \"%s\" requires at least one resolved color or depth attachment", pass.debugName.c_str());
+	ASSERT_OR_RETURN(false, width > 0 && height > 0,
+		"Pass \"%s\" requires viewportSize or inferrable attachment dimensions", pass.debugName.c_str());
+
+	if (pass.type == RenderPassType::Default)
 	{
-	case RenderPassType::Depth:
-		ASSERT_OR_RETURN(false, pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr,
+		ASSERT_OR_RETURN(false, passHasSwapchainColorAttachment(pass) || pass.swapchainLoadOpExplicit,
+			"Default pass \"%s\" must declare a swapchain color attachment or swapchainLoadOp",
+			pass.debugName.c_str());
+	}
+
+	if (pass.type == RenderPassType::Depth)
+	{
+		ASSERT_OR_RETURN(false, pass.depthAttachment.has_value()
+			&& pass.depthAttachment->source == AttachmentSource::Texture
+			&& pass.depthAttachment->texture != nullptr,
 			"Depth pass \"%s\" could not resolve depth attachment", pass.debugName.c_str());
-		break;
-	case RenderPassType::Scene:
+	}
+
+	if (pass.type == RenderPassType::Scene)
+	{
 		ASSERT_OR_RETURN(false, !pass.colorAttachments.empty(),
 			"Scene pass \"%s\" could not resolve scene color attachment", pass.debugName.c_str());
 		ASSERT_OR_RETURN(false, pass.depthAttachment.has_value(),
-			"Scene pass \"%s\" requires a depth attachment (explicit or backend-internal)", pass.debugName.c_str());
-		break;
-	case RenderPassType::Default:
-	{
-		const bool hasSwapchainAttachment = std::any_of(pass.colorAttachments.begin(), pass.colorAttachments.end(),
-			[](const AttachmentDesc& a) { return a.isSwapchain(); });
-		ASSERT_OR_RETURN(false, pass.swapchainLoadOpExplicit || hasSwapchainAttachment,
-			"Default pass \"%s\" must set swapchainLoadOp or a swapchain color attachment", pass.debugName.c_str());
-		break;
-	}
-	case RenderPassType::Custom:
-		ASSERT_OR_RETURN(false, passHasResolvedAttachments(pass),
-			"Custom pass \"%s\" requires at least one color or depth attachment", pass.debugName.c_str());
-		ASSERT_OR_RETURN(false, width > 0 && height > 0,
-			"Custom pass \"%s\" requires viewportSize or an attachment with known dimensions",
+			"Scene pass \"%s\" requires a depth attachment (explicit or backend-internal)",
 			pass.debugName.c_str());
-		if (!resolveTransientAttachments(pass, ctx, width, height))
-		{
-			ASSERT(false, "Failed to resolve transient attachments for pass \"%s\"", pass.debugName.c_str());
-			return false;
-		}
-		break;
+	}
+
+	if (!resolveTransientAttachments(pass, ctx, width, height))
+	{
+		ASSERT(false, "Failed to resolve transient attachments for pass \"%s\"", pass.debugName.c_str());
+		return false;
 	}
 
 	return true;

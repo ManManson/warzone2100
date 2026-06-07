@@ -5,7 +5,8 @@ namespace gfx_api
 
 struct RenderPassDesc;
 
-/// Resolve pass presets, transient attachments, and viewport dimensions before execution.
+/// Resolve legacy presets, attachment sources, transient allocations, and viewport dimensions.
+/// All pass types share this single path; RenderPassType only selects preset filling.
 bool resolvePassDescription(RenderPassDesc& pass);
 
 } // namespace gfx_api
