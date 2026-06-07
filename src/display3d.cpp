@@ -1187,9 +1187,6 @@ void draw3DScene()
 		processWarCam();
 	}
 
-	processSensorTarget();
-	processDestinationTarget();
-
 	structureEffects(); // add fancy effects to structures
 
 	pie_GetFrameRenderGraph().addRenderPass(
@@ -1633,6 +1630,15 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 		}
 		drawWorldToScreenBlit(blitSource);
 	}));
+
+	// Targetting feedback must record inside a pass callback (not during graph setup).
+	renderGraph.addRenderPass(
+		gfx_api::makeSwapchainPass("TargettingEffects", gfx_api::AttachmentLoadOp::Load,
+			[]
+			{
+				processSensorTarget();
+				processDestinationTarget();
+			}));
 }
 
 /// Initialise the fog, skybox and some other stuff
