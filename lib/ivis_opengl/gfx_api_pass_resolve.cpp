@@ -3,19 +3,38 @@
 #include "gfx_api.h"
 #include "gfx_api_render_graph.h"
 
+#include <algorithm>
+
 namespace gfx_api
 {
 
 namespace
 {
 
-bool passHasResolvedAttachments(const RenderPassDesc& pass)
+bool attachmentIsResolved(const AttachmentDesc& attachment)
 {
-	if (!pass.colorAttachments.empty())
+	switch (attachment.source)
 	{
+	case AttachmentSource::Texture:
+		return attachment.texture != nullptr;
+	case AttachmentSource::Transient:
+	case AttachmentSource::BackendInternal:
+	case AttachmentSource::Swapchain:
 		return true;
 	}
-	return pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr;
+	return false;
+}
+
+bool passHasResolvedAttachments(const RenderPassDesc& pass)
+{
+	for (const auto& colorAttachment : pass.colorAttachments)
+	{
+		if (attachmentIsResolved(colorAttachment))
+		{
+			return true;
+		}
+	}
+	return pass.depthAttachment.has_value() && attachmentIsResolved(pass.depthAttachment.value());
 }
 
 void tryInferPassDimensions(RenderPassDesc& pass, gfx_api::context& ctx, uint32_t& width, uint32_t& height)
@@ -75,11 +94,16 @@ void tryInferPassDimensions(RenderPassDesc& pass, gfx_api::context& ctx, uint32_
 bool resolveTransientAttachment(gfx_api::context& ctx, AttachmentDesc& attachment,
 	uint32_t width, uint32_t height, pixel_format format)
 {
+	if (!attachment.isTransient())
+	{
+		return true;
+	}
 	if (attachment.texture != nullptr)
 	{
 		return true;
 	}
 
+	attachment.source = AttachmentSource::Texture;
 	attachment.texture = ctx.acquireTransientRenderTarget(format, width, height);
 	return attachment.texture != nullptr;
 }
@@ -171,13 +195,10 @@ bool resolveTransientAttachments(RenderPassDesc& pass, gfx_api::context& ctx, ui
 		}
 	}
 
-	if (pass.depthAttachment.has_value())
+	if (pass.depthAttachment.has_value() && pass.depthAttachment->isTransient())
 	{
-		if (pass.depthAttachment->texture == nullptr)
-		{
-			ASSERT(false, "Transient depth attachments are not supported yet for pass \"%s\"", pass.debugName.c_str());
-			return false;
-		}
+		ASSERT(false, "Transient depth attachments are not supported yet for pass \"%s\"", pass.debugName.c_str());
+		return false;
 	}
 
 	if (pass.resolveAttachment.has_value())
@@ -216,9 +237,13 @@ bool resolvePassDescription(RenderPassDesc& pass)
 			"Scene pass \"%s\" requires a depth attachment (explicit or backend-internal)", pass.debugName.c_str());
 		break;
 	case RenderPassType::Default:
-		ASSERT_OR_RETURN(false, pass.swapchainLoadOpExplicit,
-			"Default pass \"%s\" must set an explicit swapchainLoadOp", pass.debugName.c_str());
+	{
+		const bool hasSwapchainAttachment = std::any_of(pass.colorAttachments.begin(), pass.colorAttachments.end(),
+			[](const AttachmentDesc& a) { return a.isSwapchain(); });
+		ASSERT_OR_RETURN(false, pass.swapchainLoadOpExplicit || hasSwapchainAttachment,
+			"Default pass \"%s\" must set swapchainLoadOp or a swapchain color attachment", pass.debugName.c_str());
 		break;
+	}
 	case RenderPassType::Custom:
 		ASSERT_OR_RETURN(false, passHasResolvedAttachments(pass),
 			"Custom pass \"%s\" requires at least one color or depth attachment", pass.debugName.c_str());

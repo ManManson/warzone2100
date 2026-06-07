@@ -72,6 +72,20 @@ RenderPassBuilder& RenderPassBuilder::colorAttachment(abstract_texture* tex, boo
 	return *this;
 }
 
+RenderPassBuilder& RenderPassBuilder::transientColorAttachment(AttachmentLoadOp loadOp, ClearValue clearValue)
+{
+	_desc.colorAttachments.push_back(AttachmentDesc::transientColor(loadOp, clearValue));
+	return *this;
+}
+
+RenderPassBuilder& RenderPassBuilder::swapchainAttachment(AttachmentLoadOp loadOp, ClearValue clearValue)
+{
+	_desc.colorAttachments.push_back(AttachmentDesc::swapchain(loadOp, clearValue));
+	_desc.swapchainLoadOp = loadOp;
+	_desc.swapchainLoadOpExplicit = true;
+	return *this;
+}
+
 RenderPassBuilder& RenderPassBuilder::depthAttachment(abstract_texture* tex, AttachmentLoadOp loadOp,
 	ClearValue clearValue)
 {
@@ -138,6 +152,39 @@ void RenderGraph::reset()
 {
 	gfx_api::context::get().releaseTransientRenderTargets();
 	_render_passes.clear();
+}
+
+RenderPassDesc makeDepthCascadePass(size_t cascadeIndex, const std::string& debugName,
+	RenderPassDesc::RecordFunc recordFunc)
+{
+	RenderPassDesc pass;
+	pass.debugName = debugName;
+	pass.type = RenderPassType::Depth;
+	pass.depthPassIndex = cascadeIndex;
+	pass.recordFunc = std::move(recordFunc);
+	return pass;
+}
+
+RenderPassDesc makeScenePass(const std::string& debugName, RenderPassDesc::RecordFunc recordFunc)
+{
+	RenderPassDesc pass;
+	pass.debugName = debugName;
+	pass.type = RenderPassType::Scene;
+	pass.recordFunc = std::move(recordFunc);
+	return pass;
+}
+
+RenderPassDesc makeSwapchainPass(const std::string& debugName, AttachmentLoadOp loadOp,
+	RenderPassDesc::RecordFunc recordFunc)
+{
+	RenderPassDesc pass;
+	pass.debugName = debugName;
+	pass.type = RenderPassType::Default;
+	pass.colorAttachments.push_back(AttachmentDesc::swapchain(loadOp));
+	pass.swapchainLoadOp = loadOp;
+	pass.swapchainLoadOpExplicit = true;
+	pass.recordFunc = std::move(recordFunc);
+	return pass;
 }
 
 } // namespace gfx_api

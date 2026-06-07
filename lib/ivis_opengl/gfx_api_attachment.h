@@ -39,10 +39,19 @@ struct ClearValue
 	}
 };
 
+/// Where an attachment's backing storage comes from at execute time.
+enum class AttachmentSource
+{
+	Texture,          // explicit abstract_texture*
+	Transient,        // per-frame cache allocation (texture resolved at execute)
+	BackendInternal,  // backend-owned surface (e.g. scene depth RBO)
+	Swapchain         // current drawable / swapchain image
+};
+
 /// Describes a color, depth, or resolve attachment for a render pass.
-/// texture == nullptr requests a transient allocation at execute time.
 struct AttachmentDesc
 {
+	AttachmentSource source = AttachmentSource::Texture;
 	abstract_texture* texture = nullptr;
 	AttachmentLoadOp loadOp = AttachmentLoadOp::Clear;
 	ClearValue clearValue;
@@ -54,16 +63,26 @@ struct AttachmentDesc
 		return loadOp == AttachmentLoadOp::Clear;
 	}
 
-	/// True when texture is nullptr — attachment is owned by the backend (e.g. scene depth RBO).
 	bool isBackendInternal() const
 	{
-		return texture == nullptr;
+		return source == AttachmentSource::BackendInternal;
+	}
+
+	bool isTransient() const
+	{
+		return source == AttachmentSource::Transient;
+	}
+
+	bool isSwapchain() const
+	{
+		return source == AttachmentSource::Swapchain;
 	}
 
 	static AttachmentDesc color(abstract_texture* tex, AttachmentLoadOp op = AttachmentLoadOp::Clear,
 		ClearValue clear = ClearValue::colorClear())
 	{
 		AttachmentDesc desc;
+		desc.source = AttachmentSource::Texture;
 		desc.texture = tex;
 		desc.loadOp = op;
 		desc.clearValue = clear;
@@ -74,17 +93,41 @@ struct AttachmentDesc
 		ClearValue clear = ClearValue::depthStencilClear())
 	{
 		AttachmentDesc desc;
+		desc.source = AttachmentSource::Texture;
 		desc.texture = tex;
 		desc.loadOp = op;
 		desc.clearValue = clear;
 		return desc;
 	}
 
-	/// Backend-owned depth/stencil (no abstract_texture); resolved at pass begin by the backend.
+	/// Per-frame pooled color target; texture is filled in during pass resolution.
+	static AttachmentDesc transientColor(AttachmentLoadOp op = AttachmentLoadOp::Clear,
+		ClearValue clear = ClearValue::colorClear())
+	{
+		AttachmentDesc desc;
+		desc.source = AttachmentSource::Transient;
+		desc.loadOp = op;
+		desc.clearValue = clear;
+		return desc;
+	}
+
+	/// Current swapchain / default framebuffer color target.
+	static AttachmentDesc swapchain(AttachmentLoadOp op = AttachmentLoadOp::Load,
+		ClearValue clear = ClearValue::colorClear())
+	{
+		AttachmentDesc desc;
+		desc.source = AttachmentSource::Swapchain;
+		desc.loadOp = op;
+		desc.clearValue = clear;
+		return desc;
+	}
+
+	/// Backend-owned depth/stencil; resolved at pass begin by the backend.
 	static AttachmentDesc backendInternalDepth(AttachmentLoadOp op = AttachmentLoadOp::Clear,
 		ClearValue clear = ClearValue::depthStencilClear())
 	{
 		AttachmentDesc desc;
+		desc.source = AttachmentSource::BackendInternal;
 		desc.loadOp = op;
 		desc.clearValue = clear;
 		return desc;

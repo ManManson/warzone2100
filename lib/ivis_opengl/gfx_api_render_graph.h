@@ -70,6 +70,10 @@ public:
 	RenderPassBuilder& colorAttachment(abstract_texture* tex, AttachmentLoadOp loadOp,
 		ClearValue clearValue = ClearValue::colorClear());
 	RenderPassBuilder& colorAttachment(abstract_texture* tex, bool clear);
+	RenderPassBuilder& transientColorAttachment(AttachmentLoadOp loadOp = AttachmentLoadOp::Clear,
+		ClearValue clearValue = ClearValue::colorClear());
+	RenderPassBuilder& swapchainAttachment(AttachmentLoadOp loadOp = AttachmentLoadOp::Load,
+		ClearValue clearValue = ClearValue::colorClear());
 
 	RenderPassBuilder& depthAttachment(abstract_texture* tex, AttachmentLoadOp loadOp,
 		ClearValue clearValue = ClearValue::depthStencilClear());
@@ -134,5 +138,12 @@ private:
 	std::vector<RenderPassDesc> _render_passes;
 	bool _executing = false;
 };
+
+/// Named factories for common pass shapes. Prefer these over RenderPassType at call sites.
+RenderPassDesc makeDepthCascadePass(size_t cascadeIndex, const std::string& debugName,
+	RenderPassDesc::RecordFunc recordFunc);
+RenderPassDesc makeScenePass(const std::string& debugName, RenderPassDesc::RecordFunc recordFunc);
+RenderPassDesc makeSwapchainPass(const std::string& debugName, AttachmentLoadOp loadOp,
+	RenderPassDesc::RecordFunc recordFunc);
 
 } // namespace gfx_api
