@@ -21,4 +21,8 @@ bool resolvePassDescription(RenderPassDesc& pass);
 /// Select the backend execution path after resolvePassDescription().
 ResolvedPassRoute routeResolvedPass(const RenderPassDesc& pass);
 
+/// True when a resolved swapchain pass can share an open swapchain render pass batch.
+/// Clear load ops start a new batch (Vulkan render pass boundary).
+bool canExtendSwapchainBatch(const RenderPassDesc& pass);
+
 } // namespace gfx_api

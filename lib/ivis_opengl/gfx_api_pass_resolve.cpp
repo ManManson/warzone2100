@@ -301,6 +301,12 @@ bool resolvePassDescription(RenderPassDesc& pass)
 	return true;
 }
 
+bool canExtendSwapchainBatch(const RenderPassDesc& pass)
+{
+	return routeResolvedPass(pass) == ResolvedPassRoute::Swapchain
+		&& pass.swapchainLoadOp != AttachmentLoadOp::Clear;
+}
+
 ResolvedPassRoute routeResolvedPass(const RenderPassDesc& pass)
 {
 	for (const auto& colorAttachment : pass.colorAttachments)

@@ -838,22 +838,61 @@ void gfx_api::context::executeRenderGraph(std::vector<RenderPassDesc>& passes)
 
 	bool executedAnyPass = false;
 
-	for (auto& pass : passes)
+	for (size_t passIndex = 0; passIndex < passes.size(); )
 	{
+		RenderPassDesc& pass = passes[passIndex];
 		debugStringMarker(pass.debugName.c_str());
 
 		if (!resolvePassDescription(pass))
 		{
+			++passIndex;
 			continue;
 		}
 
 		executedAnyPass = true;
-		beginPass(pass);
-		if (pass.recordFunc)
+
+		if (routeResolvedPass(pass) != ResolvedPassRoute::Swapchain)
 		{
-			pass.recordFunc();
+			beginPass(pass);
+			if (pass.recordFunc)
+			{
+				pass.recordFunc();
+			}
+			endPass();
+			++passIndex;
+			continue;
+		}
+
+		const size_t batchStart = passIndex;
+		size_t batchEnd = passIndex + 1;
+		while (batchEnd < passes.size())
+		{
+			RenderPassDesc& nextPass = passes[batchEnd];
+			if (!resolvePassDescription(nextPass))
+			{
+				break;
+			}
+			if (!canExtendSwapchainBatch(nextPass))
+			{
+				break;
+			}
+			++batchEnd;
+		}
+
+		beginPass(passes[batchStart]);
+		for (size_t batchIndex = batchStart; batchIndex < batchEnd; ++batchIndex)
+		{
+			if (batchIndex != batchStart)
+			{
+				debugStringMarker(passes[batchIndex].debugName.c_str());
+			}
+			if (passes[batchIndex].recordFunc)
+			{
+				passes[batchIndex].recordFunc();
+			}
 		}
 		endPass();
+		passIndex = batchEnd;
 	}
 
 	if (executedAnyPass)
