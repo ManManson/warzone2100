@@ -1514,6 +1514,8 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	pie_FinalizeMeshes(currentGameFrame);
 
 	auto& renderGraph = pie_GetFrameRenderGraph();
+	gfx_api::PassHandle scenePass = gfx_api::kInvalidPassHandle;
+	gfx_api::PassHandle copyValidatePass = gfx_api::kInvalidPassHandle;
 
 	// shadow/depth-mapping passes
 	ShadowCascadesInfo shadowCascadesInfo;
@@ -1545,7 +1547,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	}
 
 	// start main render pass
-	renderGraph.addRenderPass(
+	scenePass = renderGraph.addRenderPass(
 		gfx_api::makeScenePass("ScenePass",
 			[perspectiveViewMatrix, viewMatrix, cameraPos,
 					shadowCascadesInfo, baseViewMatrix, perspectiveMatrix](const gfx_api::RenderPassContext&)
@@ -1583,53 +1585,44 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 		locateMouse();
 	}));
 
-	// Custom-pass validation (gfxdebug): scene -> transient offscreen via inputTextures + barriers (E6).
-	gfx_api::abstract_texture* customSceneCopyTarget = nullptr;
-	gfx_api::abstract_texture* sceneTexture = gfx_api::context::get().getSceneTexture();
-	if (uses_gfx_debug && sceneTexture != nullptr)
+	// Custom-pass validation (gfxdebug): scene -> transient offscreen via readPassOutput + barriers.
+	if (uses_gfx_debug && scenePass != gfx_api::kInvalidPassHandle)
 	{
-		const auto sceneDims = gfx_api::context::get().getRenderTargetDimensions(sceneTexture);
+		gfx_api::abstract_texture* sceneColor = gfx_api::context::get().getPipelineSurface(
+			gfx_api::PipelineSurfaceId::SceneColor);
+		const auto sceneDims = gfx_api::context::get().getRenderTargetDimensions(sceneColor);
 		if (sceneDims.has_value())
 		{
-			customSceneCopyTarget = gfx_api::context::get().acquireTransientRenderTarget(
-				gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8,
-				sceneDims->first, sceneDims->second);
-			if (customSceneCopyTarget != nullptr)
+			copyValidatePass = renderGraph.addRenderPass(
+				std::move(
+					gfx_api::RenderPassBuilder::create("CustomSceneCopyValidate")
+						.viewport(sceneDims->first, sceneDims->second)
+						.transientColorAttachment()
+						.readPassOutput(scenePass, gfx_api::AttachmentRole::PrimaryColor)
+						.record([](const gfx_api::RenderPassContext& ctx)
 			{
-				renderGraph.addRenderPass(
-					std::move(
-						gfx_api::RenderPassBuilder::create("CustomSceneCopyValidate")
-							.viewport(sceneDims->first, sceneDims->second)
-							.colorAttachment(customSceneCopyTarget, true)
-							.readTexture(sceneTexture)
-							.record([sceneTexture](const gfx_api::RenderPassContext&)
-				{
-					WZ_PROFILE_SCOPE(CustomSceneCopyValidate);
-					drawWorldToScreenBlit(sceneTexture);
-				}))
-						.build());
-			}
+				WZ_PROFILE_SCOPE(CustomSceneCopyValidate);
+				drawWorldToScreenBlit(ctx.getRead(0));
+			}))
+					.build());
 		}
 	}
 
 	// Draw the scene to the default framebuffer
+	const gfx_api::PassHandle blitSourcePass = (copyValidatePass != gfx_api::kInvalidPassHandle)
+		? copyValidatePass : scenePass;
 	renderGraph.addRenderPass(
-		gfx_api::makeSwapchainPass("SceneBlit",
-			screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear,
-			[customSceneCopyTarget, sceneTexture](const gfx_api::RenderPassContext&)
+		std::move(
+			gfx_api::RenderPassBuilder::create("SceneBlit")
+				.swapchainAttachment(screen_GetBackDrop()
+					? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear)
+				.readPassOutput(blitSourcePass, gfx_api::AttachmentRole::PrimaryColor)
+				.record([](const gfx_api::RenderPassContext& ctx)
 	{
 		WZ_PROFILE_SCOPE(copyToFBO);
-		gfx_api::abstract_texture* blitSource = customSceneCopyTarget;
-		if (blitSource == nullptr)
-		{
-			blitSource = sceneTexture;
-		}
-		if (blitSource == nullptr)
-		{
-			blitSource = gfx_api::context::get().getSceneTexture();
-		}
-		drawWorldToScreenBlit(blitSource);
-	}));
+		drawWorldToScreenBlit(ctx.getRead(0));
+	}))
+			.build());
 
 	// Targetting feedback must record inside a pass callback (not during graph setup).
 	renderGraph.addRenderPass(
