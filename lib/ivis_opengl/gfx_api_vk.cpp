@@ -3921,7 +3921,12 @@ bool VkRoot::shouldDraw()
 
 void VkRoot::shutdown()
 {
-	_frameResourceCache.clear();
+	_frameResourceCache.clear([this](gfx_api::abstract_texture* texture) {
+		if (texture != nullptr)
+		{
+			_imageLayoutTracker.erase(texture);
+		}
+	});
 
 	destroySwapchainAndSwapchainSpecificStuff(true);
 
@@ -6102,7 +6107,12 @@ void VkRoot::releaseTransientRenderTargets()
 
 void VkRoot::purgeFrameResources()
 {
-	_frameResourceCache.purgeUnused();
+	_frameResourceCache.purgeUnused([this](gfx_api::abstract_texture* texture) {
+		if (texture != nullptr)
+		{
+			_imageLayoutTracker.erase(texture);
+		}
+	});
 }
 
 void VkRoot::resetImageLayoutTracker()

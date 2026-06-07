@@ -412,8 +412,8 @@ namespace gfx_api
 		virtual gfx_api::abstract_texture* getDepthTexture() { return nullptr; }
 		virtual gfx_api::abstract_texture* getSceneTexture() { return nullptr; }
 
-		// Transient offscreen render targets (Custom passes, E4).
-		// Returns nullptr if unsupported or on the null backend.
+		// Transient offscreen render targets pooled via FrameResourceCache (LegitVulkan ImageCache).
+		// releaseTransientRenderTargets() at graph reset; purgeFrameResources() after submitFrame().
 		virtual abstract_texture* acquireTransientRenderTarget(pixel_format format, uint32_t width, uint32_t height) { return nullptr; }
 		virtual void releaseTransientRenderTargets() {}
 		virtual void purgeFrameResources() {}

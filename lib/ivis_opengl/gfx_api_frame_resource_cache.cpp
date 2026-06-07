@@ -56,14 +56,32 @@ void FrameResourceCache::releaseAll()
 	}
 }
 
-void FrameResourceCache::purgeUnused()
+namespace
+{
+
+void dropExcessImages(std::vector<std::unique_ptr<abstract_texture>>& images, size_t usedCount,
+	const FrameResourceCache::PurgeImageFn& onPurge)
+{
+	ASSERT(usedCount <= images.size(), "Frame resource cache usedCount exceeds image count");
+	while (images.size() > usedCount)
+	{
+		abstract_texture* dropped = images.back().get();
+		if (onPurge && dropped != nullptr)
+		{
+			onPurge(dropped);
+		}
+		images.pop_back();
+	}
+}
+
+} // namespace
+
+void FrameResourceCache::purgeUnused(const PurgeImageFn& onPurge)
 {
 	for (auto it = _imageCache.begin(); it != _imageCache.end(); )
 	{
 		ImageCacheEntry& cacheEntry = it->second;
-		ASSERT(cacheEntry.usedCount <= cacheEntry.images.size(),
-			"Frame resource cache usedCount exceeds image count");
-		cacheEntry.images.resize(cacheEntry.usedCount);
+		dropExcessImages(cacheEntry.images, cacheEntry.usedCount, onPurge);
 		if (cacheEntry.usedCount == 0)
 		{
 			it = _imageCache.erase(it);
@@ -75,8 +93,21 @@ void FrameResourceCache::purgeUnused()
 	}
 }
 
-void FrameResourceCache::clear()
+void FrameResourceCache::clear(const PurgeImageFn& onPurge)
 {
+	if (onPurge)
+	{
+		for (auto& cacheEntry : _imageCache)
+		{
+			for (const auto& image : cacheEntry.second.images)
+			{
+				if (image != nullptr)
+				{
+					onPurge(image.get());
+				}
+			}
+		}
+	}
 	_imageCache.clear();
 }
 

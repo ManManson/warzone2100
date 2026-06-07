@@ -89,10 +89,22 @@ struct ImageViewResourceKey
 };
 
 /// Per-frame pool of reusable transient images (LegitVulkan ImageCache pattern).
+///
+/// Lifecycle (callers must preserve this ordering):
+/// 1. releaseAll() at frame graph reset (start of accumulation).
+/// 2. acquireImage() while building/executing the graph for the frame.
+/// 3. submitFrame() on the backend (Vulkan: buffering_mechanism::swap waits on the frame fence).
+/// 4. purgeUnused() after submit — safe to drop images not acquired this frame.
+///
+/// Vulkan: destroyed cache entries defer GPU resource deletion via texture destructors
+/// (perFrameResources_t deletion queues, cleaned on the next buffering swap).
+/// buffering_mechanism remains the sync/submission layer; this cache only pools images.
 class FrameResourceCache
 {
 public:
 	using CreateImageFn = std::function<std::unique_ptr<abstract_texture>()>;
+	/// Invoked for each pooled image dropped by purgeUnused() or clear() before destruction.
+	using PurgeImageFn = std::function<void(abstract_texture*)>;
 
 	abstract_texture* acquireImage(const ImageResourceKey& key, CreateImageFn createFn);
 
@@ -100,9 +112,9 @@ public:
 	void releaseAll();
 
 	/// Drop unused capacity and empty keys after frame resolve (LegitVulkan PurgeUnused).
-	void purgeUnused();
+	void purgeUnused(const PurgeImageFn& onPurge = PurgeImageFn());
 
-	void clear();
+	void clear(const PurgeImageFn& onPurge = PurgeImageFn());
 
 private:
 	struct ImageCacheEntry
