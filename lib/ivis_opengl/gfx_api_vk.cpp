@@ -6349,11 +6349,6 @@ static vk::ImageLayout initialDepthAttachmentLayout(gfx_api::AttachmentLoadOp lo
 		: vk::ImageLayout::eDepthStencilAttachmentOptimal;
 }
 
-static gfx_api::AttachmentStoreOp attachmentStoreOpOr(const gfx_api::AttachmentDesc& attachment)
-{
-	return attachment.storeOp.value_or(gfx_api::AttachmentStoreOp::Store);
-}
-
 static vk::AttachmentStoreOp toVkAttachmentStoreOp(gfx_api::AttachmentStoreOp storeOp)
 {
 	switch (storeOp)
@@ -7075,20 +7070,20 @@ void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass, const gfx
 		ASSERT_OR_RETURN(, colorAttachment.texture != nullptr, "Unresolved color attachment in dynamic pass");
 		layoutKey.colorFormats.push_back(getAttachmentVkFormat(colorAttachment.texture));
 		layoutKey.colorLoadOps.push_back(colorAttachment.loadOp);
-		layoutKey.colorStoreOps.push_back(attachmentStoreOpOr(colorAttachment));
+		layoutKey.colorStoreOps.push_back(gfx_api::attachmentStoreOpOr(colorAttachment));
 		layoutKey.colorSamples.push_back(getAttachmentVkSamples(colorAttachment.texture));
 	}
 	if (gfx_api::passNeedsMsaaResolve(pass))
 	{
 		layoutKey.resolveFormat = getAttachmentVkFormat(pass.resolveAttachment->texture);
 		layoutKey.resolveLoadOp = pass.resolveAttachment->loadOp;
-		layoutKey.resolveStoreOp = attachmentStoreOpOr(pass.resolveAttachment.value());
+		layoutKey.resolveStoreOp = gfx_api::attachmentStoreOpOr(pass.resolveAttachment.value());
 	}
 	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
 	{
 		layoutKey.depthFormat = getAttachmentVkFormat(pass.depthAttachment->texture);
 		layoutKey.depthLoadOp = pass.depthAttachment->loadOp;
-		layoutKey.depthStoreOp = attachmentStoreOpOr(pass.depthAttachment.value());
+		layoutKey.depthStoreOp = gfx_api::attachmentStoreOpOr(pass.depthAttachment.value());
 	}
 
 	if (compiledPass != nullptr)

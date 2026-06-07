@@ -61,7 +61,8 @@ enum class PostPassAttachmentKind : uint8_t
 	Depth,
 };
 
-/// Post-pass layout for an attachment write; nullopt when compile state should not advance.
+/// Post-pass layout for a stored attachment write (Store only).
+/// nullopt for DontCare/Invalidate/Resolve/swapchain: no tracker update; RP final layout is attachment-optimal.
 nonstd::optional<CompileImageLayout> getAttachmentPostPassLayout(
 	const RenderPassDesc& pass,
 	const AttachmentDesc& attachment,

@@ -112,28 +112,24 @@ void populateCompiledPassLayoutMetadata(CompiledPass& compiledPass)
 	for (size_t i = 0; i < pass.colorAttachments.size(); ++i)
 	{
 		const AttachmentDesc& colorAttachment = pass.colorAttachments[i];
-		const auto layout = getAttachmentPostPassLayout(pass, colorAttachment, PostPassAttachmentKind::Color, i);
-		metadata.colorFinalLayouts.push_back(layout.value_or(CompileImageLayout::ColorAttachment));
+		const auto postPassLayout = getAttachmentPostPassLayout(pass, colorAttachment,
+			PostPassAttachmentKind::Color, i);
+		// nullopt: attachment-optimal RP final layout; compile tracker left unchanged.
+		metadata.colorFinalLayouts.push_back(postPassLayout.value_or(CompileImageLayout::ColorAttachment));
 	}
 
 	if (pass.resolveAttachment.has_value())
 	{
-		const auto layout = getAttachmentPostPassLayout(pass, pass.resolveAttachment.value(),
+		const auto postPassLayout = getAttachmentPostPassLayout(pass, pass.resolveAttachment.value(),
 			PostPassAttachmentKind::Resolve);
-		if (layout.has_value())
-		{
-			metadata.resolveFinalLayout = layout.value();
-		}
+		metadata.resolveFinalLayout = postPassLayout.value_or(CompileImageLayout::ColorAttachment);
 	}
 
 	if (pass.depthAttachment.has_value())
 	{
-		const auto layout = getAttachmentPostPassLayout(pass, pass.depthAttachment.value(),
+		const auto postPassLayout = getAttachmentPostPassLayout(pass, pass.depthAttachment.value(),
 			PostPassAttachmentKind::Depth);
-		if (layout.has_value())
-		{
-			metadata.depthFinalLayout = layout.value();
-		}
+		metadata.depthFinalLayout = postPassLayout.value_or(CompileImageLayout::DepthAttachment);
 	}
 }
 
@@ -277,6 +273,13 @@ nonstd::optional<CompileImageLayout> getAttachmentPostPassLayout(
 	size_t colorIndex)
 {
 	if (attachment.texture == nullptr)
+	{
+		return nonstd::nullopt;
+	}
+
+	const AttachmentStoreOp storeOp = attachmentStoreOpOr(attachment);
+	if (storeOp == AttachmentStoreOp::DontCare || storeOp == AttachmentStoreOp::Invalidate
+		|| storeOp == AttachmentStoreOp::Resolve)
 	{
 		return nonstd::nullopt;
 	}

@@ -220,6 +220,11 @@ AttachmentStoreOp defaultDepthStoreOp(gfx_api::context& ctx, const RenderPassDes
 
 } // namespace
 
+AttachmentStoreOp attachmentStoreOpOr(const AttachmentDesc& attachment)
+{
+	return attachment.storeOp.value_or(AttachmentStoreOp::Store);
+}
+
 void applyDefaultAttachmentStoreOps(RenderPassDesc& pass)
 {
 	auto& ctx = gfx_api::context::get();

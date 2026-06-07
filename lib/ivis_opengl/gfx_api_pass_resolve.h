@@ -35,6 +35,9 @@ bool resolvePassDescription(RenderPassDesc& pass);
 /// Fill unset AttachmentDesc::storeOp from attachment role and pipeline surface usage.
 void applyDefaultAttachmentStoreOps(RenderPassDesc& pass);
 
+/// Resolved store op after applyDefaultAttachmentStoreOps(); unset attachments default to Store.
+AttachmentStoreOp attachmentStoreOpOr(const AttachmentDesc& attachment);
+
 /// Select the backend execution path after resolvePassDescription().
 ResolvedPassRoute routeResolvedPass(const RenderPassDesc& pass);
 
