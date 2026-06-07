@@ -726,12 +726,15 @@ struct VkRoot final : gfx_api::context
 	{
 		std::vector<vk::Format> colorFormats;
 		std::vector<gfx_api::AttachmentLoadOp> colorLoadOps;
+		std::vector<gfx_api::AttachmentStoreOp> colorStoreOps;
 		std::vector<vk::SampleCountFlagBits> colorSamples;
 		optional<vk::Format> resolveFormat;
 		gfx_api::AttachmentLoadOp resolveLoadOp = gfx_api::AttachmentLoadOp::DontCare;
+		gfx_api::AttachmentStoreOp resolveStoreOp = gfx_api::AttachmentStoreOp::Store;
 		optional<vk::Format> depthFormat;
 		gfx_api::AttachmentLoadOp depthLoadOp = gfx_api::AttachmentLoadOp::DontCare;
-		/// Layout after endRenderPass; shadow-map depth-only passes use ReadOnly for shader sampling.
+		gfx_api::AttachmentStoreOp depthStoreOp = gfx_api::AttachmentStoreOp::DontCare;
+		/// Layout after endRenderPass; derived from depthStoreOp at pass begin.
 		vk::ImageLayout depthFinalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 		uint32_t width = 0;
 		uint32_t height = 0;
@@ -1020,7 +1023,7 @@ private:
 	std::vector<gfx_api::abstract_texture*> _activeCustomColorOutputs;
 	optional<gfx_api::abstract_texture*> _activeCustomDepthOutput = nullopt;
 	optional<gfx_api::abstract_texture*> _activeCustomResolveOutput = nullopt;
-	vk::ImageLayout _activeCustomDepthFinalLayout = vk::ImageLayout::eUndefined;
+	PassLayoutKey _activeCustomLayoutKey;
 
 	std::unordered_map<gfx_api::abstract_texture*, vk::ImageLayout> _imageLayoutTracker;
 };

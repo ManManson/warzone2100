@@ -6117,20 +6117,27 @@ void VkRoot::emitPrePassBarriers(const gfx_api::CompiledPass& pass)
 
 void VkRoot::trackCustomPassOutputLayouts()
 {
-	if (_activeCustomResolveOutput.has_value() && _activeCustomResolveOutput.value() != nullptr)
+	if (_activeCustomResolveOutput.has_value() && _activeCustomResolveOutput.value() != nullptr
+		&& _activeCustomLayoutKey.resolveStoreOp == gfx_api::AttachmentStoreOp::Store)
 	{
 		setImageLayout(_activeCustomResolveOutput.value(), vk::ImageLayout::eShaderReadOnlyOptimal);
 	}
 	else
 	{
-		for (gfx_api::abstract_texture* colorOutput : _activeCustomColorOutputs)
+		for (size_t i = 0; i < _activeCustomColorOutputs.size(); ++i)
 		{
-			setImageLayout(colorOutput, vk::ImageLayout::eShaderReadOnlyOptimal);
+			const gfx_api::AttachmentStoreOp colorStoreOp = (i < _activeCustomLayoutKey.colorStoreOps.size())
+				? _activeCustomLayoutKey.colorStoreOps[i]
+				: gfx_api::AttachmentStoreOp::Store;
+			if (colorStoreOp == gfx_api::AttachmentStoreOp::Store)
+			{
+				setImageLayout(_activeCustomColorOutputs[i], vk::ImageLayout::eShaderReadOnlyOptimal);
+			}
 		}
 	}
 	if (_activeCustomDepthOutput.has_value() && _activeCustomDepthOutput.value() != nullptr)
 	{
-		setImageLayout(_activeCustomDepthOutput.value(), _activeCustomDepthFinalLayout);
+		setImageLayout(_activeCustomDepthOutput.value(), _activeCustomLayoutKey.depthFinalLayout);
 	}
 	_activeCustomColorOutputs.clear();
 	_activeCustomDepthOutput.reset();
@@ -6141,11 +6148,14 @@ bool VkRoot::PassLayoutKey::operator==(const PassLayoutKey& other) const
 {
 	return colorFormats == other.colorFormats
 		&& colorLoadOps == other.colorLoadOps
+		&& colorStoreOps == other.colorStoreOps
 		&& colorSamples == other.colorSamples
 		&& resolveFormat == other.resolveFormat
 		&& resolveLoadOp == other.resolveLoadOp
+		&& resolveStoreOp == other.resolveStoreOp
 		&& depthFormat == other.depthFormat
 		&& depthLoadOp == other.depthLoadOp
+		&& depthStoreOp == other.depthStoreOp
 		&& depthFinalLayout == other.depthFinalLayout
 		&& width == other.width
 		&& height == other.height;
@@ -6250,6 +6260,39 @@ static vk::ImageLayout initialDepthAttachmentLayout(gfx_api::AttachmentLoadOp lo
 		: vk::ImageLayout::eDepthStencilAttachmentOptimal;
 }
 
+static gfx_api::AttachmentStoreOp attachmentStoreOpOr(const gfx_api::AttachmentDesc& attachment)
+{
+	return attachment.storeOp.value_or(gfx_api::AttachmentStoreOp::Store);
+}
+
+static vk::AttachmentStoreOp toVkAttachmentStoreOp(gfx_api::AttachmentStoreOp storeOp)
+{
+	switch (storeOp)
+	{
+	case gfx_api::AttachmentStoreOp::Store:
+		return vk::AttachmentStoreOp::eStore;
+	case gfx_api::AttachmentStoreOp::DontCare:
+	case gfx_api::AttachmentStoreOp::Invalidate:
+	case gfx_api::AttachmentStoreOp::Resolve:
+		return vk::AttachmentStoreOp::eDontCare;
+	}
+	return vk::AttachmentStoreOp::eDontCare;
+}
+
+static vk::ImageLayout colorFinalLayoutFromStoreOp(gfx_api::AttachmentStoreOp storeOp)
+{
+	return (storeOp == gfx_api::AttachmentStoreOp::Store)
+		? vk::ImageLayout::eShaderReadOnlyOptimal
+		: vk::ImageLayout::eColorAttachmentOptimal;
+}
+
+static vk::ImageLayout depthFinalLayoutFromStoreOp(gfx_api::AttachmentStoreOp storeOp)
+{
+	return (storeOp == gfx_api::AttachmentStoreOp::Store)
+		? vk::ImageLayout::eDepthStencilReadOnlyOptimal
+		: vk::ImageLayout::eDepthStencilAttachmentOptimal;
+}
+
 size_t VkRoot::getOrCreatePassRenderPassId(const PassLayoutKey& key)
 {
 	for (size_t i = 0; i < _passLayoutKeys.size(); ++i)
@@ -6274,30 +6317,34 @@ size_t VkRoot::getOrCreatePassRenderPassId(const PassLayoutKey& key)
 		ASSERT_OR_RETURN(NUM_RENDERPASS_IDS, key.colorFormats.size() == 1, "MSAA resolve pass expects one color attachment");
 		ASSERT_OR_RETURN(NUM_RENDERPASS_IDS, key.depthFormat.has_value(), "MSAA resolve pass requires depth");
 
+		const gfx_api::AttachmentStoreOp msaaColorStoreOp = (key.colorStoreOps.size() > 0)
+			? key.colorStoreOps[0]
+			: gfx_api::AttachmentStoreOp::DontCare;
 		const vk::AttachmentLoadOp vkColorLoadOp = toVkAttachmentLoadOp(key.colorLoadOps[0]);
 		attachments.push_back(
 			vk::AttachmentDescription()
 				.setFormat(key.colorFormats[0])
 				.setSamples(msaaSamples)
 				.setLoadOp(vkColorLoadOp)
-				.setStoreOp(vk::AttachmentStoreOp::eStore)
+				.setStoreOp(toVkAttachmentStoreOp(msaaColorStoreOp))
 				.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
 				.setInitialLayout(initialColorAttachmentLayout(key.colorLoadOps[0]))
-				.setFinalLayout(vk::ImageLayout::eColorAttachmentOptimal)
+				.setFinalLayout(colorFinalLayoutFromStoreOp(msaaColorStoreOp))
 		);
 
 		const vk::AttachmentLoadOp vkDepthLoadOp = toVkAttachmentLoadOp(key.depthLoadOp);
+		const vk::AttachmentStoreOp vkDepthStoreOp = toVkAttachmentStoreOp(key.depthStoreOp);
 		attachments.push_back(
 			vk::AttachmentDescription()
 				.setFormat(key.depthFormat.value())
 				.setSamples(msaaSamples)
 				.setLoadOp(vkDepthLoadOp)
-				.setStoreOp(vk::AttachmentStoreOp::eDontCare)
+				.setStoreOp(vkDepthStoreOp)
 				.setStencilLoadOp(vkDepthLoadOp)
-				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+				.setStencilStoreOp(vkDepthStoreOp)
 				.setInitialLayout(initialDepthAttachmentLayout(key.depthLoadOp))
-				.setFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
+				.setFinalLayout(key.depthFinalLayout)
 		);
 
 		const vk::AttachmentLoadOp vkResolveLoadOp = toVkAttachmentLoadOp(key.resolveLoadOp);
@@ -6306,11 +6353,11 @@ size_t VkRoot::getOrCreatePassRenderPassId(const PassLayoutKey& key)
 				.setFormat(key.resolveFormat.value())
 				.setSamples(vk::SampleCountFlagBits::e1)
 				.setLoadOp(vkResolveLoadOp)
-				.setStoreOp(vk::AttachmentStoreOp::eStore)
+				.setStoreOp(toVkAttachmentStoreOp(key.resolveStoreOp))
 				.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
 				.setInitialLayout(vk::ImageLayout::eUndefined)
-				.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+				.setFinalLayout(colorFinalLayoutFromStoreOp(key.resolveStoreOp))
 		);
 	}
 	else
@@ -6321,32 +6368,32 @@ size_t VkRoot::getOrCreatePassRenderPassId(const PassLayoutKey& key)
 			const vk::SampleCountFlagBits colorSamples = (i < key.colorSamples.size())
 				? key.colorSamples[i]
 				: vk::SampleCountFlagBits::e1;
+			const gfx_api::AttachmentStoreOp colorStoreOp = (i < key.colorStoreOps.size())
+				? key.colorStoreOps[i]
+				: gfx_api::AttachmentStoreOp::Store;
 			const vk::AttachmentLoadOp vkLoadOp = toVkAttachmentLoadOp(key.colorLoadOps[i]);
 			attachments.push_back(
 				vk::AttachmentDescription()
 					.setFormat(key.colorFormats[i])
 					.setSamples(colorSamples)
 					.setLoadOp(vkLoadOp)
-					.setStoreOp(vk::AttachmentStoreOp::eStore)
+					.setStoreOp(toVkAttachmentStoreOp(colorStoreOp))
 					.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 					.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
 					.setInitialLayout(initialColorAttachmentLayout(key.colorLoadOps[i]))
-					.setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+					.setFinalLayout(colorFinalLayoutFromStoreOp(colorStoreOp))
 			);
 		}
 
 		if (key.depthFormat.has_value())
 		{
 			const vk::AttachmentLoadOp vkDepthLoadOp = toVkAttachmentLoadOp(key.depthLoadOp);
-			const vk::AttachmentStoreOp depthStoreOp = (key.depthFinalLayout == vk::ImageLayout::eDepthStencilReadOnlyOptimal)
-				? vk::AttachmentStoreOp::eStore
-				: vk::AttachmentStoreOp::eDontCare;
 			attachments.push_back(
 				vk::AttachmentDescription()
 					.setFormat(key.depthFormat.value())
 					.setSamples(vk::SampleCountFlagBits::e1)
 					.setLoadOp(vkDepthLoadOp)
-					.setStoreOp(depthStoreOp)
+					.setStoreOp(toVkAttachmentStoreOp(key.depthStoreOp))
 					.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 					.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
 					.setInitialLayout(initialDepthAttachmentLayout(key.depthLoadOp))
@@ -6924,29 +6971,24 @@ void VkRoot::beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass)
 		ASSERT_OR_RETURN(, colorAttachment.texture != nullptr, "Unresolved color attachment in dynamic pass");
 		layoutKey.colorFormats.push_back(getAttachmentVkFormat(colorAttachment.texture));
 		layoutKey.colorLoadOps.push_back(colorAttachment.loadOp);
+		layoutKey.colorStoreOps.push_back(attachmentStoreOpOr(colorAttachment));
 		layoutKey.colorSamples.push_back(getAttachmentVkSamples(colorAttachment.texture));
 	}
 	if (gfx_api::passNeedsMsaaResolve(pass))
 	{
 		layoutKey.resolveFormat = getAttachmentVkFormat(pass.resolveAttachment->texture);
 		layoutKey.resolveLoadOp = pass.resolveAttachment->loadOp;
+		layoutKey.resolveStoreOp = attachmentStoreOpOr(pass.resolveAttachment.value());
 	}
 	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
 	{
 		layoutKey.depthFormat = getAttachmentVkFormat(pass.depthAttachment->texture);
 		layoutKey.depthLoadOp = pass.depthAttachment->loadOp;
-		if (pass.colorAttachments.empty()
-			&& gfx_api::passIsDepthOnly(pass)
-			&& isDepthInputTexture(pass.depthAttachment->texture))
-		{
-			layoutKey.depthFinalLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
-		}
+		layoutKey.depthStoreOp = attachmentStoreOpOr(pass.depthAttachment.value());
+		layoutKey.depthFinalLayout = depthFinalLayoutFromStoreOp(layoutKey.depthStoreOp);
 	}
 
-	_activeCustomDepthFinalLayout = layoutKey.depthFormat.has_value()
-		? layoutKey.depthFinalLayout
-		: vk::ImageLayout::eUndefined;
-
+	_activeCustomLayoutKey = layoutKey;
 	_activeCustomRenderPassId = getOrCreatePassRenderPassId(layoutKey);
 	_customPassWidth = passWidth;
 	_customPassHeight = passHeight;
