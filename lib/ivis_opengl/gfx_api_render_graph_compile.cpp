@@ -4,6 +4,7 @@
 #include "gfx_api_pass_resolve.h"
 #include "gfx_api_pipeline_surfaces.h"
 
+#include <unordered_map>
 #include <unordered_set>
 
 namespace gfx_api
@@ -93,29 +94,108 @@ nonstd::optional<ResolvedRead> resolveSingleRead(const ReadDesc& read,
 	return resolved;
 }
 
-void planImageBarriers(std::vector<CompiledPass>& passes)
+using LayoutStateMap = std::unordered_map<abstract_texture*, CompileImageLayout>;
+
+CompileImageLayout getReadTargetLayout(const ResolvedRead& read)
 {
+	return read.isDepth ? CompileImageLayout::DepthReadOnly : CompileImageLayout::ShaderReadOnly;
+}
+
+void applyPostPassLayoutUpdates(CompiledPass& compiledPass, LayoutStateMap& layoutState)
+{
+	const RenderPassDesc& pass = compiledPass.desc;
+
+	if (passNeedsMsaaResolve(pass) && pass.resolveAttachment.has_value())
+	{
+		const AttachmentDesc& resolveAttachment = pass.resolveAttachment.value();
+		const auto layout = getAttachmentPostPassLayout(pass, resolveAttachment, PostPassAttachmentKind::Resolve);
+		if (layout.has_value())
+		{
+			compiledPass.postPassLayoutUpdates.push_back({resolveAttachment.texture, layout.value()});
+			layoutState[resolveAttachment.texture] = layout.value();
+		}
+	}
+	else
+	{
+		for (size_t i = 0; i < pass.colorAttachments.size(); ++i)
+		{
+			const AttachmentDesc& colorAttachment = pass.colorAttachments[i];
+			const auto layout = getAttachmentPostPassLayout(pass, colorAttachment,
+				PostPassAttachmentKind::Color, i);
+			if (layout.has_value())
+			{
+				compiledPass.postPassLayoutUpdates.push_back({colorAttachment.texture, layout.value()});
+				layoutState[colorAttachment.texture] = layout.value();
+			}
+		}
+	}
+
+	if (pass.depthAttachment.has_value())
+	{
+		const AttachmentDesc& depthAttachment = pass.depthAttachment.value();
+		const auto layout = getAttachmentPostPassLayout(pass, depthAttachment, PostPassAttachmentKind::Depth);
+		if (layout.has_value())
+		{
+			compiledPass.postPassLayoutUpdates.push_back({depthAttachment.texture, layout.value()});
+			layoutState[depthAttachment.texture] = layout.value();
+		}
+	}
+}
+
+bool planLayoutTimeline(std::vector<CompiledPass>& passes)
+{
+	LayoutStateMap layoutState;
+
 	for (CompiledPass& compiledPass : passes)
 	{
 		compiledPass.prePassBarriers.clear();
+		compiledPass.postPassLayoutUpdates.clear();
 		if (compiledPass.skipped)
 		{
 			continue;
 		}
 
-		std::unordered_set<abstract_texture*> seenTextures;
+		const RenderPassDesc& pass = compiledPass.desc;
+		const std::unordered_set<abstract_texture*> passAttachments = getPassAttachmentTextures(pass);
+
+		std::unordered_set<abstract_texture*> seenReadTextures;
 		for (const ResolvedRead& read : compiledPass.resolvedReads)
 		{
-			if (read.texture == nullptr || !seenTextures.insert(read.texture).second)
+			if (read.texture == nullptr || !seenReadTextures.insert(read.texture).second)
 			{
 				continue;
 			}
-			ImageBarrierOp barrier;
-			barrier.texture = read.texture;
-			barrier.isDepth = read.isDepth;
-			compiledPass.prePassBarriers.push_back(barrier);
+			if (passAttachments.count(read.texture) > 0)
+			{
+				continue;
+			}
+
+			const CompileImageLayout targetLayout = getReadTargetLayout(read);
+			const auto layoutIt = layoutState.find(read.texture);
+			if (layoutIt == layoutState.end())
+			{
+				ASSERT_OR_RETURN(false, false,
+					"Pass \"%s\": read texture not produced by an earlier pass in the layout timeline",
+					pass.debugName.c_str());
+			}
+
+			const CompileImageLayout currentLayout = layoutIt->second;
+			if (currentLayout != targetLayout)
+			{
+				ImageBarrierOp barrier;
+				barrier.texture = read.texture;
+				barrier.isDepth = read.isDepth;
+				barrier.oldLayout = currentLayout;
+				barrier.newLayout = targetLayout;
+				compiledPass.prePassBarriers.push_back(barrier);
+				layoutState[read.texture] = targetLayout;
+			}
 		}
+
+		applyPostPassLayoutUpdates(compiledPass, layoutState);
 	}
+
+	return true;
 }
 
 } // namespace
@@ -213,7 +293,10 @@ bool CompiledRenderGraph::compile(std::vector<RenderPassDesc>& descs)
 		}
 	}
 
-	planImageBarriers(_passes);
+	if (!planLayoutTimeline(_passes))
+	{
+		return false;
+	}
 	return true;
 }
 
