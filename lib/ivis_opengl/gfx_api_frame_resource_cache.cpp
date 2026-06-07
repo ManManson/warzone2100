@@ -196,4 +196,88 @@ void FramebufferResourceCache::clear(const PurgeFramebufferFn& onPurge)
 	_framebufferCache.clear();
 }
 
+uint32_t DynamicFBOCache::acquire(const DynamicFBOKey& key, CreateFBOFn createFn)
+{
+	auto cacheIt = std::find_if(_dynamicFBOCache.begin(), _dynamicFBOCache.end(),
+		[&key](const auto& entry) { return entry.first == key; });
+
+	if (cacheIt == _dynamicFBOCache.end())
+	{
+		_dynamicFBOCache.emplace_back(key, DynamicFBOCacheEntry {});
+		cacheIt = std::prev(_dynamicFBOCache.end());
+	}
+
+	DynamicFBOCacheEntry& cacheEntry = cacheIt->second;
+	if (cacheEntry.usedCount + 1 > cacheEntry.fbos.size())
+	{
+		const uint32_t fbo = createFn();
+		ASSERT(fbo != 0, "Failed to create FBO for dynamic FBO cache");
+		cacheEntry.fbos.push_back(fbo);
+	}
+
+	return cacheEntry.fbos[cacheEntry.usedCount++];
+}
+
+void DynamicFBOCache::releaseAll()
+{
+	for (auto& cacheEntry : _dynamicFBOCache)
+	{
+		cacheEntry.second.usedCount = 0;
+	}
+}
+
+namespace
+{
+
+void dropExcessFBOs(std::vector<uint32_t>& fbos, size_t usedCount, const DynamicFBOCache::PurgeFBOFn& onPurge)
+{
+	ASSERT(usedCount <= fbos.size(), "Dynamic FBO cache usedCount exceeds FBO count");
+	while (fbos.size() > usedCount)
+	{
+		const uint32_t dropped = fbos.back();
+		if (onPurge && dropped != 0)
+		{
+			onPurge(dropped);
+		}
+		fbos.pop_back();
+	}
+}
+
+} // namespace
+
+void DynamicFBOCache::purgeUnused(const PurgeFBOFn& onPurge)
+{
+	for (auto it = _dynamicFBOCache.begin(); it != _dynamicFBOCache.end(); )
+	{
+		DynamicFBOCacheEntry& cacheEntry = it->second;
+		dropExcessFBOs(cacheEntry.fbos, cacheEntry.usedCount, onPurge);
+		if (cacheEntry.usedCount == 0)
+		{
+			it = _dynamicFBOCache.erase(it);
+		}
+		else
+		{
+			++it;
+		}
+	}
+}
+
+void DynamicFBOCache::clear(const PurgeFBOFn& onPurge)
+{
+	if (onPurge)
+	{
+		for (auto& cacheEntry : _dynamicFBOCache)
+		{
+			for (const uint32_t fbo : cacheEntry.second.fbos)
+			{
+				if (fbo != 0)
+				{
+					onPurge(fbo);
+				}
+			}
+		}
+	}
+	_dynamicFBOCache.clear();
+}
+
 } // namespace gfx_api

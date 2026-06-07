@@ -29,6 +29,8 @@
 #include <tuple>
 #include <vector>
 
+#include <nonstd/optional.hpp>
+
 namespace gfx_api
 {
 
@@ -92,20 +94,27 @@ struct ImageViewResourceKey
 /// Color transients use uncompressed color pixel_format values; depth transients use
 /// pixel_format::FORMAT_D24_UNORM_S8 (backend maps to the real depth/stencil format).
 ///
-/// Resource cache trilogy (Vulkan dynamic passes):
+/// Resource cache trilogy (shared transient images + backend-specific pass objects):
+///
+/// Transient images (all backends): FrameResourceCache
+///
+/// Vulkan dynamic passes:
 /// - Render passes: PassLayoutKey → getOrCreatePassRenderPassId (cached vk::RenderPass)
-/// - Transient images: FrameResourceCache (this header)
-/// - Framebuffers: FramebufferResourceCache (this header)
+/// - Framebuffers: FramebufferResourceCache (cached vk::Framebuffer per attachment-view key)
+///
+/// OpenGL dynamic passes:
+/// - Dynamic pass FBOs: DynamicFBOCache (cached GLuint FBO per attachment binding key)
+///   (GL has no render-pass object; swapchain uses default framebuffer directly)
 ///
 /// Lifecycle (callers must preserve this ordering):
 /// 1. releaseAll() at frame graph reset (start of accumulation).
-/// 2. acquireImage() / FramebufferResourceCache::acquire() while executing the graph.
+/// 2. acquireImage() / acquire() on framebuffer caches while executing the graph.
 /// 3. submitFrame() on the backend (Vulkan: buffering_mechanism::swap waits on the frame fence).
-/// 4. purgeUnused() after submit — safe to drop images/framebuffers not acquired this frame.
+/// 4. purgeUnused() after submit — drop images/FBOs not acquired this frame.
 ///
-/// Vulkan: destroyed cache entries defer GPU resource deletion via texture destructors
-/// (perFrameResources_t deletion queues, cleaned on the next buffering swap).
-/// buffering_mechanism remains the sync/submission layer; this cache only pools images.
+/// Vulkan framebuffer purge defers GPU destruction via fbo_to_delete queues.
+/// OpenGL FBO purge calls glDeleteFramebuffers immediately after the frame is presented.
+/// Transient image purge destroys textures via unique_ptr destructors (VK may defer further).
 class FrameResourceCache
 {
 public:
@@ -182,6 +191,74 @@ private:
 	};
 
 	std::vector<std::pair<FramebufferResourceKey, FramebufferCacheEntry>> _framebufferCache;
+};
+
+/// Key for pooled OpenGL FBO instances (attachment object ids + layers + size).
+struct DynamicFBOKey
+{
+	struct Slot
+	{
+		uint32_t objectId = 0;
+		uint32_t arrayLayer = 0;
+		bool isRenderbuffer = false;
+
+		bool operator<(const Slot& other) const
+		{
+			return std::tie(objectId, arrayLayer, isRenderbuffer)
+				< std::tie(other.objectId, other.arrayLayer, other.isRenderbuffer);
+		}
+
+		bool operator==(const Slot& other) const
+		{
+			return objectId == other.objectId
+				&& arrayLayer == other.arrayLayer
+				&& isRenderbuffer == other.isRenderbuffer;
+		}
+	};
+
+	uint32_t width = 0;
+	uint32_t height = 0;
+	std::vector<Slot> colorSlots;
+	nonstd::optional<Slot> depthSlot;
+
+	bool operator<(const DynamicFBOKey& other) const
+	{
+		return std::tie(width, height, colorSlots, depthSlot)
+			< std::tie(other.width, other.height, other.colorSlots, other.depthSlot);
+	}
+
+	bool operator==(const DynamicFBOKey& other) const
+	{
+		return width == other.width
+			&& height == other.height
+			&& colorSlots == other.colorSlots
+			&& depthSlot == other.depthSlot;
+	}
+};
+
+/// Per-frame pool of reusable OpenGL FBOs for dynamic attachment passes.
+class DynamicFBOCache
+{
+public:
+	using CreateFBOFn = std::function<uint32_t()>;
+	using PurgeFBOFn = std::function<void(uint32_t)>;
+
+	uint32_t acquire(const DynamicFBOKey& key, CreateFBOFn createFn);
+
+	void releaseAll();
+
+	void purgeUnused(const PurgeFBOFn& onPurge = PurgeFBOFn());
+
+	void clear(const PurgeFBOFn& onPurge = PurgeFBOFn());
+
+private:
+	struct DynamicFBOCacheEntry
+	{
+		size_t usedCount = 0;
+		std::vector<uint32_t> fbos;
+	};
+
+	std::vector<std::pair<DynamicFBOKey, DynamicFBOCacheEntry>> _dynamicFBOCache;
 };
 
 } // namespace gfx_api

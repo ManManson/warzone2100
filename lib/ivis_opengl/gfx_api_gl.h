@@ -442,6 +442,7 @@ private:
 	void applyAttachmentStoreOps(const gfx_api::RenderPassDesc& pass, uint32_t passWidth, uint32_t passHeight);
 	void resolveMsaaColorAttachment(const gfx_api::RenderPassDesc& pass, uint32_t passWidth, uint32_t passHeight);
 	void invalidateDepthStencilAttachment(const gfx_api::RenderPassDesc& pass);
+	void clearDynamicFBOCache();
 
 	uint32_t viewportWidth = 0;
 	uint32_t viewportHeight = 0;
@@ -490,6 +491,7 @@ private:
 
 	gfx_api::PipelineSurfaceRegistry _pipelineSurfaces;
 	gfx_api::FrameResourceCache _frameResourceCache;
+	gfx_api::DynamicFBOCache _dynamicFBOCache;
 
 	GLuint _customPassFBO = 0;
 	bool _customPassActive = false;

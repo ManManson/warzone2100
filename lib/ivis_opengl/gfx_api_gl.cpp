@@ -4264,6 +4264,111 @@ gfx_api::pixel_format gl_context::getDepthStencilFormat() const
 
 static const char *cbframebuffererror(GLenum err);
 
+namespace
+{
+
+gfx_api::DynamicFBOKey::Slot dynamicFBOKeySlotFromAttachment(const gfx_api::AttachmentDesc& attachment)
+{
+	gfx_api::DynamicFBOKey::Slot slot;
+	if (auto* renderbuffer = dynamic_cast<gl_gpurendered_renderbuffer*>(attachment.texture))
+	{
+		slot.objectId = renderbuffer->id();
+		slot.isRenderbuffer = true;
+		return slot;
+	}
+
+	auto* gpuTexture = dynamic_cast<gl_gpurendered_texture*>(attachment.texture);
+	ASSERT_OR_RETURN(slot, gpuTexture != nullptr, "Dynamic pass attachment must be a GPU-rendered texture or renderbuffer");
+	slot.objectId = gpuTexture->id();
+	slot.arrayLayer = attachment.arrayLayer;
+	return slot;
+}
+
+gfx_api::DynamicFBOKey buildDynamicFBOKey(const gfx_api::RenderPassDesc& pass, uint32_t passWidth, uint32_t passHeight)
+{
+	gfx_api::DynamicFBOKey key;
+	key.width = passWidth;
+	key.height = passHeight;
+	key.colorSlots.reserve(pass.colorAttachments.size());
+	for (const auto& colorAttachment : pass.colorAttachments)
+	{
+		key.colorSlots.push_back(dynamicFBOKeySlotFromAttachment(colorAttachment));
+	}
+	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
+	{
+		key.depthSlot = dynamicFBOKeySlotFromAttachment(pass.depthAttachment.value());
+	}
+	return key;
+}
+
+void bindDynamicPassFramebufferAttachments(const gfx_api::RenderPassDesc& pass)
+{
+	for (size_t i = 0; i < pass.colorAttachments.size(); ++i)
+	{
+		const auto& attachment = pass.colorAttachments[i];
+		ASSERT_OR_RETURN(, attachment.texture != nullptr, "Unresolved color attachment in dynamic pass");
+		const GLenum colorAttachment = GL_COLOR_ATTACHMENT0 + static_cast<GLenum>(i);
+		if (auto* renderbuffer = dynamic_cast<gl_gpurendered_renderbuffer*>(attachment.texture))
+		{
+			glFramebufferRenderbuffer(GL_FRAMEBUFFER, colorAttachment, GL_RENDERBUFFER, renderbuffer->id());
+		}
+		else
+		{
+			auto* gpuTexture = dynamic_cast<gl_gpurendered_texture*>(attachment.texture);
+			ASSERT_OR_RETURN(, gpuTexture != nullptr, "Dynamic pass color attachment must be a GPU-rendered texture or renderbuffer");
+			glFramebufferTexture2D(GL_FRAMEBUFFER, colorAttachment, gpuTexture->target(), gpuTexture->id(), 0);
+		}
+	}
+
+	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
+	{
+		const GLenum depthAttachmentPoint = gfx_api::attachmentDepthHasStencil(pass.depthAttachment.value())
+			? GL_DEPTH_STENCIL_ATTACHMENT
+			: GL_DEPTH_ATTACHMENT;
+		if (auto* depthRenderbuffer = dynamic_cast<gl_gpurendered_renderbuffer*>(pass.depthAttachment->texture))
+		{
+			glFramebufferRenderbuffer(GL_FRAMEBUFFER, depthAttachmentPoint, GL_RENDERBUFFER, depthRenderbuffer->id());
+		}
+		else
+		{
+			auto* depthTexture = dynamic_cast<gl_gpurendered_texture*>(pass.depthAttachment->texture);
+			ASSERT_OR_RETURN(, depthTexture != nullptr, "Dynamic pass depth attachment must be a GPU-rendered texture or renderbuffer");
+			if (depthTexture->isArray())
+			{
+				glFramebufferTextureLayer(GL_FRAMEBUFFER, depthAttachmentPoint, depthTexture->id(), 0,
+					static_cast<GLint>(pass.depthAttachment->arrayLayer));
+			}
+			else
+			{
+				glFramebufferTexture2D(GL_FRAMEBUFFER, depthAttachmentPoint, depthTexture->target(), depthTexture->id(), 0);
+			}
+		}
+	}
+}
+
+void configureDynamicPassDrawBuffers(const gfx_api::RenderPassDesc& pass)
+{
+	std::vector<GLenum> drawBuffers;
+	drawBuffers.reserve(pass.colorAttachments.size());
+	for (size_t i = 0; i < pass.colorAttachments.size(); ++i)
+	{
+		drawBuffers.push_back(GL_COLOR_ATTACHMENT0 + static_cast<GLenum>(i));
+	}
+
+	if (drawBuffers.size() > 1)
+	{
+		glDrawBuffers(static_cast<GLsizei>(drawBuffers.size()), drawBuffers.data());
+	}
+	else if (drawBuffers.empty())
+	{
+		const GLenum none = GL_NONE;
+		glDrawBuffers(1, &none);
+		glReadBuffer(GL_NONE);
+	}
+}
+
+} // namespace
+
 void gl_context::submitFrame()
 {
 	if (!frameHasDrawCommands)
@@ -4345,64 +4450,20 @@ void gl_context::beginDynamicAttachmentPass(const gfx_api::RenderPassDesc& pass)
 	const uint32_t passHeight = pass.viewportSize->second;
 
 	set_depth_range(0.f, 1.f);
-	glGenFramebuffers(1, &_customPassFBO);
+
+	const gfx_api::DynamicFBOKey fboKey = buildDynamicFBOKey(pass, passWidth, passHeight);
+	_customPassFBO = _dynamicFBOCache.acquire(fboKey, [&]() -> uint32_t {
+		GLuint fbo = 0;
+		glGenFramebuffers(1, &fbo);
+		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+		bindDynamicPassFramebufferAttachments(pass);
+		const GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+		ASSERT_OR_RETURN(0, fboStatus == GL_FRAMEBUFFER_COMPLETE,
+			"Dynamic pass framebuffer incomplete: %s", cbframebuffererror(fboStatus));
+		return fbo;
+	});
 	glBindFramebuffer(GL_FRAMEBUFFER, _customPassFBO);
-
-	std::vector<GLenum> drawBuffers;
-	drawBuffers.reserve(pass.colorAttachments.size());
-	for (size_t i = 0; i < pass.colorAttachments.size(); ++i)
-	{
-		const auto& attachment = pass.colorAttachments[i];
-		ASSERT_OR_RETURN(, attachment.texture != nullptr, "Unresolved color attachment in dynamic pass");
-		const GLenum colorAttachment = GL_COLOR_ATTACHMENT0 + static_cast<GLenum>(i);
-		if (auto* renderbuffer = dynamic_cast<gl_gpurendered_renderbuffer*>(attachment.texture))
-		{
-			glFramebufferRenderbuffer(GL_FRAMEBUFFER, colorAttachment, GL_RENDERBUFFER, renderbuffer->id());
-		}
-		else
-		{
-			auto* gpuTexture = dynamic_cast<gl_gpurendered_texture*>(attachment.texture);
-			ASSERT_OR_RETURN(, gpuTexture != nullptr, "Dynamic pass color attachment must be a GPU-rendered texture or renderbuffer");
-			glFramebufferTexture2D(GL_FRAMEBUFFER, colorAttachment, gpuTexture->target(), gpuTexture->id(), 0);
-		}
-		drawBuffers.push_back(colorAttachment);
-	}
-
-	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
-	{
-		const GLenum depthAttachmentPoint = gfx_api::attachmentDepthHasStencil(pass.depthAttachment.value())
-			? GL_DEPTH_STENCIL_ATTACHMENT
-			: GL_DEPTH_ATTACHMENT;
-		if (auto* depthRenderbuffer = dynamic_cast<gl_gpurendered_renderbuffer*>(pass.depthAttachment->texture))
-		{
-			glFramebufferRenderbuffer(GL_FRAMEBUFFER, depthAttachmentPoint, GL_RENDERBUFFER, depthRenderbuffer->id());
-		}
-		else
-		{
-			auto* depthTexture = dynamic_cast<gl_gpurendered_texture*>(pass.depthAttachment->texture);
-			ASSERT_OR_RETURN(, depthTexture != nullptr, "Dynamic pass depth attachment must be a GPU-rendered texture or renderbuffer");
-			if (depthTexture->isArray())
-			{
-				glFramebufferTextureLayer(GL_FRAMEBUFFER, depthAttachmentPoint, depthTexture->id(), 0,
-					static_cast<GLint>(pass.depthAttachment->arrayLayer));
-			}
-			else
-			{
-				glFramebufferTexture2D(GL_FRAMEBUFFER, depthAttachmentPoint, depthTexture->target(), depthTexture->id(), 0);
-			}
-		}
-	}
-
-	if (drawBuffers.size() > 1)
-	{
-		glDrawBuffers(static_cast<GLsizei>(drawBuffers.size()), drawBuffers.data());
-	}
-	else if (drawBuffers.empty())
-	{
-		const GLenum none = GL_NONE;
-		glDrawBuffers(1, &none);
-		glReadBuffer(GL_NONE);
-	}
+	configureDynamicPassDrawBuffers(pass);
 
 	const GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 	ASSERT_OR_RETURN(, fboStatus == GL_FRAMEBUFFER_COMPLETE, "Dynamic pass framebuffer incomplete: %s", cbframebuffererror(fboStatus));
@@ -4535,11 +4596,7 @@ void gl_context::endDynamicAttachmentPass()
 	applyAttachmentStoreOps(_activeDynamicPassDesc, passWidth, passHeight);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	if (_customPassFBO != 0)
-	{
-		glDeleteFramebuffers(1, &_customPassFBO);
-		_customPassFBO = 0;
-	}
+	_customPassFBO = 0;
 	glViewport(0, 0, static_cast<GLsizei>(viewportWidth), static_cast<GLsizei>(viewportHeight));
 	_activeDynamicPassDesc = gfx_api::RenderPassDesc();
 	_customPassActive = false;
@@ -5193,6 +5250,7 @@ bool gl_context::shouldDraw()
 void gl_context::shutdown()
 {
 	_frameResourceCache.clear();
+	clearDynamicFBOCache();
 
 #if !defined(WZ_STATIC_GL_BINDINGS)
 	if (glClear)
@@ -5426,8 +5484,22 @@ static const char *cbframebuffererror(GLenum err)
 	}
 }
 
+void gl_context::clearDynamicFBOCache()
+{
+	_dynamicFBOCache.clear([](uint32_t fboHandle) {
+		if (fboHandle == 0)
+		{
+			return;
+		}
+		GLuint fbo = fboHandle;
+		glDeleteFramebuffers(1, &fbo);
+	});
+}
+
 size_t gl_context::initDepthPasses(size_t resolution)
 {
+	clearDynamicFBOCache();
+
 	depthPassCount = std::min<size_t>(depthPassCount, WZ_MAX_SHADOW_CASCADES);
 
 #if !defined(__EMSCRIPTEN__)
@@ -5474,6 +5546,8 @@ size_t gl_context::initDepthPasses(size_t resolution)
 
 void gl_context::deleteSceneRenderpass()
 {
+	clearDynamicFBOCache();
+
 	_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneColor);
 	_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneMSAAColor);
 	_pipelineSurfaces.invalidateSurface(gfx_api::PipelineSurfaceId::SceneDepth);
@@ -5591,11 +5665,20 @@ gfx_api::abstract_texture* gl_context::acquireTransientRenderTarget(gfx_api::pix
 void gl_context::releaseTransientRenderTargets()
 {
 	_frameResourceCache.releaseAll();
+	_dynamicFBOCache.releaseAll();
 }
 
 void gl_context::purgeFrameResources()
 {
 	_frameResourceCache.purgeUnused();
+	_dynamicFBOCache.purgeUnused([](uint32_t fboHandle) {
+		if (fboHandle == 0)
+		{
+			return;
+		}
+		GLuint fbo = fboHandle;
+		glDeleteFramebuffers(1, &fbo);
+	});
 }
 
 optional<std::pair<uint32_t, uint32_t>> gl_context::getRenderTargetDimensions(gfx_api::abstract_texture* texture)
