@@ -18,8 +18,8 @@ enum class ResolvedPassRoute
 	DynamicAttachments
 };
 
-/// Resolve legacy presets, attachment sources, transient allocations, and viewport dimensions.
-/// All passes share this single path; factories set depthCascadeIndex / sceneFramebuffer / attachments.
+/// Resolve attachment sources, transient allocations, and viewport dimensions.
+/// All passes share this single path; factories set explicit attachments.
 bool resolvePassDescription(RenderPassDesc& pass);
 
 /// Select the backend execution path after resolvePassDescription().

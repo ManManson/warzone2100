@@ -6942,8 +6942,9 @@ void VkRoot::beginSwapchainPass(gfx_api::RenderPassDesc& pass)
 
 void VkRoot::beginDepthCascadePass(gfx_api::RenderPassDesc& pass)
 {
-	ASSERT_OR_RETURN(, pass.depthCascadeIndex.has_value(), "Depth cascade pass missing cascade index");
-	const size_t idx = pass.depthCascadeIndex.value();
+	ASSERT_OR_RETURN(, pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr,
+		"Depth cascade pass missing depth attachment");
+	const size_t idx = pass.depthAttachment->arrayLayer;
 	buffering_mechanism::get_current_resources().ensureDrawCmdBufferBegun();
 	frameHasDrawCommands = true;
 

@@ -20,12 +20,6 @@ struct RenderPassDesc
 {
 	std::string debugName;
 
-	/// When set, resolve fills the depth shadow-map attachment for this cascade index.
-	optional<size_t> depthCascadeIndex;
-
-	/// When true, resolve fills scene color + backend-internal depth attachments.
-	bool sceneFramebuffer = false;
-
 	// Records draw calls for this pass. Must only invoke gfx_api draw/bind APIs.
 	// When called, executeRenderGraph() is active and the backend has configured
 	// the pass (command buffer, framebuffer, viewport, etc.).
@@ -45,9 +39,6 @@ class RenderPassBuilder
 {
 public:
 	static RenderPassBuilder create(const std::string& debugName);
-
-	RenderPassBuilder& depthCascadeIndex(size_t idx);
-	RenderPassBuilder& sceneFramebuffer();
 
 	RenderPassBuilder& colorAttachment(abstract_texture* tex, AttachmentLoadOp loadOp,
 		ClearValue clearValue = ClearValue::colorClear());

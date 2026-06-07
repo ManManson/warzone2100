@@ -84,16 +84,6 @@ void tryInferPassDimensions(RenderPassDesc& pass, gfx_api::context& ctx, uint32_
 		tryFromTexture(pass.resolveAttachment->texture);
 	}
 
-	if ((width == 0 || height == 0) && pass.depthCascadeIndex.has_value())
-	{
-		const size_t depthDim = ctx.getDepthPassDimensions(pass.depthCascadeIndex.value());
-		if (depthDim > 0)
-		{
-			width = static_cast<uint32_t>(depthDim);
-			height = static_cast<uint32_t>(depthDim);
-		}
-	}
-
 	if (width == 0 || height == 0)
 	{
 		const auto drawable = ctx.getDrawableDimensions();
@@ -127,55 +117,6 @@ bool resolveTransientAttachment(gfx_api::context& ctx, AttachmentDesc& attachmen
 	return attachment.texture != nullptr;
 }
 
-void applyDepthCascadeAttachments(RenderPassDesc& pass, gfx_api::context& ctx)
-{
-	if (!pass.depthCascadeIndex.has_value() || pass.depthAttachment.has_value())
-	{
-		return;
-	}
-
-	gfx_api::abstract_texture* depthTexture = ctx.getDepthTexture();
-	if (depthTexture == nullptr)
-	{
-		return;
-	}
-
-	pass.depthAttachment = AttachmentDesc::depth(depthTexture, AttachmentLoadOp::Clear);
-	pass.depthAttachment->arrayLayer = static_cast<uint32_t>(pass.depthCascadeIndex.value());
-
-	const size_t depthDim = ctx.getDepthPassDimensions(pass.depthCascadeIndex.value());
-	if (depthDim > 0)
-	{
-		pass.viewportSize = std::make_pair(static_cast<uint32_t>(depthDim), static_cast<uint32_t>(depthDim));
-	}
-}
-
-void applySceneFramebufferAttachments(RenderPassDesc& pass, gfx_api::context& ctx)
-{
-	if (pass.colorAttachments.empty())
-	{
-		gfx_api::abstract_texture* sceneTexture = ctx.getSceneTexture();
-		if (sceneTexture == nullptr)
-		{
-			return;
-		}
-
-		pass.colorAttachments.push_back(AttachmentDesc::color(sceneTexture, AttachmentLoadOp::Clear));
-
-		const auto dims = ctx.getRenderTargetDimensions(sceneTexture);
-		if (dims.has_value())
-		{
-			pass.viewportSize = dims;
-		}
-	}
-
-	if (!pass.depthAttachment.has_value())
-	{
-		pass.depthAttachment = makePipelineSurfaceAttachment(PipelineSurfaceId::SceneDepth,
-			AttachmentLoadOp::Clear, ClearValue::depthStencilClear());
-	}
-}
-
 void applySwapchainViewport(RenderPassDesc& pass, gfx_api::context& ctx)
 {
 	const auto drawable = ctx.getDrawableDimensions();
@@ -187,14 +128,6 @@ void applySwapchainViewport(RenderPassDesc& pass, gfx_api::context& ctx)
 
 void resolveMissingAttachments(RenderPassDesc& pass, gfx_api::context& ctx)
 {
-	if (pass.depthCascadeIndex.has_value())
-	{
-		applyDepthCascadeAttachments(pass, ctx);
-	}
-	if (pass.sceneFramebuffer)
-	{
-		applySceneFramebufferAttachments(pass, ctx);
-	}
 	if (passHasSwapchainColorAttachment(pass))
 	{
 		applySwapchainViewport(pass, ctx);

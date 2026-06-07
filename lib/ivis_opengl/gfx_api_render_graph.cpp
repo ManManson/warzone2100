@@ -1,6 +1,7 @@
 #include "gfx_api_render_graph.h"
 
 #include "gfx_api.h"
+#include "gfx_api_pipeline_surfaces.h"
 
 #include <string>
 
@@ -21,18 +22,6 @@ RenderPassBuilder RenderPassBuilder::create(const std::string& debugName)
 RenderPassBuilder::RenderPassBuilder(std::string debugName)
 {
 	_desc.debugName = std::move(debugName);
-}
-
-RenderPassBuilder& RenderPassBuilder::depthCascadeIndex(size_t idx)
-{
-	_desc.depthCascadeIndex = idx;
-	return *this;
-}
-
-RenderPassBuilder& RenderPassBuilder::sceneFramebuffer()
-{
-	_desc.sceneFramebuffer = true;
-	return *this;
 }
 
 RenderPassBuilder& RenderPassBuilder::colorAttachment(abstract_texture* tex, AttachmentLoadOp loadOp,
@@ -124,19 +113,50 @@ void RenderGraph::reset()
 RenderPassDesc makeDepthCascadePass(size_t cascadeIndex, const std::string& debugName,
 	RenderPassDesc::RecordFunc recordFunc)
 {
+	auto& ctx = gfx_api::context::get();
 	RenderPassDesc pass;
 	pass.debugName = debugName;
-	pass.depthCascadeIndex = cascadeIndex;
 	pass.recordFunc = std::move(recordFunc);
+
+	const size_t depthDim = ctx.getDepthPassDimensions(cascadeIndex);
+	pass.depthAttachment = makePipelineSurfaceAttachment(PipelineSurfaceId::ShadowMap,
+		AttachmentLoadOp::Clear, ClearValue::depthStencilClear());
+	pass.depthAttachment->arrayLayer = static_cast<uint32_t>(cascadeIndex);
+	if (depthDim > 0)
+	{
+		pass.viewportSize = std::make_pair(static_cast<uint32_t>(depthDim), static_cast<uint32_t>(depthDim));
+	}
 	return pass;
 }
 
 RenderPassDesc makeScenePass(const std::string& debugName, RenderPassDesc::RecordFunc recordFunc)
 {
+	auto& ctx = gfx_api::context::get();
 	RenderPassDesc pass;
 	pass.debugName = debugName;
-	pass.sceneFramebuffer = true;
 	pass.recordFunc = std::move(recordFunc);
+
+	if (ctx.isSceneMSAAEnabled())
+	{
+		pass.colorAttachments.push_back(makePipelineSurfaceAttachment(PipelineSurfaceId::SceneMSAAColor,
+			AttachmentLoadOp::Clear));
+		pass.resolveAttachment = makePipelineSurfaceAttachment(PipelineSurfaceId::SceneColor,
+			AttachmentLoadOp::DontCare);
+	}
+	else
+	{
+		pass.colorAttachments.push_back(makePipelineSurfaceAttachment(PipelineSurfaceId::SceneColor,
+			AttachmentLoadOp::Clear));
+	}
+	pass.depthAttachment = makePipelineSurfaceAttachment(PipelineSurfaceId::SceneDepth,
+		AttachmentLoadOp::Clear, ClearValue::depthStencilClear());
+
+	abstract_texture* sceneColor = ctx.getPipelineSurface(PipelineSurfaceId::SceneColor);
+	const auto dims = ctx.getRenderTargetDimensions(sceneColor);
+	if (dims.has_value())
+	{
+		pass.viewportSize = dims;
+	}
 	return pass;
 }
 
