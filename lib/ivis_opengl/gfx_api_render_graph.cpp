@@ -13,30 +13,6 @@ void RenderGraph::addRenderPass(RenderPassDesc desc)
 	_render_passes.push_back(std::move(desc));
 }
 
-void RenderGraph::addRenderPass(RenderPassType type, const std::string& debugName,
-	RenderPassDesc::RecordFunc recordFunc, AttachmentLoadOp swapchainLoadOp)
-{
-	addRenderPass(
-		std::move(
-			RenderPassBuilder::create(debugName)
-				.type(type)
-				.swapchainLoadOp(swapchainLoadOp)
-				.record(std::move(recordFunc)))
-			.build());
-}
-
-void RenderGraph::addDepthPass(size_t cascadeIndex, const std::string& debugName,
-	RenderPassDesc::RecordFunc recordFunc)
-{
-	addRenderPass(
-		std::move(
-			RenderPassBuilder::create(debugName)
-				.type(RenderPassType::Depth)
-				.depthIndex(cascadeIndex)
-				.record(std::move(recordFunc)))
-			.build());
-}
-
 RenderPassBuilder RenderPassBuilder::create(const std::string& debugName)
 {
 	return RenderPassBuilder(debugName);
@@ -47,15 +23,15 @@ RenderPassBuilder::RenderPassBuilder(std::string debugName)
 	_desc.debugName = std::move(debugName);
 }
 
-RenderPassBuilder& RenderPassBuilder::type(RenderPassType t)
+RenderPassBuilder& RenderPassBuilder::depthCascadeIndex(size_t idx)
 {
-	_desc.type = t;
+	_desc.depthCascadeIndex = idx;
 	return *this;
 }
 
-RenderPassBuilder& RenderPassBuilder::depthIndex(size_t idx)
+RenderPassBuilder& RenderPassBuilder::sceneFramebuffer()
 {
-	_desc.depthPassIndex = idx;
+	_desc.sceneFramebuffer = true;
 	return *this;
 }
 
@@ -119,13 +95,6 @@ RenderPassBuilder& RenderPassBuilder::inputTexture(abstract_texture* tex)
 	return *this;
 }
 
-RenderPassBuilder& RenderPassBuilder::swapchainLoadOp(AttachmentLoadOp loadOp)
-{
-	_desc.swapchainLoadOp = loadOp;
-	_desc.swapchainLoadOpExplicit = true;
-	return *this;
-}
-
 RenderPassBuilder& RenderPassBuilder::record(RenderPassDesc::RecordFunc func)
 {
 	_desc.recordFunc = std::move(func);
@@ -159,8 +128,7 @@ RenderPassDesc makeDepthCascadePass(size_t cascadeIndex, const std::string& debu
 {
 	RenderPassDesc pass;
 	pass.debugName = debugName;
-	pass.type = RenderPassType::Depth;
-	pass.depthPassIndex = cascadeIndex;
+	pass.depthCascadeIndex = cascadeIndex;
 	pass.recordFunc = std::move(recordFunc);
 	return pass;
 }
@@ -169,7 +137,7 @@ RenderPassDesc makeScenePass(const std::string& debugName, RenderPassDesc::Recor
 {
 	RenderPassDesc pass;
 	pass.debugName = debugName;
-	pass.type = RenderPassType::Scene;
+	pass.sceneFramebuffer = true;
 	pass.recordFunc = std::move(recordFunc);
 	return pass;
 }
@@ -179,7 +147,6 @@ RenderPassDesc makeSwapchainPass(const std::string& debugName, AttachmentLoadOp 
 {
 	RenderPassDesc pass;
 	pass.debugName = debugName;
-	pass.type = RenderPassType::Default;
 	pass.colorAttachments.push_back(AttachmentDesc::swapchain(loadOp));
 	pass.swapchainLoadOp = loadOp;
 	pass.swapchainLoadOpExplicit = true;

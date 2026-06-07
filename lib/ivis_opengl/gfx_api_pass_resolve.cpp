@@ -84,9 +84,9 @@ void tryInferPassDimensions(RenderPassDesc& pass, gfx_api::context& ctx, uint32_
 		tryFromTexture(pass.resolveAttachment->texture);
 	}
 
-	if ((width == 0 || height == 0) && pass.type == RenderPassType::Depth)
+	if ((width == 0 || height == 0) && pass.depthCascadeIndex.has_value())
 	{
-		const size_t depthDim = ctx.getDepthPassDimensions(pass.depthPassIndex);
+		const size_t depthDim = ctx.getDepthPassDimensions(pass.depthCascadeIndex.value());
 		if (depthDim > 0)
 		{
 			width = static_cast<uint32_t>(depthDim);
@@ -127,9 +127,9 @@ bool resolveTransientAttachment(gfx_api::context& ctx, AttachmentDesc& attachmen
 	return attachment.texture != nullptr;
 }
 
-void applyDepthPreset(RenderPassDesc& pass, gfx_api::context& ctx)
+void applyDepthCascadeAttachments(RenderPassDesc& pass, gfx_api::context& ctx)
 {
-	if (pass.depthAttachment.has_value())
+	if (!pass.depthCascadeIndex.has_value() || pass.depthAttachment.has_value())
 	{
 		return;
 	}
@@ -141,16 +141,16 @@ void applyDepthPreset(RenderPassDesc& pass, gfx_api::context& ctx)
 	}
 
 	pass.depthAttachment = AttachmentDesc::depth(depthTexture, AttachmentLoadOp::Clear);
-	pass.depthAttachment->arrayLayer = static_cast<uint32_t>(pass.depthPassIndex);
+	pass.depthAttachment->arrayLayer = static_cast<uint32_t>(pass.depthCascadeIndex.value());
 
-	const size_t depthDim = ctx.getDepthPassDimensions(pass.depthPassIndex);
+	const size_t depthDim = ctx.getDepthPassDimensions(pass.depthCascadeIndex.value());
 	if (depthDim > 0)
 	{
 		pass.viewportSize = std::make_pair(static_cast<uint32_t>(depthDim), static_cast<uint32_t>(depthDim));
 	}
 }
 
-void applyScenePreset(RenderPassDesc& pass, gfx_api::context& ctx)
+void applySceneFramebufferAttachments(RenderPassDesc& pass, gfx_api::context& ctx)
 {
 	if (pass.colorAttachments.empty())
 	{
@@ -175,7 +175,7 @@ void applyScenePreset(RenderPassDesc& pass, gfx_api::context& ctx)
 	}
 }
 
-void applyDefaultPreset(RenderPassDesc& pass, gfx_api::context& ctx)
+void applySwapchainViewport(RenderPassDesc& pass, gfx_api::context& ctx)
 {
 	const auto drawable = ctx.getDrawableDimensions();
 	if (!pass.viewportSize.has_value() && drawable.first > 0 && drawable.second > 0)
@@ -184,30 +184,22 @@ void applyDefaultPreset(RenderPassDesc& pass, gfx_api::context& ctx)
 	}
 }
 
-/// Fill missing attachments for legacy RenderPassType call sites.
-void resolveLegacyAttachments(RenderPassDesc& pass, gfx_api::context& ctx)
+void resolveMissingAttachments(RenderPassDesc& pass, gfx_api::context& ctx)
 {
-	switch (pass.type)
+	if (pass.depthCascadeIndex.has_value())
 	{
-	case RenderPassType::Depth:
-		applyDepthPreset(pass, ctx);
-		break;
-	case RenderPassType::Scene:
-		applyScenePreset(pass, ctx);
-		break;
-	case RenderPassType::Default:
-		applyDefaultPreset(pass, ctx);
-		if (!passHasSwapchainColorAttachment(pass) && pass.swapchainLoadOpExplicit)
-		{
-			pass.colorAttachments.push_back(AttachmentDesc::swapchain(pass.swapchainLoadOp));
-		}
-		break;
-	case RenderPassType::Custom:
-		break;
+		applyDepthCascadeAttachments(pass, ctx);
+	}
+	if (pass.sceneFramebuffer)
+	{
+		applySceneFramebufferAttachments(pass, ctx);
+	}
+	if (passHasSwapchainColorAttachment(pass))
+	{
+		applySwapchainViewport(pass, ctx);
 	}
 }
 
-/// Keep swapchainLoadOp in sync for backends that still read it (removed in a later step).
 void syncSwapchainLoadOpFromAttachments(RenderPassDesc& pass)
 {
 	for (const auto& colorAttachment : pass.colorAttachments)
@@ -256,7 +248,7 @@ bool resolvePassDescription(RenderPassDesc& pass)
 {
 	auto& ctx = gfx_api::context::get();
 
-	resolveLegacyAttachments(pass, ctx);
+	resolveMissingAttachments(pass, ctx);
 	syncSwapchainLoadOpFromAttachments(pass);
 
 	uint32_t width = 0;
@@ -268,22 +260,20 @@ bool resolvePassDescription(RenderPassDesc& pass)
 	ASSERT_OR_RETURN(false, width > 0 && height > 0,
 		"Pass \"%s\" requires viewportSize or inferrable attachment dimensions", pass.debugName.c_str());
 
-	if (pass.type == RenderPassType::Default)
+	const ResolvedPassRoute route = routeResolvedPass(pass);
+	if (route == ResolvedPassRoute::Swapchain)
 	{
-		ASSERT_OR_RETURN(false, passHasSwapchainColorAttachment(pass) || pass.swapchainLoadOpExplicit,
-			"Default pass \"%s\" must declare a swapchain color attachment or swapchainLoadOp",
-			pass.debugName.c_str());
+		ASSERT_OR_RETURN(false, passHasSwapchainColorAttachment(pass),
+			"Swapchain pass \"%s\" must declare a swapchain color attachment", pass.debugName.c_str());
 	}
-
-	if (pass.type == RenderPassType::Depth)
+	if (route == ResolvedPassRoute::DepthCascade)
 	{
 		ASSERT_OR_RETURN(false, pass.depthAttachment.has_value()
 			&& pass.depthAttachment->source == AttachmentSource::Texture
 			&& pass.depthAttachment->texture != nullptr,
-			"Depth pass \"%s\" could not resolve depth attachment", pass.debugName.c_str());
+			"Depth cascade pass \"%s\" could not resolve depth attachment", pass.debugName.c_str());
 	}
-
-	if (pass.type == RenderPassType::Scene)
+	if (route == ResolvedPassRoute::SceneFramebuffer)
 	{
 		ASSERT_OR_RETURN(false, !pass.colorAttachments.empty(),
 			"Scene pass \"%s\" could not resolve scene color attachment", pass.debugName.c_str());
@@ -309,21 +299,27 @@ bool canExtendSwapchainBatch(const RenderPassDesc& pass)
 
 ResolvedPassRoute routeResolvedPass(const RenderPassDesc& pass)
 {
-	for (const auto& colorAttachment : pass.colorAttachments)
+	if (passHasSwapchainColorAttachment(pass))
 	{
-		if (colorAttachment.isSwapchain())
-		{
-			return ResolvedPassRoute::Swapchain;
-		}
+		return ResolvedPassRoute::Swapchain;
 	}
-	if (pass.type == RenderPassType::Depth)
-	{
-		return ResolvedPassRoute::DepthCascade;
-	}
-	if (pass.type == RenderPassType::Scene)
+
+	const bool hasColor = !pass.colorAttachments.empty();
+	const bool hasBackendDepth = pass.depthAttachment.has_value() && pass.depthAttachment->isBackendInternal();
+	if (hasColor && hasBackendDepth)
 	{
 		return ResolvedPassRoute::SceneFramebuffer;
 	}
+
+	const bool depthOnly = !hasColor
+		&& pass.depthAttachment.has_value()
+		&& pass.depthAttachment->source == AttachmentSource::Texture
+		&& pass.depthAttachment->texture != nullptr;
+	if (depthOnly)
+	{
+		return ResolvedPassRoute::DepthCascade;
+	}
+
 	return ResolvedPassRoute::DynamicAttachments;
 }
 

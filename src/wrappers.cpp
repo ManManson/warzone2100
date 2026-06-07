@@ -219,12 +219,12 @@ TITLECODE titleLoop()
 	{
 		// pie_ScreenFrameRenderBegin has already run for this frame,
 		// so queue the backdrop explicitly when it is re-enabled mid-frame.
-		pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "Backdrop",
-			[]
-			{
-				screen_Display();
-			},
-			gfx_api::AttachmentLoadOp::Clear);
+		pie_GetFrameRenderGraph().addRenderPass(
+			gfx_api::makeSwapchainPass("Backdrop", gfx_api::AttachmentLoadOp::Clear,
+				[]
+				{
+					screen_Display();
+				}));
 	}
 	wzShowMouse(true);
 
@@ -298,12 +298,13 @@ TITLECODE titleLoop()
 	{
 		// Run logic above, then queue the current title UI's rendering as a render pass.
 		std::shared_ptr<WzTitleUI> currentForRender = wzTitleUICurrent;
-		pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "TitleUI",
-			[currentForRender]
-			{
-				currentForRender->render();
-			},
-			screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear);
+		pie_GetFrameRenderGraph().addRenderPass(
+			gfx_api::makeSwapchainPass("TitleUI",
+				screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear,
+				[currentForRender]
+				{
+					currentForRender->render();
+				}));
 	}
 
 	NETflush();  // Send any pending network data.
@@ -337,20 +338,21 @@ void presentLoadingScreenForCurrentFrame()
 
 	if (screen_GetBackDrop())
 	{
-		pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "LoadingBackdrop",
-			[]
-			{
-				screen_Display();
-			},
-			gfx_api::AttachmentLoadOp::Clear);
+		pie_GetFrameRenderGraph().addRenderPass(
+			gfx_api::makeSwapchainPass("LoadingBackdrop", gfx_api::AttachmentLoadOp::Clear,
+				[]
+				{
+					screen_Display();
+				}));
 	}
 
-	pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "LoadingScreen",
-		[]
-		{
-			renderLoadingScreenPass();
-		},
-		screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear);
+	pie_GetFrameRenderGraph().addRenderPass(
+		gfx_api::makeSwapchainPass("LoadingScreen",
+			screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear,
+			[]
+			{
+				renderLoadingScreenPass();
+			}));
 }
 
 #if defined(__EMSCRIPTEN__)

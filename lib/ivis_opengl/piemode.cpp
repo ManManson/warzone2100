@@ -107,12 +107,12 @@ void pie_ScreenFrameRenderBegin()
 
 	if (screen_GetBackDrop())
 	{
-		pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "Backdrop",
-			[]
-			{
-				screen_Display();
-			},
-			gfx_api::AttachmentLoadOp::Clear);
+		pie_GetFrameRenderGraph().addRenderPass(
+			gfx_api::makeSwapchainPass("Backdrop", gfx_api::AttachmentLoadOp::Clear,
+				[]
+				{
+					screen_Display();
+				}));
 	}
 }
 

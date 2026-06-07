@@ -1053,8 +1053,7 @@ void draw3DScene()
 	pie_GetFrameRenderGraph().addRenderPass(
 		std::move(
 			gfx_api::RenderPassBuilder::create("3DSceneOverlays")
-				.type(gfx_api::RenderPassType::Default)
-				.swapchainLoadOp(gfx_api::AttachmentLoadOp::Load)
+				.swapchainAttachment(gfx_api::AttachmentLoadOp::Load)
 				.record([]
 	{
 	pie_BeginInterface();
@@ -1196,8 +1195,7 @@ void draw3DScene()
 	pie_GetFrameRenderGraph().addRenderPass(
 		std::move(
 			gfx_api::RenderPassBuilder::create("3DSceneDebugOverlays")
-				.type(gfx_api::RenderPassType::Default)
-				.swapchainLoadOp(gfx_api::AttachmentLoadOp::Load)
+				.swapchainAttachment(gfx_api::AttachmentLoadOp::Load)
 				.record([]
 	{
 	showDroidSensorRanges(); //shows sensor data for units/droids/whatever...-Q 5-10-05
@@ -1535,11 +1533,8 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 		{
 			WZ_PROFILE_SCOPE(ShadowMapping);
 			renderGraph.addRenderPass(
-				std::move(
-					gfx_api::RenderPassBuilder::create("ShadowCascade" + std::to_string(i))
-						.type(gfx_api::RenderPassType::Depth)
-						.depthIndex(i)
-						.record([cascadeProjMatrix = shadowCascades[i].projectionMatrix,
+				gfx_api::makeDepthCascadePass(i, "ShadowCascade" + std::to_string(i),
+					[cascadeProjMatrix = shadowCascades[i].projectionMatrix,
 							cascadeViewMatrix = shadowCascades[i].viewMatrix,
 							cameraPos, shadowCascadesInfo]
 			{
@@ -1548,17 +1543,14 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 					drawTerrainDepthOnly(cascadeProjMatrix * cascadeViewMatrix);
 				}
 				pie_DrawAllMeshes(currentGameFrame, cascadeProjMatrix, cascadeViewMatrix, cameraPos, shadowCascadesInfo, true);
-			}))
-				.build());
+			}));
 		}
 	}
 
 	// start main render pass
 	renderGraph.addRenderPass(
-		std::move(
-			gfx_api::RenderPassBuilder::create("ScenePass")
-				.type(gfx_api::RenderPassType::Scene)
-				.record([perspectiveViewMatrix, viewMatrix, cameraPos,
+		gfx_api::makeScenePass("ScenePass",
+			[perspectiveViewMatrix, viewMatrix, cameraPos,
 					shadowCascadesInfo, baseViewMatrix, perspectiveMatrix]
 	{
 		// now we are about to draw the terrain
@@ -1592,8 +1584,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 			doConstructionLines(viewMatrix);
 		}
 		locateMouse();
-	}))
-			.build());
+	}));
 
 	// Custom-pass validation (gfxdebug): scene -> transient offscreen via inputTextures + barriers (E6).
 	gfx_api::abstract_texture* customSceneCopyTarget = nullptr;
@@ -1611,7 +1602,6 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 				renderGraph.addRenderPass(
 					std::move(
 						gfx_api::RenderPassBuilder::create("CustomSceneCopyValidate")
-							.type(gfx_api::RenderPassType::Custom)
 							.viewport(sceneDims->first, sceneDims->second)
 							.colorAttachment(customSceneCopyTarget, true)
 							.inputTexture(sceneTexture)
@@ -1627,11 +1617,9 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 
 	// Draw the scene to the default framebuffer
 	renderGraph.addRenderPass(
-		std::move(
-			gfx_api::RenderPassBuilder::create("SceneBlit")
-				.type(gfx_api::RenderPassType::Default)
-				.swapchainLoadOp(screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear)
-				.record([customSceneCopyTarget, sceneTexture]
+		gfx_api::makeSwapchainPass("SceneBlit",
+			screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear,
+			[customSceneCopyTarget, sceneTexture]
 	{
 		WZ_PROFILE_SCOPE(copyToFBO);
 		gfx_api::abstract_texture* blitSource = customSceneCopyTarget;
@@ -1644,8 +1632,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 			blitSource = gfx_api::context::get().getSceneTexture();
 		}
 		drawWorldToScreenBlit(blitSource);
-	}))
-			.build());
+	}));
 }
 
 /// Initialise the fog, skybox and some other stuff

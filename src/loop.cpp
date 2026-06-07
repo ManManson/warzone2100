@@ -338,9 +338,10 @@ static GAMECODE renderLoop()
 			}
 			displayWorld();
 		}
-		pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "InGameUI",
-			[]
-			{
+		pie_GetFrameRenderGraph().addRenderPass(
+			gfx_api::makeSwapchainPass("InGameUI", gfx_api::AttachmentLoadOp::Load,
+				[]
+				{
 				wzPerfBegin(PERF_GUI, "User interface");
 				WZ_PROFILE_SCOPE(DrawUI);
 				/* Display the in game interface */
@@ -352,8 +353,7 @@ static GAMECODE renderLoop()
 				}
 				pie_SetFogStatus(true);
 				wzPerfEnd(PERF_GUI);
-			},
-			gfx_api::AttachmentLoadOp::Load);
+			}));
 	}
 
 	pie_GetResetCounts(&loopPieCount, &loopPolyCount);

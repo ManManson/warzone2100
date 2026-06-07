@@ -1364,12 +1364,12 @@ void displayWorld()
 	{
 		if (graphicsTime < fadeEndTime)
 		{
-			pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "GameStartFade",
-				[]
-				{
-					fadeStartOfGame();
-				},
-				gfx_api::AttachmentLoadOp::Load);
+			pie_GetFrameRenderGraph().addRenderPass(
+				gfx_api::makeSwapchainPass("GameStartFade", gfx_api::AttachmentLoadOp::Load,
+					[]
+					{
+						fadeStartOfGame();
+					}));
 		}
 		else
 		{

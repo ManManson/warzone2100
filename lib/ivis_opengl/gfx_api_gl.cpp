@@ -4237,7 +4237,8 @@ void gl_context::beginSwapchainPass(const gfx_api::RenderPassDesc& pass)
 
 void gl_context::beginDepthCascadePass(const gfx_api::RenderPassDesc& pass)
 {
-	const size_t idx = pass.depthPassIndex;
+	ASSERT_OR_RETURN(, pass.depthCascadeIndex.has_value(), "Depth cascade pass missing cascade index");
+	const size_t idx = pass.depthCascadeIndex.value();
 	const gfx_api::AttachmentLoadOp depthLoadOp = pass.depthAttachment.has_value()
 		? pass.depthAttachment->loadOp
 		: gfx_api::AttachmentLoadOp::Clear;

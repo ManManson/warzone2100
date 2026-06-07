@@ -1278,12 +1278,13 @@ void mainLoop()
 		}
 		if (!frameEnded && loop_GetVideoStatus())
 		{
-			pie_GetFrameRenderGraph().addRenderPass(gfx_api::RenderPassType::Default, "VideoPlayback",
-				[]
-				{
-					videoLoop(); // Display the video if necessary
-				},
-				screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear);
+			pie_GetFrameRenderGraph().addRenderPass(
+				gfx_api::makeSwapchainPass("VideoPlayback",
+					screen_GetBackDrop() ? gfx_api::AttachmentLoadOp::Load : gfx_api::AttachmentLoadOp::Clear,
+					[]
+					{
+						videoLoop(); // Display the video if necessary
+					}));
 			pie_ScreenFrameRenderEnd();
 		}
 		else if (!frameEnded) switch (GetGameMode())
