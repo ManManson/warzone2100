@@ -54,6 +54,7 @@ PassHandles addPostScenePasses(
 	gfx_api::RenderGraph& graph,
 	gfx_api::PassHandle depthPrePass,
 	std::pair<uint32_t, uint32_t> sceneDims,
+	const glm::mat4& projectionMatrix,
 	const glm::mat4& invProjectionMatrix,
 	gfx_api::buffer* fullscreenTriVBO);
 

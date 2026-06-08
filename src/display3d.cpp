@@ -1590,7 +1590,8 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	const auto sceneDims = gfx_api::context::get().getRenderTargetDimensions(sceneColorSurf);
 	const ssao::PassHandles ssaoPasses = sceneDims.has_value()
 		? ssao::addPostScenePasses(
-			renderGraph, depthPrePass, *sceneDims, ssaoMatrices.invProjectionMatrix, pScreenTriangleVBO)
+			renderGraph, depthPrePass, *sceneDims,
+			ssaoMatrices.perspectiveMatrix, ssaoMatrices.invProjectionMatrix, pScreenTriangleVBO)
 		: ssao::PassHandles{};
 
 	ssao::addComposePass(renderGraph, scenePass, ssaoPasses, screen_GetBackDrop(), pScreenTriangleVBO);

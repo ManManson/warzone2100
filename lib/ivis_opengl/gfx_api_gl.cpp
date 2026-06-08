@@ -957,7 +957,7 @@ static const std::map<SHADER_MODE, program_data> shader_to_file_table =
 	std::make_pair(SHADER_WORLD_TO_SCREEN, program_data{ "World to screen quad program", "shaders/world_to_screen.vert", "shaders/world_to_screen.frag",
 		{ "gamma" } }),
 	std::make_pair(SHADER_SSAO_GENERATE, program_data{ "SSAO generate program", "shaders/postprocess_fullscreen.vert", "shaders/ssao_generate.frag",
-		{ "invProjectionMatrix", "params", "kernel" },
+		{ "invProjectionMatrix", "projectionMatrix", "params", "kernel" },
 		{
 			{"depthTexture", 0},
 			{"noiseTexture", 1}
@@ -2384,8 +2384,9 @@ void gl_pipeline_state_object::set_constants(const gfx_api::constant_buffer_type
 void gl_pipeline_state_object::set_constants(const gfx_api::constant_buffer_type<SHADER_SSAO_GENERATE>& cbuf)
 {
 	setUniforms(0, cbuf.invProjectionMatrix);
-	setUniforms(1, cbuf.params);
-	setUniforms(2, cbuf.kernel, gfx_api::SSAO_KERNEL_SIZE);
+	setUniforms(1, cbuf.projectionMatrix);
+	setUniforms(2, cbuf.params);
+	setUniforms(3, cbuf.kernel, gfx_api::SSAO_KERNEL_SIZE);
 }
 
 void gl_pipeline_state_object::set_constants(const gfx_api::constant_buffer_type<SHADER_SSAO_BLUR>& cbuf)

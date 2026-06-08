@@ -22,8 +22,8 @@ namespace ssao
 namespace
 {
 
-constexpr float SSAO_RADIUS = 0.5f;
-constexpr float SSAO_BIAS = 0.025f;
+constexpr float SSAO_RADIUS = 0.1f;
+constexpr float SSAO_BIAS = 0.00002f;
 constexpr float SSAO_INTENSITY = 1.0f;
 constexpr int NOISE_TEXTURE_SIZE = 4;
 
@@ -42,12 +42,14 @@ void drawSceneBlit(gfx_api::abstract_texture* sourceTexture, gfx_api::buffer* fu
 
 void drawSSAOGenerate(
 	gfx_api::abstract_texture* depthTexture,
+	const glm::mat4& projectionMatrix,
 	const glm::mat4& invProjectionMatrix,
 	std::pair<uint32_t, uint32_t> sceneDims,
 	gfx_api::buffer* fullscreenTriVBO)
 {
 	gfx_api::constant_buffer_type<SHADER_SSAO_GENERATE> constants {};
 	constants.invProjectionMatrix = invProjectionMatrix;
+	constants.projectionMatrix = projectionMatrix;
 	constants.params = glm::vec4(
 		SSAO_RADIUS,
 		SSAO_BIAS,
@@ -189,6 +191,7 @@ PassHandles addPostScenePasses(
 	gfx_api::RenderGraph& graph,
 	gfx_api::PassHandle depthPrePass,
 	std::pair<uint32_t, uint32_t> sceneDims,
+	const glm::mat4& projectionMatrix,
 	const glm::mat4& invProjectionMatrix,
 	gfx_api::buffer* fullscreenTriVBO)
 {
@@ -209,9 +212,9 @@ PassHandles addPostScenePasses(
 				.viewport(sceneWidth, sceneHeight)
 				.transientColorAttachment()
 				.readPassOutput(depthPrePass, gfx_api::AttachmentRole::Depth)
-				.record([invProjectionMatrix, sceneDims, fullscreenTriVBO](const gfx_api::RenderPassContext& ctx)
+				.record([projectionMatrix, invProjectionMatrix, sceneDims, fullscreenTriVBO](const gfx_api::RenderPassContext& ctx)
 	{
-		drawSSAOGenerate(ctx.getRead(0), invProjectionMatrix, sceneDims, fullscreenTriVBO);
+		drawSSAOGenerate(ctx.getRead(0), projectionMatrix, invProjectionMatrix, sceneDims, fullscreenTriVBO);
 	}))
 			.build());
 

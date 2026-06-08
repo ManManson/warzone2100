@@ -1369,6 +1369,7 @@ namespace gfx_api
 	struct constant_buffer_type<SHADER_SSAO_GENERATE>
 	{
 		glm::mat4 invProjectionMatrix;
+		glm::mat4 projectionMatrix;
 		glm::vec4 params;
 		glm::vec4 kernel[SSAO_KERNEL_SIZE];
 	};
