@@ -1544,6 +1544,12 @@ void drawTerrainDepthOnly(const glm::mat4 &mvp)
 	drawDepthOnlyForDepthMap(mvp, lightmapValues.paramsXLight, lightmapValues.paramsYLight, false);
 }
 
+void drawTerrainDepthForSSAO(const glm::mat4 &mvp)
+{
+	// Back-face cull like the scene, but without polygon offset so unit/terrain depths align for SSAO.
+	drawDepthOnly(mvp, lightmapValues.paramsXLight, lightmapValues.paramsYLight, false);
+}
+
 /**
  * Update the lightmap and draw the terrain and decals.
  * This function first draws the terrain in black, and then uses additive blending to put the terrain layers

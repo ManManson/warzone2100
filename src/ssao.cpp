@@ -14,7 +14,7 @@
 #include <glm/glm.hpp>
 #include <cstring>
 
-void drawTerrainDepthOnly(const glm::mat4& mvp);
+void drawTerrainDepthForSSAO(const glm::mat4& mvp);
 
 namespace ssao
 {
@@ -22,8 +22,11 @@ namespace ssao
 namespace
 {
 
-constexpr float SSAO_RADIUS = 0.1f;
-constexpr float SSAO_BIAS = 0.00002f;
+constexpr float SSAO_RADIUS = 0.05f;
+constexpr float SSAO_BIAS_FACTOR = 0.00002f;
+constexpr float SSAO_MIN_BIAS = 0.1f;
+constexpr float SSAO_RANGE_SCALE = 0.15f;
+constexpr float SSAO_BLUR_DEPTH_THRESHOLD = 0.0015f;
 constexpr float SSAO_INTENSITY = 1.0f;
 constexpr int NOISE_TEXTURE_SIZE = 4;
 
@@ -52,7 +55,10 @@ void drawSSAOGenerate(
 	constants.projectionMatrix = projectionMatrix;
 	constants.params = glm::vec4(
 		SSAO_RADIUS,
-		SSAO_BIAS,
+		SSAO_BIAS_FACTOR,
+		SSAO_MIN_BIAS,
+		SSAO_RANGE_SCALE);
+	constants.noiseScale = glm::vec2(
 		static_cast<float>(sceneDims.first) / static_cast<float>(NOISE_TEXTURE_SIZE),
 		static_cast<float>(sceneDims.second) / static_cast<float>(NOISE_TEXTURE_SIZE));
 	std::memcpy(constants.kernel, s_kernel, sizeof(s_kernel));
@@ -67,16 +73,18 @@ void drawSSAOGenerate(
 
 void drawSSAOBlur(
 	gfx_api::abstract_texture* occlusionTexture,
+	gfx_api::abstract_texture* depthTexture,
 	const glm::vec2& blurDirection,
 	gfx_api::buffer* fullscreenTriVBO)
 {
 	gfx_api::constant_buffer_type<SHADER_SSAO_BLUR> constants {};
 	constants.blurDirection = blurDirection;
+	constants.depthThreshold = SSAO_BLUR_DEPTH_THRESHOLD;
 
 	gfx_api::SSAOBlurPSO::get().bind();
 	gfx_api::SSAOBlurPSO::get().bind_constants(constants);
 	gfx_api::SSAOBlurPSO::get().bind_vertex_buffers(fullscreenTriVBO);
-	gfx_api::SSAOBlurPSO::get().bind_textures(occlusionTexture);
+	gfx_api::SSAOBlurPSO::get().bind_textures(occlusionTexture, depthTexture);
 	gfx_api::SSAOBlurPSO::get().draw(3, 0);
 	gfx_api::SSAOBlurPSO::get().unbind_vertex_buffers(fullscreenTriVBO);
 }
@@ -176,14 +184,14 @@ gfx_api::PassHandle addDepthPrePass(
 		gfx_api::makeDepthPrePass("DepthPrePass",
 			[matrices, cameraPos, shadowInfo, currentGameFrame](const gfx_api::RenderPassContext&)
 	{
-		drawTerrainDepthOnly(matrices.perspectiveViewMatrix);
+		drawTerrainDepthForSSAO(matrices.perspectiveViewMatrix);
 		pie_DrawAllMeshes(
 			currentGameFrame,
 			matrices.perspectiveMatrix,
 			matrices.viewMatrix,
 			cameraPos,
 			shadowInfo,
-			true);
+			MeshDepthPassMode::SSAO);
 	}));
 }
 
@@ -224,9 +232,10 @@ PassHandles addPostScenePasses(
 				.viewport(sceneWidth, sceneHeight)
 				.transientColorAttachment()
 				.readPassOutput(handles.rawPass, gfx_api::AttachmentRole::PrimaryColor)
+				.readPassOutput(depthPrePass, gfx_api::AttachmentRole::Depth)
 				.record([blurStepH, fullscreenTriVBO](const gfx_api::RenderPassContext& ctx)
 	{
-		drawSSAOBlur(ctx.getRead(0), blurStepH, fullscreenTriVBO);
+		drawSSAOBlur(ctx.getRead(0), ctx.getRead(1), blurStepH, fullscreenTriVBO);
 	}))
 			.build());
 
@@ -236,9 +245,10 @@ PassHandles addPostScenePasses(
 				.viewport(sceneWidth, sceneHeight)
 				.transientColorAttachment()
 				.readPassOutput(handles.blurHPass, gfx_api::AttachmentRole::PrimaryColor)
+				.readPassOutput(depthPrePass, gfx_api::AttachmentRole::Depth)
 				.record([blurStepV, fullscreenTriVBO](const gfx_api::RenderPassContext& ctx)
 	{
-		drawSSAOBlur(ctx.getRead(0), blurStepV, fullscreenTriVBO);
+		drawSSAOBlur(ctx.getRead(0), ctx.getRead(1), blurStepV, fullscreenTriVBO);
 	}))
 			.build());
 

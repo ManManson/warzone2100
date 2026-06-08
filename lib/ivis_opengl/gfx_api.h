@@ -903,7 +903,25 @@ namespace gfx_api
 		vertex_attribute_description<instance_packedValues, gfx_api::vertex_attribute_type::float4, offsetof(Draw3DShapePerInstanceInterleavedData, shaderStretch_ecmState_alphaTest_animFrameNumber)>,
 		vertex_attribute_description<instance_Colour, gfx_api::vertex_attribute_type::u8x4_norm, offsetof(Draw3DShapePerInstanceInterleavedData, colour)>,
 		vertex_attribute_description<instance_TeamColour, gfx_api::vertex_attribute_type::u8x4_norm, offsetof(Draw3DShapePerInstanceInterleavedData, teamcolour)>
-		>
+	>
+	>, notexture, SHADER_COMPONENT_DEPTH_INSTANCED>;
+
+	using Draw3DShapeDepthOnlySSAO_Instanced = typename gfx_api::pipeline_state_helper<rasterizer_state<REND_OPAQUE, DEPTH_CMP_LEQ_WRT_ON, 255, polygon_offset::disabled, stencil_mode::stencil_disabled, cull_mode::back>, primitive_type::triangles, index_type::u16,
+	std::tuple<
+	Draw3DShapeInstancedDepthOnlyGlobalUniforms
+	>,
+	std::tuple<
+	vertex_buffer_description<12, gfx_api::vertex_attribute_input_rate::vertex, vertex_attribute_description<position, gfx_api::vertex_attribute_type::float3, 0>>,
+	vertex_buffer_description<12, gfx_api::vertex_attribute_input_rate::vertex, vertex_attribute_description<normal, gfx_api::vertex_attribute_type::float3, 0>>,
+	vertex_buffer_description<sizeof(Draw3DShapePerInstanceInterleavedData), gfx_api::vertex_attribute_input_rate::instance,
+		vertex_attribute_description<instance_modelMatrix, gfx_api::vertex_attribute_type::float4, 0>,
+		vertex_attribute_description<instance_modelMatrix + 1, gfx_api::vertex_attribute_type::float4, sizeof(glm::vec4)>,
+		vertex_attribute_description<instance_modelMatrix + 2, gfx_api::vertex_attribute_type::float4, sizeof(glm::vec4)*2>,
+		vertex_attribute_description<instance_modelMatrix + 3, gfx_api::vertex_attribute_type::float4, sizeof(glm::vec4)*3>,
+		vertex_attribute_description<instance_packedValues, gfx_api::vertex_attribute_type::float4, offsetof(Draw3DShapePerInstanceInterleavedData, shaderStretch_ecmState_alphaTest_animFrameNumber)>,
+		vertex_attribute_description<instance_Colour, gfx_api::vertex_attribute_type::u8x4_norm, offsetof(Draw3DShapePerInstanceInterleavedData, colour)>,
+		vertex_attribute_description<instance_TeamColour, gfx_api::vertex_attribute_type::u8x4_norm, offsetof(Draw3DShapePerInstanceInterleavedData, teamcolour)>
+	>
 	>, notexture, SHADER_COMPONENT_DEPTH_INSTANCED>;
 
 	template<>
@@ -1371,6 +1389,8 @@ namespace gfx_api
 		glm::mat4 invProjectionMatrix;
 		glm::mat4 projectionMatrix;
 		glm::vec4 params;
+		glm::vec2 noiseScale;
+		glm::vec2 ssaoPadding;
 		glm::vec4 kernel[SSAO_KERNEL_SIZE];
 	};
 
@@ -1382,7 +1402,7 @@ namespace gfx_api
 		>
 	>,
 	std::tuple<
-		texture_description<0, sampler_type::bilinear, pixel_format_target::texture_2d>,
+		texture_description<0, sampler_type::nearest_clamped, pixel_format_target::texture_2d>,
 		texture_description<1, sampler_type::bilinear, pixel_format_target::texture_2d>
 	>, SHADER_SSAO_GENERATE>;
 
@@ -1390,7 +1410,8 @@ namespace gfx_api
 	struct constant_buffer_type<SHADER_SSAO_BLUR>
 	{
 		glm::vec2 blurDirection;
-		glm::vec2 padding;
+		float depthThreshold;
+		float padding;
 	};
 
 	using SSAOBlurPSO = typename gfx_api::pipeline_state_helper<rasterizer_state<REND_OPAQUE, DEPTH_CMP_ALWAYS_WRT_OFF, 255, polygon_offset::disabled, stencil_mode::stencil_disabled, cull_mode::none>, primitive_type::triangles, index_type::u16,
@@ -1400,7 +1421,10 @@ namespace gfx_api
 			vertex_attribute_description<position, gfx_api::vertex_attribute_type::float2, 0>
 		>
 	>,
-	std::tuple<texture_description<0, sampler_type::bilinear, pixel_format_target::texture_2d>>, SHADER_SSAO_BLUR>;
+	std::tuple<
+		texture_description<0, sampler_type::bilinear, pixel_format_target::texture_2d>,
+		texture_description<1, sampler_type::nearest_clamped, pixel_format_target::texture_2d>
+	>, SHADER_SSAO_BLUR>;
 
 	template<>
 	struct constant_buffer_type<SHADER_SCENE_COMPOSE_SSAO>

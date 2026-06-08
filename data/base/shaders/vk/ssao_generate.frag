@@ -4,6 +4,8 @@ layout(std140, set = 0, binding = 0) uniform cbuffer {
 	mat4 invProjectionMatrix;
 	mat4 projectionMatrix;
 	vec4 params;
+	vec2 noiseScale;
+	vec2 padding;
 	vec4 kernel[16];
 };
 
@@ -14,6 +16,7 @@ layout(location = 0) in vec2 texCoords;
 layout(location = 0) out vec4 FragColor;
 
 const int KERNEL_SIZE = 16;
+const float SKY_DEPTH_THRESHOLD = 0.9999;
 
 vec3 getViewPosition(vec2 uv, float depth)
 {
@@ -23,13 +26,30 @@ vec3 getViewPosition(vec2 uv, float depth)
 	return viewSpace.xyz / viewSpace.w;
 }
 
+vec3 getViewNormal(vec3 viewPos)
+{
+	vec3 dx = dFdx(viewPos);
+	vec3 dy = dFdy(viewPos);
+	vec3 normal = normalize(cross(dx, dy));
+	if (dot(normal, normal) < 1e-8)
+	{
+		normal = normalize(viewPos);
+	}
+	return normal;
+}
+
 void main()
 {
 	float depth = texture(depthTexture, texCoords).r;
-	vec3 origin = getViewPosition(texCoords, depth);
-	vec3 normal = normalize(origin);
+	if (depth >= SKY_DEPTH_THRESHOLD)
+	{
+		FragColor = vec4(1.0);
+		return;
+	}
 
-	vec2 noiseScale = params.zw;
+	vec3 origin = getViewPosition(texCoords, depth);
+	vec3 normal = getViewNormal(origin);
+
 	vec2 noiseUV = texCoords * noiseScale;
 	vec3 randomVec = normalize(texture(noiseTexture, noiseUV).xyz * 2.0 - 1.0);
 
@@ -38,7 +58,8 @@ void main()
 	mat3 tbn = mat3(tangent, bitangent, normal);
 
 	float radius = params.x * abs(origin.z);
-	float bias = params.y * abs(origin.z);
+	float bias = max(params.y * abs(origin.z), params.z);
+	float maxDepthDiff = radius * params.w;
 	float occlusion = 0.0;
 	for (int i = 0; i < KERNEL_SIZE; ++i)
 	{
@@ -54,8 +75,14 @@ void main()
 		}
 
 		float sampleDepth = texture(depthTexture, sampleUV).r;
+		if (sampleDepth >= SKY_DEPTH_THRESHOLD)
+		{
+			continue;
+		}
+
 		vec3 sampleViewPos = getViewPosition(sampleUV, sampleDepth);
-		float rangeCheck = smoothstep(0.0, 1.0, radius / abs(origin.z - sampleViewPos.z));
+		float depthDiff = abs(origin.z - sampleViewPos.z);
+		float rangeCheck = 1.0 - smoothstep(0.0, maxDepthDiff, depthDiff);
 		occlusion += (sampleViewPos.z >= samplePos.z + bias ? 1.0 : 0.0) * rangeCheck;
 	}
 

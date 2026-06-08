@@ -957,15 +957,16 @@ static const std::map<SHADER_MODE, program_data> shader_to_file_table =
 	std::make_pair(SHADER_WORLD_TO_SCREEN, program_data{ "World to screen quad program", "shaders/world_to_screen.vert", "shaders/world_to_screen.frag",
 		{ "gamma" } }),
 	std::make_pair(SHADER_SSAO_GENERATE, program_data{ "SSAO generate program", "shaders/postprocess_fullscreen.vert", "shaders/ssao_generate.frag",
-		{ "invProjectionMatrix", "projectionMatrix", "params", "kernel" },
+		{ "invProjectionMatrix", "projectionMatrix", "params", "noiseScale", "kernel" },
 		{
 			{"depthTexture", 0},
 			{"noiseTexture", 1}
 		} }),
 	std::make_pair(SHADER_SSAO_BLUR, program_data{ "SSAO blur program", "shaders/postprocess_fullscreen.vert", "shaders/ssao_blur.frag",
-		{ "blurDirection" },
+		{ "blurDirection", "depthThreshold" },
 		{
-			{"occlusionTexture", 0}
+			{"occlusionTexture", 0},
+			{"depthTexture", 1}
 		} }),
 	std::make_pair(SHADER_SCENE_COMPOSE_SSAO, program_data{ "Scene compose SSAO program", "shaders/postprocess_fullscreen.vert", "shaders/scene_compose_ssao.frag",
 		{ "ssaoIntensity" },
@@ -2386,12 +2387,14 @@ void gl_pipeline_state_object::set_constants(const gfx_api::constant_buffer_type
 	setUniforms(0, cbuf.invProjectionMatrix);
 	setUniforms(1, cbuf.projectionMatrix);
 	setUniforms(2, cbuf.params);
-	setUniforms(3, cbuf.kernel, gfx_api::SSAO_KERNEL_SIZE);
+	setUniforms(3, cbuf.noiseScale);
+	setUniforms(4, cbuf.kernel, gfx_api::SSAO_KERNEL_SIZE);
 }
 
 void gl_pipeline_state_object::set_constants(const gfx_api::constant_buffer_type<SHADER_SSAO_BLUR>& cbuf)
 {
 	setUniforms(0, cbuf.blurDirection);
+	setUniforms(1, cbuf.depthThreshold);
 }
 
 void gl_pipeline_state_object::set_constants(const gfx_api::constant_buffer_type<SHADER_SCENE_COMPOSE_SSAO>& cbuf)
