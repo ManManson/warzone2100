@@ -26,16 +26,26 @@ vec3 getViewPosition(vec2 uv, float depth)
 	return viewSpace.xyz / viewSpace.w;
 }
 
+vec3 faceCamera(vec3 normal, vec3 viewPos)
+{
+	if (dot(normal, viewPos) > 0.0)
+	{
+		normal = -normal;
+	}
+	return normal;
+}
+
 vec3 getViewNormal(vec3 viewPos)
 {
 	vec3 dx = dFdx(viewPos);
 	vec3 dy = dFdy(viewPos);
-	vec3 normal = normalize(cross(dx, dy));
-	if (dot(normal, normal) < 1e-8)
+	vec3 depthNormal = cross(dx, dy);
+	float derivativeLen = length(depthNormal);
+	if (derivativeLen < 1e-8)
 	{
-		normal = normalize(viewPos);
+		return normalize(viewPos);
 	}
-	return normal;
+	return faceCamera(depthNormal / derivativeLen, viewPos);
 }
 
 void main()
@@ -83,7 +93,8 @@ void main()
 		vec3 sampleViewPos = getViewPosition(sampleUV, sampleDepth);
 		float depthDiff = abs(origin.z - sampleViewPos.z);
 		float rangeCheck = 1.0 - smoothstep(0.0, maxDepthDiff, depthDiff);
-		occlusion += (sampleViewPos.z >= samplePos.z + bias ? 1.0 : 0.0) * rangeCheck;
+		// pie_PerspectiveGet uses +Z into the scene; LearnOpenGL's >= test assumes -Z forward.
+		occlusion += (sampleViewPos.z <= samplePos.z - bias ? 1.0 : 0.0) * rangeCheck;
 	}
 
 	occlusion = 1.0 - (occlusion / float(KERNEL_SIZE));

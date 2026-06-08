@@ -22,10 +22,10 @@ namespace ssao
 namespace
 {
 
-constexpr float SSAO_RADIUS = 0.05f;
+constexpr float SSAO_RADIUS = 0.07f;
 constexpr float SSAO_BIAS_FACTOR = 0.00002f;
-constexpr float SSAO_MIN_BIAS = 0.1f;
-constexpr float SSAO_RANGE_SCALE = 0.15f;
+constexpr float SSAO_MIN_BIAS = 0.025f;
+constexpr float SSAO_RANGE_SCALE = 0.5f;
 constexpr float SSAO_BLUR_DEPTH_THRESHOLD = 0.0015f;
 constexpr float SSAO_INTENSITY = 1.0f;
 constexpr int NOISE_TEXTURE_SIZE = 4;
