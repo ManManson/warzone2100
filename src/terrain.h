@@ -32,6 +32,7 @@
 struct ShadowCascadesInfo;
 struct LightMap;
 struct WorldMapState;
+struct SceneDescription;
 
 class ResourceLoadingController;
 
@@ -42,6 +43,8 @@ bool initTerrain(WorldMapState& mapState);
 void shutdownTerrain();
 
 void perFrameTerrainUpdates(WorldMapState& mapState, const LightMap& lightData);
+void populateSceneDescriptionShadowCasters(SceneDescription& scene);
+
 void drawTerrainDepthOnly(const glm::mat4 &mvp);
 void drawTerrainDepthForSSAO(const glm::mat4 &mvp);
 void drawTerrain(const glm::mat4 &mvp, const glm::mat4& viewMatrix, const Vector3f &cameraPos, const Vector3f &sunPos, const ShadowCascadesInfo& shadowMVPMatrix);

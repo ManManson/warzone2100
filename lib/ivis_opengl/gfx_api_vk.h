@@ -68,6 +68,7 @@ using nonstd::optional;
 #endif
 #include "3rdparty/vkh_renderpasscompat.hpp"
 #include "3rdparty/vkh_info.hpp"
+#include "gfx_api_vk_as.h"
 #if defined(__clang__)
 # pragma clang diagnostic push
 #  if defined(__has_warning)
@@ -661,6 +662,8 @@ struct SwapChainSupportDetails
 
 struct VkRoot final : gfx_api::context
 {
+	friend class VkASManager;
+
 	std::unique_ptr<gfx_api::backend_Vulkan_Impl> backend_impl;
 	VkhInfo debugInfo;
 	gfx_api::context::swap_interval_mode swapMode = gfx_api::context::swap_interval_mode::vsync;
@@ -703,6 +706,7 @@ struct VkRoot final : gfx_api::context
 
 	// allocator
 	VmaAllocator allocator = VK_NULL_HANDLE;
+	VkASManager asManager;
 
 	// swapchain
 	vk::PresentModeKHR presentMode = vk::PresentModeKHR::eFifo;
@@ -963,6 +967,7 @@ public:
 	// instanced rendering APIs
 	virtual bool supportsInstancedRendering() override;
 	gfx_api::GfxCapabilities capabilities() const override;
+	void buildAccelerationStructures(const struct SceneDescription& scene) override;
 	virtual void draw_instanced(const std::size_t& offset, const std::size_t &count, const gfx_api::primitive_type &primitive, std::size_t instance_count) override;
 	virtual void draw_elements_instanced(const std::size_t& offset, const std::size_t& count, const gfx_api::primitive_type& primitive, const gfx_api::index_type& index, std::size_t instance_count) override;
 	// debug apis for recompiling pipelines

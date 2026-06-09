@@ -1488,6 +1488,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 
 	SceneDescription sceneDescription;
 	sceneDescription.beginFrame();
+	populateSceneDescriptionShadowCasters(sceneDescription);
 
 	auto& renderGraph = pie_GetFrameRenderGraph();
 	gfx_api::PassHandle scenePass = gfx_api::kInvalidPassHandle;

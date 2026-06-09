@@ -23,6 +23,7 @@ file(GLOB HEADERS
 	"gfx_api_render_graph.h"
 	"gfx_api_render_graph_compile.h"
 	"gfx_api_vk.h"
+	"gfx_api_vk_as.h"
 	"imd.h"
 	"ivisdef.h"
 	"jpeg_encoder.h"
@@ -60,6 +61,7 @@ file(GLOB SRC
 	"gfx_api_pass_resolve.cpp"
 	"gfx_api_pipeline_surfaces.cpp"
 	"gfx_api_vk.cpp"
+	"gfx_api_vk_as.cpp"
 	"imdload.cpp"
 	"jpeg_encoder.cpp"
 	"jpeg_util.cpp"
@@ -243,6 +245,7 @@ if (CMAKE_CXX_STANDARD GREATER_EQUAL 20)
 		"3rdparty/vkh_renderpasscompat.cpp"
 		"3rdparty/vkh_info.cpp"
 		"gfx_api_vk.cpp"
+		"gfx_api_vk_as.cpp"
 		"gfx_api.cpp")
 	set_source_files_properties(${cpp17_source_files} PROPERTIES COMPILE_FLAGS "-std=c++17")
 endif()

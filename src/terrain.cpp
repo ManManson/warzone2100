@@ -63,6 +63,7 @@
 #include "map.h"
 #include "texture.h"
 #include "display3d.h"
+#include "scene_description.h"
 #include "hci.h"
 #include "loop.h"
 #include "wzcrashhandlingproviders.h"
@@ -1339,6 +1340,40 @@ static void cullTerrain(WorldMapState& mapState)
 					sectors[x * ySectors + y].dirty = false;
 				}
 			}
+		}
+	}
+}
+
+void populateSceneDescriptionShadowCasters(SceneDescription& scene)
+{
+	if (!geometryVBO || !geometryIndexVBO)
+	{
+		return;
+	}
+
+	for (int x = 0; x < xSectors; x++)
+	{
+		for (int y = 0; y < ySectors; y++)
+		{
+			const Sector& sector = sectors[x * ySectors + y];
+			if (!sector.draw || sector.geometrySize <= 0 || sector.geometryIndexSize <= 0)
+			{
+				continue;
+			}
+
+			SceneDescription::BlasMeshSource mesh {};
+			mesh.vertexBuffer = geometryVBO;
+			mesh.indexBuffer = geometryIndexVBO;
+			mesh.vertexCount = static_cast<uint32_t>(sector.geometrySize);
+			mesh.indexCount = static_cast<uint32_t>(sector.geometryIndexSize);
+			mesh.vertexStride = static_cast<uint32_t>(sizeof(TerrainVertex));
+			mesh.positionOffset = 0;
+			mesh.vertexByteOffset = static_cast<uint32_t>(sizeof(TerrainVertex) * sector.geometryOffset);
+			mesh.indexByteOffset = static_cast<uint32_t>(sizeof(GLuint) * sector.geometryIndexOffset);
+			mesh.uses32BitIndices = true;
+			mesh.alphaTested = false;
+
+			scene.addTerrainSector(x, y, mesh, glm::mat4(1.f));
 		}
 	}
 }

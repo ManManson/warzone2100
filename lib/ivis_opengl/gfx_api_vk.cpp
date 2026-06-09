@@ -96,6 +96,10 @@ const std::vector<const char*> deviceExtensions = {
 const std::vector<const char*> optionalDeviceExtensions = {
 	VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
 	VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
+	VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+	VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+	VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+	VK_KHR_RAY_QUERY_EXTENSION_NAME,
 	"VK_KHR_portability_subset" // According to VUID-VkDeviceCreateInfo-pProperties-04451, if device supports this extension it *must* be enabled
 };
 
@@ -3840,6 +3844,7 @@ void VkRoot::shutdown()
 	}
 
 	// destroy allocator
+	asManager.shutdown();
 	if (allocator != VK_NULL_HANDLE)
 	{
 		vmaDestroyAllocator(allocator);
@@ -5002,6 +5007,8 @@ bool VkRoot::_initialize(const gfx_api::backend_Impl_Factory& impl, int32_t anti
 		return false;
 	}
 
+	asManager.init(*this);
+
 	getQueues();
 
 	ASSERT(renderPasses.empty(), "Non-empty renderPasses vector?");
@@ -5222,6 +5229,30 @@ bool VkRoot::createLogicalDevice()
 								.setDepthBiasClamp(physDeviceFeatures.depthBiasClamp);
 	debug(LOG_3D, "With features config: samplerAnisotropy(%d), depthBiasClamp(%d)", (int)enabledFeatures.samplerAnisotropy, (int)enabledFeatures.depthBiasClamp);
 
+	const auto extensionEnabled = [this](const char* name) {
+		return std::find_if(enabledDeviceExtensions.begin(), enabledDeviceExtensions.end(),
+			[name](const char* ext) { return strcmp(ext, name) == 0; }) != enabledDeviceExtensions.end();
+	};
+	const bool rtExtensionsEnabled =
+		extensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)
+		&& extensionEnabled(VK_KHR_RAY_QUERY_EXTENSION_NAME)
+		&& extensionEnabled(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME)
+		&& extensionEnabled(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+
+	vk::StructureChain<
+		vk::PhysicalDeviceFeatures2,
+		vk::PhysicalDeviceBufferDeviceAddressFeatures,
+		vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+		vk::PhysicalDeviceRayQueryFeaturesKHR> rtFeaturesChain;
+	if (rtExtensionsEnabled)
+	{
+		rtFeaturesChain.get<vk::PhysicalDeviceFeatures2>().features = enabledFeatures;
+		rtFeaturesChain.get<vk::PhysicalDeviceBufferDeviceAddressFeatures>().bufferDeviceAddress = VK_TRUE;
+		rtFeaturesChain.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>().accelerationStructure = VK_TRUE;
+		rtFeaturesChain.get<vk::PhysicalDeviceRayQueryFeaturesKHR>().rayQuery = VK_TRUE;
+		debug(LOG_3D, "Enabling RT device features: accelerationStructure + rayQuery + bufferDeviceAddress");
+	}
+
 	std::string layersAsString;
 	std::for_each(layers.begin(), layers.end(), [&layersAsString](const char *layer) {
 		layersAsString += std::string(layer) + ",";
@@ -5233,12 +5264,20 @@ bool VkRoot::createLogicalDevice()
 	});
 	debug(LOG_3D, "Using device extensions: %s", deviceExtensionsAsString.c_str());
 
-	const auto deviceCreateInfo = vk::DeviceCreateInfo()
+	auto deviceCreateInfo = vk::DeviceCreateInfo()
 		.setEnabledExtensionCount(static_cast<uint32_t>(enabledDeviceExtensions.size()))
 		.setPpEnabledExtensionNames(enabledDeviceExtensions.data())
-		.setPEnabledFeatures(&enabledFeatures)
 		.setQueueCreateInfoCount(static_cast<uint32_t>(queueCreateInfos.size()))
 		.setPQueueCreateInfos(queueCreateInfos.data());
+	if (rtExtensionsEnabled)
+	{
+		deviceCreateInfo.setPEnabledFeatures(nullptr);
+		deviceCreateInfo.setPNext(rtFeaturesChain.get());
+	}
+	else
+	{
+		deviceCreateInfo.setPEnabledFeatures(&enabledFeatures);
+	}
 
 	try {
 		dev = physicalDevice.createDevice(deviceCreateInfo, nullptr, vkDynLoader);
@@ -5296,6 +5335,12 @@ bool VkRoot::createAllocator()
 	if (enabled_VK_KHR_get_memory_requirements2 && enabled_VK_KHR_dedicated_allocation)
 	{
 		allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT;
+	}
+	const bool enabled_VK_KHR_buffer_device_address = std::find_if(enabledDeviceExtensions.begin(), enabledDeviceExtensions.end(),
+														 [](const char *extensionName) { return (strcmp(extensionName, VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME) == 0);}) != enabledDeviceExtensions.end();
+	if (enabled_VK_KHR_buffer_device_address)
+	{
+		allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 	}
 
 	VmaVulkanFunctions vulkanFunctions = {};
@@ -5608,7 +5653,12 @@ bool VkRoot::supportsInstancedRendering()
 
 gfx_api::GfxCapabilities VkRoot::capabilities() const
 {
-	return {};
+	return asManager.capabilities();
+}
+
+void VkRoot::buildAccelerationStructures(const struct SceneDescription& scene)
+{
+	asManager.build(scene);
 }
 
 gfx_api::texture* VkRoot::create_texture(const std::size_t& mipmap_count, const std::size_t& width, const std::size_t& height, const gfx_api::pixel_format& internal_format, const std::string& filename)

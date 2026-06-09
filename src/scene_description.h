@@ -19,6 +19,8 @@ struct SceneDescription
 		uint32_t indexCount = 0;
 		uint32_t vertexStride = 0;
 		uint32_t positionOffset = 0;
+		uint32_t vertexByteOffset = 0;
+		uint32_t indexByteOffset = 0;
 		bool uses32BitIndices = true;
 		bool alphaTested = false;
 	};
