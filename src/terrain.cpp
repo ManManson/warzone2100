@@ -1385,6 +1385,36 @@ static void drawDepthOnly(const glm::mat4 &ModelViewProjection, const glm::vec4 
 	gfx_api::context::get().unbind_index_buffer(*geometryIndexVBO);
 }
 
+static void drawDepthOnlyForSSAO(const glm::mat4 &ModelViewProjection, const glm::vec4 &paramsXLight, const glm::vec4 &paramsYLight)
+{
+	const auto &renderState = getCurrentRenderState();
+
+	gfx_api::TerrainDepthForSSAO::get().bind();
+	gfx_api::TerrainDepthForSSAO::get().bind_textures(lightmap_texture);
+	gfx_api::TerrainDepthForSSAO::get().bind_vertex_buffers(geometryVBO);
+	gfx_api::TerrainDepthForSSAO::get().bind_constants({ ModelViewProjection, paramsXLight, paramsYLight, glm::vec4(0.f), glm::vec4(0.f), glm::mat4(1.f), glm::mat4(1.f),
+	glm::vec4(0.f), renderState.fogEnabled, renderState.fogBegin, renderState.fogEnd, 0, 0 });
+	gfx_api::context::get().bind_index_buffer(*geometryIndexVBO, gfx_api::index_type::u32);
+
+	for (int x = 0; x < xSectors; x++)
+	{
+		for (int y = 0; y < ySectors; y++)
+		{
+			if (sectors[x * ySectors + y].draw)
+			{
+				addDrawRangeElements<gfx_api::TerrainDepthForSSAO>(
+					sectors[x * ySectors + y].geometryOffset,
+					sectors[x * ySectors + y].geometryOffset + sectors[x * ySectors + y].geometrySize,
+					sectors[x * ySectors + y].geometryIndexSize,
+					sectors[x * ySectors + y].geometryIndexOffset);
+			}
+		}
+	}
+	finishDrawRangeElements<gfx_api::TerrainDepthForSSAO>();
+	gfx_api::TerrainDepthForSSAO::get().unbind_vertex_buffers(geometryVBO);
+	gfx_api::context::get().unbind_index_buffer(*geometryIndexVBO);
+}
+
 static void drawDepthOnlyForDepthMap(const glm::mat4 &ModelViewProjection, const glm::vec4 &paramsXLight, const glm::vec4 &paramsYLight, bool withOffset)
 {
 	const auto &renderState = getCurrentRenderState();
@@ -1546,8 +1576,8 @@ void drawTerrainDepthOnly(const glm::mat4 &mvp)
 
 void drawTerrainDepthForSSAO(const glm::mat4 &mvp)
 {
-	// Back-face cull like the scene, but without polygon offset so unit/terrain depths align for SSAO.
-	drawDepthOnly(mvp, lightmapValues.paramsXLight, lightmapValues.paramsYLight, false);
+	// Scene-style terrain depth: back-face cull, no polygon offset, no color output.
+	drawDepthOnlyForSSAO(mvp, lightmapValues.paramsXLight, lightmapValues.paramsYLight);
 }
 
 /**

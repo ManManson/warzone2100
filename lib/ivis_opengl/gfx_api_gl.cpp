@@ -869,6 +869,11 @@ static const std::map<SHADER_MODE, program_data> shader_to_file_table =
 			// per-frame global uniforms
 			"ProjectionMatrix", "ViewMatrix"
 		} }),
+	std::make_pair(SHADER_COMPONENT_DEPTH_SSAO_INSTANCED, program_data{ "Component SSAO depth program", "shaders/tcmask_depth_instanced.vert", "shaders/tcmask_depth_instanced.frag",
+		{
+			// per-frame global uniforms
+			"ProjectionMatrix", "ViewMatrix"
+		} }),
 	std::make_pair(SHADER_NOLIGHT, program_data{ "Plain program", "shaders/nolight.vert", "shaders/nolight.frag",
 		{
 			// per-frame global uniforms
@@ -892,6 +897,8 @@ static const std::map<SHADER_MODE, program_data> shader_to_file_table =
 		{ "ModelViewProjectionMatrix", "paramx2", "paramy2", "lightmap_tex", "paramx2", "paramy2", "fogEnabled", "fogEnd", "fogStart" } }),
 	std::make_pair(SHADER_TERRAIN_DEPTHMAP, program_data{ "terrain_depthmap program", "shaders/terrain_depth_only.vert", "shaders/terrain_depth_only.frag",
 		{ "ModelViewProjectionMatrix", "fogEnabled", "fogEnd", "fogStart" } }),
+	std::make_pair(SHADER_TERRAIN_DEPTH_SSAO, program_data{ "terrain_depth_ssao program", "shaders/terrain_depth.vert", "shaders/terrain_depth_ssao.frag",
+		{ "ModelViewProjectionMatrix", "paramx2", "paramy2", "lightmap_tex", "paramx2", "paramy2", "fogEnabled", "fogEnd", "fogStart" } }),
 	std::make_pair(SHADER_TERRAIN_COMBINED_CLASSIC, program_data{ "terrain decals program", "shaders/terrain_combined.vert", "shaders/terrain_combined_classic.frag",
 			{ "ModelViewProjectionMatrix", "ViewMatrix", "ModelUVLightmapMatrix", "ShadowMapMVPMatrix", "groundScale",
 				"cameraPos", "sunPos", "emissiveLight", "ambientLight", "diffuseLight", "specularLight",
@@ -1249,6 +1256,7 @@ desc(createInfo.state_desc), vertex_buffer_desc(createInfo.attribute_description
 		uniform_setting_func<gfx_api::Draw3DShapeInstancedDepthOnlyGlobalUniforms>(),
 		uniform_binding_entry<SHADER_TERRAIN_DEPTH>(),
 		uniform_binding_entry<SHADER_TERRAIN_DEPTHMAP>(),
+		uniform_binding_entry<SHADER_TERRAIN_DEPTH_SSAO>(),
 		uniform_setting_func<gfx_api::TerrainCombinedUniforms>(),
 		uniform_binding_entry<SHADER_WATER>(),
 		uniform_binding_entry<SHADER_WATER_HIGH>(),
@@ -2185,6 +2193,11 @@ void gl_pipeline_state_object::set_constants(const gfx_api::constant_buffer_type
 	setUniforms(1, cbuf.fog_enabled);
 	setUniforms(2, cbuf.fog_begin);
 	setUniforms(3, cbuf.fog_end);
+}
+
+void gl_pipeline_state_object::set_constants(const gfx_api::constant_buffer_type<SHADER_TERRAIN_DEPTH_SSAO>& cbuf)
+{
+	set_constants(static_cast<const gfx_api::constant_buffer_type<SHADER_TERRAIN_DEPTH>&>(cbuf));
 }
 
 void gl_pipeline_state_object::set_constants(const gfx_api::TerrainCombinedUniforms& cbuf)

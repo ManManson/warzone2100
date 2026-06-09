@@ -1210,10 +1210,12 @@ static const std::map<SHADER_MODE, shader_infos> spv_files
 	std::make_pair(SHADER_COMPONENT, shader_infos{ "shaders/vk/tcmask.vert.spv", "shaders/vk/tcmask.frag.spv", true }),
 	std::make_pair(SHADER_COMPONENT_INSTANCED, shader_infos{ "shaders/vk/tcmask_instanced.vert.spv", "shaders/vk/tcmask_instanced.frag.spv", true, true, true, true, true }),
 	std::make_pair(SHADER_COMPONENT_DEPTH_INSTANCED, shader_infos{ "shaders/vk/tcmask_depth_instanced.vert.spv", "shaders/vk/tcmask_depth_instanced.frag.spv" }),
+	std::make_pair(SHADER_COMPONENT_DEPTH_SSAO_INSTANCED, shader_infos{ "shaders/vk/tcmask_depth_ssao_instanced.vert.spv", "shaders/vk/tcmask_depth_instanced.frag.spv" }),
 	std::make_pair(SHADER_NOLIGHT, shader_infos{ "shaders/vk/nolight.vert.spv", "shaders/vk/nolight.frag.spv", true }),
 	std::make_pair(SHADER_NOLIGHT_INSTANCED, shader_infos{ "shaders/vk/nolight_instanced.vert.spv", "shaders/vk/nolight_instanced.frag.spv", true }),
 	std::make_pair(SHADER_TERRAIN_DEPTH, shader_infos{ "shaders/vk/terrain_depth.vert.spv", "shaders/vk/terraindepth.frag.spv" }),
 	std::make_pair(SHADER_TERRAIN_DEPTHMAP, shader_infos{ "shaders/vk/terrain_depth_only.vert.spv", "shaders/vk/terrain_depth_only.frag.spv" }),
+	std::make_pair(SHADER_TERRAIN_DEPTH_SSAO, shader_infos{ "shaders/vk/terrain_depth.vert.spv", "shaders/vk/terrain_depth_ssao.frag.spv" }),
 	std::make_pair(SHADER_TERRAIN_COMBINED_CLASSIC, shader_infos{ "shaders/vk/terrain_combined.vert.spv", "shaders/vk/terrain_combined_classic.frag.spv", true, true, true, true }),
 	std::make_pair(SHADER_TERRAIN_COMBINED_MEDIUM, shader_infos{ "shaders/vk/terrain_combined.vert.spv", "shaders/vk/terrain_combined_medium.frag.spv", true, true, true, true }),
 	std::make_pair(SHADER_TERRAIN_COMBINED_HIGH, shader_infos{ "shaders/vk/terrain_combined.vert.spv", "shaders/vk/terrain_combined_high.frag.spv", true, true, true, true, true }),
@@ -1799,6 +1801,7 @@ VkPSO::VkPSO(vk::Device _dev,
 		.setPAttachments(color_blend_attachments.data());
 
 	const auto depthStencilState = to_vk(state_desc.depth_mode, state_desc.stencil);
+	depthBiasEnabled = state_desc.offset;
 	const auto rasterizationState = to_vk(state_desc.offset, state_desc.cull);
 	const auto& shaderInfo = spv_files.at(shader_mode);
 	vertexShader = get_module(shaderInfo.vertexSpv, *pVkDynLoader);
@@ -5856,7 +5859,12 @@ void VkRoot::bind_pipeline(gfx_api::pipeline_state_object* pso, bool /*notexture
 	if (currentPSO != newPSO)
 	{
 		currentPSO = newPSO;
-		buffering_mechanism::get_current_resources().currentDrawCmdBuffer()->bindPipeline(vk::PipelineBindPoint::eGraphics, currentPSO->object, vkDynLoader);
+		auto drawCmdBuffer = buffering_mechanism::get_current_resources().currentDrawCmdBuffer();
+		drawCmdBuffer->bindPipeline(vk::PipelineBindPoint::eGraphics, currentPSO->object, vkDynLoader);
+		if (currentPSO->depthBiasEnabled)
+		{
+			drawCmdBuffer->setDepthBias(_depthBiasConstant, _depthBiasClamp, _depthBiasSlope, vkDynLoader);
+		}
 	}
 }
 
@@ -7320,7 +7328,10 @@ gfx_api::abstract_texture* VkRoot::getDepthTexture()
 
 void VkRoot::set_polygon_offset(const float& offset, const float& slope)
 {
-	buffering_mechanism::get_current_resources().currentDrawCmdBuffer()->setDepthBias(offset, (physDeviceFeatures.depthBiasClamp) ? 1.0f : 0.f, slope, vkDynLoader);
+	_depthBiasConstant = offset;
+	_depthBiasClamp = (physDeviceFeatures.depthBiasClamp) ? 1.0f : 0.f;
+	_depthBiasSlope = slope;
+	buffering_mechanism::get_current_resources().currentDrawCmdBuffer()->setDepthBias(_depthBiasConstant, _depthBiasClamp, _depthBiasSlope, vkDynLoader);
 }
 
 void VkRoot::set_depth_range(const float& min, const float& max)

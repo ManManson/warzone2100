@@ -922,7 +922,7 @@ namespace gfx_api
 		vertex_attribute_description<instance_Colour, gfx_api::vertex_attribute_type::u8x4_norm, offsetof(Draw3DShapePerInstanceInterleavedData, colour)>,
 		vertex_attribute_description<instance_TeamColour, gfx_api::vertex_attribute_type::u8x4_norm, offsetof(Draw3DShapePerInstanceInterleavedData, teamcolour)>
 	>
-	>, notexture, SHADER_COMPONENT_DEPTH_INSTANCED>;
+	>, notexture, SHADER_COMPONENT_DEPTH_SSAO_INSTANCED>;
 
 	template<>
 	struct constant_buffer_type<SHADER_GENERIC_COLOR>
@@ -986,6 +986,15 @@ namespace gfx_api
 	std::tuple<
 		TerrainVertexVBODescription
 	>, std::tuple<texture_description<0, sampler_type::bilinear_repeat>>, SHADER_TERRAIN_DEPTHMAP>;
+
+	template<>
+	struct constant_buffer_type<SHADER_TERRAIN_DEPTH_SSAO> : constant_buffer_type<SHADER_TERRAIN_DEPTH> {};
+
+	using TerrainDepthForSSAO = typename gfx_api::pipeline_state_helper<rasterizer_state<REND_OPAQUE, DEPTH_CMP_LEQ_WRT_ON, 0, polygon_offset::disabled, stencil_mode::stencil_disabled, cull_mode::back>, primitive_type::triangles, index_type::u32,
+	std::tuple<constant_buffer_type<SHADER_TERRAIN_DEPTH_SSAO>>,
+	std::tuple<
+		TerrainVertexVBODescription
+	>, std::tuple<texture_description<0, sampler_type::bilinear_repeat>>, SHADER_TERRAIN_DEPTH_SSAO>;
 
 
 	struct TerrainDecalVertex

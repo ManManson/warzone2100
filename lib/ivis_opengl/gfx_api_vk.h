@@ -376,6 +376,7 @@ struct VkPSO final
 	std::shared_ptr<VkhRenderPassCompat> renderpass_compat;
 	bool hasSpecializationConstant_ShadowConstants = false;
 	bool hasSpecializationConstant_PointLightConstants = false;
+	bool depthBiasEnabled = false;
 
 private:
 	// Read shader into text buffer
@@ -1023,6 +1024,9 @@ private:
 	std::vector<PassLayoutKey> _passLayoutKeys;
 	float _viewportMinDepth = 0.f;
 	float _viewportMaxDepth = 1.f;
+	float _depthBiasConstant = 0.f;
+	float _depthBiasClamp = 0.f;
+	float _depthBiasSlope = 0.f;
 	bool _swapchainRenderPassActive = false;
 	bool _customPassActive = false;
 	size_t _activeCustomRenderPassId = 0;

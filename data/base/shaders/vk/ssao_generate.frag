@@ -20,8 +20,10 @@ const float SKY_DEPTH_THRESHOLD = 0.9999;
 
 vec3 getViewPosition(vec2 uv, float depth)
 {
-	// Vulkan NDC Z is in [0, 1].
-	vec4 clipSpace = vec4(uv * 2.0 - 1.0, depth, 1.0);
+	// Depth prepass vertices apply gl_Position.y *= -1 for Vulkan NDC; pie_PerspectiveGet does not.
+	vec2 clipXY = uv * 2.0 - 1.0;
+	clipXY.y = -clipXY.y;
+	vec4 clipSpace = vec4(clipXY, depth, 1.0);
 	vec4 viewSpace = invProjectionMatrix * clipSpace;
 	return viewSpace.xyz / viewSpace.w;
 }
@@ -77,7 +79,7 @@ void main()
 
 		vec4 offset = projectionMatrix * vec4(samplePos, 1.0);
 		offset.xyz /= offset.w;
-		vec2 sampleUV = offset.xy * 0.5 + 0.5;
+		vec2 sampleUV = vec2(offset.x, -offset.y) * 0.5 + 0.5;
 
 		if (sampleUV.x < 0.0 || sampleUV.x > 1.0 || sampleUV.y < 0.0 || sampleUV.y > 1.0)
 		{
