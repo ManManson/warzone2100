@@ -2162,6 +2162,7 @@ int realmain(int argc, char *argv[])
 	{
 		return EXIT_FAILURE;
 	}
+	pie_setSunShadowRayQuery(war_getSunShadowRayQuery());
 	if (!screenInitialise())
 	{
 		return EXIT_FAILURE;

@@ -52,6 +52,7 @@
 #include "gfx_api_pass_resolve.h"
 #include "gfx_api_pipeline_surfaces.h"
 #include <algorithm>
+#include <array>
 #include <sstream>
 #include <map>
 #include <vector>
@@ -244,6 +245,7 @@ struct perFrameResources_t
 	vk::CommandPool pool;
 	vk::Fence previousSubmission;
 	vk::Semaphore imageAcquireSemaphore;
+	std::vector<vk::AccelerationStructureKHR> acceleration_structure_to_delete;
 	std::vector</*WZ_vk::UniqueBuffer*/vk::Buffer> buffer_to_delete;
 	std::vector</*WZ_vk::UniqueImage*/vk::Image> image_to_delete;
 	std::vector<WZ_vk::UniqueImageView> image_view_to_delete;
@@ -970,7 +972,7 @@ public:
 	// instanced rendering APIs
 	virtual bool supportsInstancedRendering() override;
 	gfx_api::GfxCapabilities capabilities() const override;
-	void buildAccelerationStructures(const struct SceneDescription& scene) override;
+	void buildAccelerationStructures(const ::SceneDescription& scene) override;
 	void bindSunShadowDescriptors() override;
 	bool isSunShadowDescriptorsInitialized() const { return sunShadowDescriptorsInitialized; }
 	vk::DescriptorSetLayout getSunShadowTlasDescriptorSetLayout() const { return sunShadowTlasDescriptorSetLayout; }
@@ -1017,6 +1019,7 @@ private:
 	void initSunShadowDescriptors();
 	void shutdownSunShadowDescriptors();
 	void updateSunShadowTlasDescriptor();
+	vk::DescriptorSet& currentSunShadowTlasDescriptorSet();
 private:
 	size_t depthPassCount = WZ_MAX_SHADOW_CASCADES;
 	std::string formattedRendererInfoString;
@@ -1055,7 +1058,7 @@ private:
 
 	vk::DescriptorSetLayout sunShadowTlasDescriptorSetLayout {};
 	vk::DescriptorPool sunShadowTlasDescriptorPool {};
-	vk::DescriptorSet sunShadowTlasDescriptorSet {};
+	std::array<vk::DescriptorSet, 2> sunShadowTlasDescriptorSets {};
 	bool sunShadowDescriptorsInitialized = false;
 };
 

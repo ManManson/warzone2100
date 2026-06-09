@@ -942,6 +942,11 @@ void perFrameResources_t::clean()
 		dev.destroyFramebuffer(fbo, nullptr, *pVkDynLoader);
 	}
 	fbo_to_delete.clear();
+	for (auto accelerationStructure : acceleration_structure_to_delete)
+	{
+		dev.destroyAccelerationStructureKHR(accelerationStructure, nullptr, *pVkDynLoader);
+	}
+	acceleration_structure_to_delete.clear();
 	for (auto buffer : buffer_to_delete)
 	{
 		dev.destroyBuffer(buffer, nullptr, *pVkDynLoader);
@@ -1758,8 +1763,10 @@ VkPSO::VkPSO(vk::Device _dev,
 
 	const bool useRayQuerySpv = useSunShadowRayQuerySpv(*root, shader_mode);
 	usesSunShadowRayQuerySpv = useRayQuerySpv;
-	if (useRayQuerySpv && root->isSunShadowDescriptorsInitialized())
+	if (useRayQuerySpv)
 	{
+		ASSERT(root->isSunShadowDescriptorsInitialized(),
+			"Ray-query PSO requires initialized sun shadow TLAS descriptors");
 		layout_desc.push_back(root->getSunShadowTlasDescriptorSetLayout());
 		sunShadowTlasDescriptorSetIndex = static_cast<uint32_t>(layout_desc.size() - 1);
 	}
@@ -1976,9 +1983,17 @@ void VkBuf::allocateBufferObject(const std::size_t& size)
 	buffering_mechanism::get_current_resources().buffer_to_delete.emplace_back(std::move(object));
 	buffering_mechanism::get_current_resources().vmamemory_to_free.push_back(allocation);
 
+	vk::BufferUsageFlags bufferUsage = to_vk(usage) | vk::BufferUsageFlagBits::eTransferDst;
+	if (root->capabilities().accelerationStructure)
+	{
+		bufferUsage |= vk::BufferUsageFlagBits::eTransferSrc
+			| vk::BufferUsageFlagBits::eShaderDeviceAddress
+			| vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
+	}
+
 	auto bufferCreateInfo = vk::BufferCreateInfo()
 		.setSize(size)
-		.setUsage(to_vk(usage) | vk::BufferUsageFlagBits::eTransferDst);
+		.setUsage(bufferUsage);
 
 	VmaAllocationCreateInfo allocInfo = {};
 	allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -5048,10 +5063,9 @@ bool VkRoot::_initialize(const gfx_api::backend_Impl_Factory& impl, int32_t anti
 		return false;
 	}
 
+	getQueues();
 	asManager.init(*this);
 	initSunShadowDescriptors();
-
-	getQueues();
 
 	ASSERT(renderPasses.empty(), "Non-empty renderPasses vector?");
 	renderPasses = { RenderPassDetails(DEFAULT_RENDER_PASS_ID) };
@@ -5698,9 +5712,11 @@ gfx_api::GfxCapabilities VkRoot::capabilities() const
 	return asManager.capabilities();
 }
 
-void VkRoot::buildAccelerationStructures(const struct SceneDescription& scene)
+void VkRoot::buildAccelerationStructures(const ::SceneDescription& scene)
 {
-	asManager.build(scene);
+	buffering_mechanism::get_current_resources().ensureDrawCmdBufferBegun();
+	frameHasDrawCommands = true;
+	asManager.build(scene, buffering_mechanism::get_current_resources().drawCmdBuffer());
 	updateSunShadowTlasDescriptor();
 }
 
@@ -5728,23 +5744,31 @@ void VkRoot::initSunShadowDescriptors()
 			.setPBindings(&tlasBinding),
 		nullptr, vkDynLoader);
 
+	const uint32_t framesInFlight = static_cast<uint32_t>(maxFramesInFlight());
+	ASSERT(framesInFlight <= sunShadowTlasDescriptorSets.size(),
+		"sunShadowTlasDescriptorSets too small for maxFramesInFlight (%" PRIu32")", framesInFlight);
+
 	const vk::DescriptorPoolSize poolSize = vk::DescriptorPoolSize()
 		.setType(vk::DescriptorType::eAccelerationStructureKHR)
-		.setDescriptorCount(1);
+		.setDescriptorCount(framesInFlight);
 	sunShadowTlasDescriptorPool = dev.createDescriptorPool(
 		vk::DescriptorPoolCreateInfo()
-			.setMaxSets(1)
+			.setMaxSets(framesInFlight)
 			.setPoolSizeCount(1)
 			.setPPoolSizes(&poolSize),
 		nullptr, vkDynLoader);
 
-	const std::array<vk::DescriptorSetLayout, 1> tlasSetLayouts = { sunShadowTlasDescriptorSetLayout };
-	sunShadowTlasDescriptorSet = dev.allocateDescriptorSets(
+	std::vector<vk::DescriptorSetLayout> tlasSetLayoutsPerFrame(framesInFlight, sunShadowTlasDescriptorSetLayout);
+	const std::vector<vk::DescriptorSet> allocatedSets = dev.allocateDescriptorSets(
 		vk::DescriptorSetAllocateInfo()
 			.setDescriptorPool(sunShadowTlasDescriptorPool)
-			.setPSetLayouts(tlasSetLayouts.data())
-			.setDescriptorSetCount(static_cast<uint32_t>(tlasSetLayouts.size())),
-		vkDynLoader).front();
+			.setPSetLayouts(tlasSetLayoutsPerFrame.data())
+			.setDescriptorSetCount(framesInFlight),
+		vkDynLoader);
+	for (uint32_t i = 0; i < framesInFlight; ++i)
+	{
+		sunShadowTlasDescriptorSets[i] = allocatedSets[i];
+	}
 
 	sunShadowDescriptorsInitialized = true;
 }
@@ -5770,8 +5794,13 @@ void VkRoot::shutdownSunShadowDescriptors()
 		}
 	}
 
-	sunShadowTlasDescriptorSet = vk::DescriptorSet();
+	sunShadowTlasDescriptorSets = {};
 	sunShadowDescriptorsInitialized = false;
+}
+
+vk::DescriptorSet& VkRoot::currentSunShadowTlasDescriptorSet()
+{
+	return sunShadowTlasDescriptorSets[buffering_mechanism::get_current_frame_num() % maxFramesInFlight()];
 }
 
 void VkRoot::updateSunShadowTlasDescriptor()
@@ -5792,7 +5821,7 @@ void VkRoot::updateSunShadowTlasDescriptor()
 		.setAccelerationStructures(tlas);
 
 	const vk::WriteDescriptorSet write = vk::WriteDescriptorSet()
-		.setDstSet(sunShadowTlasDescriptorSet)
+		.setDstSet(currentSunShadowTlasDescriptorSet())
 		.setDstBinding(0)
 		.setDescriptorCount(1)
 		.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
@@ -5812,7 +5841,7 @@ void VkRoot::bindSunShadowTlasDescriptorSetIfNeeded()
 		vk::PipelineBindPoint::eGraphics,
 		currentPSO->layout,
 		currentPSO->sunShadowTlasDescriptorSetIndex.value(),
-		sunShadowTlasDescriptorSet,
+		currentSunShadowTlasDescriptorSet(),
 		nullptr,
 		vkDynLoader);
 }
@@ -6077,6 +6106,7 @@ void VkRoot::bind_pipeline(gfx_api::pipeline_state_object* pso, bool /*notexture
 		{
 			drawCmdBuffer->setDepthBias(_depthBiasConstant, _depthBiasClamp, _depthBiasSlope, vkDynLoader);
 		}
+		bindSunShadowTlasDescriptorSetIfNeeded();
 	}
 }
 

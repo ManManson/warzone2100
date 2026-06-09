@@ -184,6 +184,9 @@ void war_setShadowFilterSize(uint32_t filterSize);
 uint32_t war_getShadowMapResolution();
 void war_setShadowMapResolution(uint32_t resolution);
 
+bool war_getSunShadowRayQuery();
+void war_setSunShadowRayQuery(bool enabled);
+
 bool war_getPointLightPerPixelLighting();
 void war_setPointLightPerPixelLighting(bool perPixelEnabled);
 

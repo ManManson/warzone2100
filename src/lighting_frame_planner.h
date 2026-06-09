@@ -21,7 +21,7 @@ class LightingFramePlanner
 public:
 	/// Shadow cascade passes (or future AS build). Fills sunCtx.cascadesInfo.
 	void planSunShadowPrePasses(gfx_api::RenderGraph& graph,
-	                            SceneDescription& scene,
+	                            SceneDescription scene,
 	                            SunShadowFrameContext& sunCtx);
 
 	/// Main forward scene pass. Call after optional SSAO depth prepass.

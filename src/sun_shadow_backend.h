@@ -50,7 +50,7 @@ public:
 
 	virtual void planPreScenePasses(gfx_api::RenderGraph& graph,
 	                                SunShadowFrameContext& ctx,
-	                                SceneDescription& scene) = 0;
+	                                SceneDescription scene) = 0;
 	virtual void bindForForwardPass() = 0;
 	virtual SunShadowTechnique technique() const = 0;
 };

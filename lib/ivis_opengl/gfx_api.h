@@ -469,7 +469,7 @@ struct GfxCapabilities
 		// instanced rendering APIs
 		virtual bool supportsInstancedRendering() = 0;
 		virtual GfxCapabilities capabilities() const { return {}; }
-		virtual void buildAccelerationStructures(const struct SceneDescription& scene) { (void)scene; }
+		virtual void buildAccelerationStructures(const ::SceneDescription& scene) { (void)scene; }
 		virtual void bindSunShadowDescriptors() {}
 		virtual void draw_instanced(const std::size_t& offset, const std::size_t &count, const primitive_type &primitive, std::size_t instance_count) = 0;
 		virtual void draw_elements_instanced(const std::size_t& offset, const std::size_t& count, const primitive_type& primitive, const index_type& index, std::size_t instance_count) = 0;

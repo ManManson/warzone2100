@@ -8,6 +8,11 @@
 
 #include <cstdint>
 
+namespace vk
+{
+class CommandBuffer;
+}
+
 struct SceneDescription;
 
 class VkRoot;
@@ -23,7 +28,7 @@ public:
 
 	void init(VkRoot& root);
 	void shutdown();
-	void build(const SceneDescription& scene);
+	void build(const SceneDescription& scene, vk::CommandBuffer cmd);
 
 	gfx_api::GfxCapabilities capabilities() const { return _capabilities; }
 	void* tlasHandleForBinding() const;

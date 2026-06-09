@@ -30,6 +30,8 @@ struct SceneDescription
 		uint64_t cacheKey = 0;
 		BlasMeshSource mesh;
 		glm::mat4 transform {1.f};
+		/// When false the entry only supplies BLAS geometry; TLAS placement comes from DynamicInstance.
+		bool includeInTlas = true;
 	};
 
 	struct DynamicInstance
@@ -43,6 +45,7 @@ struct SceneDescription
 	void beginFrame();
 
 	void addTerrainSector(int sx, int sy, const BlasMeshSource& mesh, const glm::mat4& transform);
+	uint32_t registerMeshBlas(uint64_t cacheKey, const BlasMeshSource& mesh);
 	void addMeshInstance(uint32_t blasIndex, const glm::mat4& transform, bool castsSunShadow);
 
 	const std::vector<StaticBlasEntry>& staticBlas() const { return _staticBlas; }

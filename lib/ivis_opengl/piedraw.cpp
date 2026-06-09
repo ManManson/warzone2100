@@ -33,6 +33,7 @@
 #include "lib/ivis_opengl/tex.h"
 #include "lib/ivis_opengl/piedef.h"
 #include "lib/ivis_opengl/piestate.h"
+#include "src/scene_description.h"
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/ivis_opengl/pieclip.h"
 #include "lib/ivis_opengl/pieblitfunc.h"
@@ -73,6 +74,7 @@ static size_t drawCallsCount = 0;
 static bool shadows = false;
 static bool shadowsHasBeenInit = false;
 static ShadowMode shadowMode = ShadowMode::Shadow_Mapping;
+static bool sunShadowRayQueryEnabled = false;
 static uint32_t numShadowCascades = WZ_MAX_SHADOW_CASCADES;
 static gfx_api::gfxFloat lighting0[LIGHT_MAX][4];
 static gfx_api::gfxFloat lightingDefault[LIGHT_MAX][4];
@@ -126,15 +128,21 @@ static void refreshShadowShaders()
 	{
 		auto shadowConstants = gfx_api::context::get().getShadowConstants();
 		bool bShadowMappingEnabled = isShadowMappingEnabled();
-		uint32_t actualNumCascadesAndPasses = (bShadowMappingEnabled) ? numShadowCascades : 0;
+		const bool bSunShadowRayQuery = bShadowMappingEnabled
+			&& pie_supportsSunShadowRayQuery()
+			&& sunShadowRayQueryEnabled;
+		uint32_t actualNumCascadesAndPasses = 0;
 		if (bShadowMappingEnabled)
 		{
 			shadowConstants.shadowMode = 1; // Possible future TODO: Could get this from the config file to allow testing alternative filter methods
+			actualNumCascadesAndPasses = bSunShadowRayQuery ? 0 : numShadowCascades;
 			shadowConstants.shadowCascadesCount = actualNumCascadesAndPasses;
+			shadowConstants.sunShadowRayQuery = bSunShadowRayQuery;
 		}
 		else
 		{
 			shadowConstants.shadowMode = 0; // Disable shader-drawn / shadow-mapping shadows
+			shadowConstants.sunShadowRayQuery = false;
 		}
 
 		// Preserve existing shadowFilterSize
@@ -173,6 +181,26 @@ bool pie_supportsSunShadowRayQuery()
 
 	const auto caps = gfx_api::context::get().capabilities();
 	return caps.rayQuery && caps.accelerationStructure;
+}
+
+bool pie_getSunShadowRayQuery()
+{
+	return sunShadowRayQueryEnabled;
+}
+
+bool pie_setSunShadowRayQuery(bool enabled)
+{
+	if (enabled && !pie_supportsSunShadowRayQuery())
+	{
+		return false;
+	}
+	if (sunShadowRayQueryEnabled == enabled)
+	{
+		return true;
+	}
+	sunShadowRayQueryEnabled = enabled;
+	refreshShadowShaders();
+	return true;
 }
 
 bool pie_setShadowMapResolution(uint32_t resolution)
@@ -1026,6 +1054,8 @@ public:
 	// (After this is called, Draw3DShape should not be called until the InstancedMeshRenderer is clear()-ed)
 	bool FinalizeInstances();
 
+	void populateSceneDescriptionShadowCasters(SceneDescription& scene) const;
+
 	enum DrawParts
 	{
 		ShadowCastingShapes = 0x1,
@@ -1421,6 +1451,83 @@ void pie_UpdateLightmap(gfx_api::texture* lightmapTexture, const glm::mat4& mode
 void pie_FinalizeMeshes(uint64_t currentGameFrame)
 {
 	instancedMeshRenderer.FinalizeInstances();
+}
+
+static bool buildMeshBlasSource(const iIMDShape& shape, SceneDescription::BlasMeshSource& outMesh)
+{
+	if (shape.buffers[VBO_VERTEX] == nullptr || shape.buffers[VBO_INDEX] == nullptr)
+	{
+		return false;
+	}
+	if (shape.vertexCount == 0 || shape.polys.empty())
+	{
+		return false;
+	}
+
+	outMesh.vertexBuffer = shape.buffers[VBO_VERTEX];
+	outMesh.indexBuffer = shape.buffers[VBO_INDEX];
+	outMesh.vertexCount = shape.vertexCount;
+	outMesh.indexCount = static_cast<uint32_t>(shape.polys.size() * 3);
+	outMesh.vertexStride = static_cast<uint32_t>(sizeof(Vector3f));
+	outMesh.positionOffset = 0;
+	outMesh.vertexByteOffset = 0;
+	outMesh.indexByteOffset = 0;
+	outMesh.uses32BitIndices = false;
+	outMesh.alphaTested = false;
+	return true;
+}
+
+void InstancedMeshRenderer::populateSceneDescriptionShadowCasters(SceneDescription& scene) const
+{
+	if (!useInstancedRendering)
+	{
+		return;
+	}
+
+	std::unordered_map<const iIMDShape*, uint32_t> shapeToBlasIndex;
+
+	for (const auto& meshPair : instanceMeshes)
+	{
+		const templatedState& key = meshPair.first;
+		if (!(key.pieFlag & pie_SHADOW || key.pieFlag & pie_STATIC_SHADOW))
+		{
+			continue;
+		}
+
+		const iIMDShape* shape = key.shape;
+		if (shape == nullptr)
+		{
+			continue;
+		}
+
+		uint32_t blasIndex = 0;
+		const auto existingBlas = shapeToBlasIndex.find(shape);
+		if (existingBlas == shapeToBlasIndex.end())
+		{
+			SceneDescription::BlasMeshSource meshSource {};
+			if (!buildMeshBlasSource(*shape, meshSource))
+			{
+				continue;
+			}
+			const uint64_t cacheKey = reinterpret_cast<uint64_t>(shape);
+			blasIndex = scene.registerMeshBlas(cacheKey, meshSource);
+			shapeToBlasIndex.emplace(shape, blasIndex);
+		}
+		else
+		{
+			blasIndex = existingBlas->second;
+		}
+
+		for (const SHAPE& instance : meshPair.second)
+		{
+			scene.addMeshInstance(blasIndex, instance.modelMatrix, true);
+		}
+	}
+}
+
+void pie_PopulateSceneDescriptionMeshShadowCasters(SceneDescription& scene)
+{
+	instancedMeshRenderer.populateSceneDescriptionShadowCasters(scene);
 }
 
 void pie_DrawAllMeshes(uint64_t currentGameFrame, const glm::mat4 &projectionMatrix, const glm::mat4& viewMatrix, const Vector3f &cameraPos, const ShadowCascadesInfo& shadowMVPMatrix, MeshDepthPassMode depthPassMode)

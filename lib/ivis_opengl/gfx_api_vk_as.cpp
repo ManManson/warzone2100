@@ -2,20 +2,24 @@
 
 #if defined(WZ_VULKAN_ENABLED)
 
-#include "gfx_api_vk_as.h"
-
 #include "gfx_api_vk.h"
+#include "gfx_api_vk_as.h"
 #include "src/scene_description.h"
 
 #include "lib/framework/wzglobal.h"
 
 #include <glm/gtc/type_ptr.hpp>
 
+#include <array>
+#include <algorithm>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 
 namespace
 {
+
+constexpr size_t TLAS_SLOT_COUNT = 2;
 
 bool extensionEnabled(const std::vector<const char*>& enabledExtensions, const char* name)
 {
@@ -40,8 +44,6 @@ struct CachedBlas
 	vk::AccelerationStructureKHR handle {};
 	AsGpuBuffer structure;
 	AsGpuBuffer scratch;
-	AsGpuBuffer vertexData;
-	AsGpuBuffer indexData;
 	vk::DeviceAddress structureAddress = 0;
 };
 
@@ -104,10 +106,129 @@ void destroyAsGpuBuffer(const AsBuildContext& ctx, AsGpuBuffer& buffer)
 	buffer = {};
 }
 
+void deferDestroyAsGpuBuffer(AsGpuBuffer& buffer)
+{
+	if (!buffer.buffer || buffer.allocation == VK_NULL_HANDLE)
+	{
+		buffer = {};
+		return;
+	}
+
+	perFrameResources_t& frameResources = buffering_mechanism::get_current_resources();
+	frameResources.buffer_to_delete.push_back(buffer.buffer);
+	frameResources.vmamemory_to_free.push_back(buffer.allocation);
+	buffer = {};
+}
+
+void deferDestroyAccelerationStructure(vk::AccelerationStructureKHR& handle)
+{
+	if (!handle)
+	{
+		return;
+	}
+
+	buffering_mechanism::get_current_resources().acceleration_structure_to_delete.push_back(handle);
+	handle = nullptr;
+}
+
 vk::DeviceAddress getBufferDeviceAddress(const AsBuildContext& ctx, vk::Buffer buffer)
 {
 	const vk::BufferDeviceAddressInfo addressInfo = vk::BufferDeviceAddressInfo().setBuffer(buffer);
 	return ctx.device.getBufferAddress(addressInfo, *ctx.loader);
+}
+
+vk::DeviceAddress getAccelerationStructureDeviceAddress(const AsBuildContext& ctx, vk::AccelerationStructureKHR handle)
+{
+	const vk::AccelerationStructureDeviceAddressInfoKHR addressInfo =
+		vk::AccelerationStructureDeviceAddressInfoKHR().setAccelerationStructure(handle);
+	return ctx.device.getAccelerationStructureAddressKHR(addressInfo, *ctx.loader);
+}
+
+void barrierGeometryVisibleToAsBuild(const AsBuildContext& ctx, vk::CommandBuffer cmd)
+{
+	const vk::MemoryBarrier barrier = vk::MemoryBarrier()
+		.setSrcAccessMask(vk::AccessFlagBits::eTransferWrite | vk::AccessFlagBits::eVertexAttributeRead)
+		.setDstAccessMask(vk::AccessFlagBits::eAccelerationStructureReadKHR);
+	cmd.pipelineBarrier(
+		vk::PipelineStageFlagBits::eTransfer | vk::PipelineStageFlagBits::eVertexInput,
+		vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+		vk::DependencyFlags(),
+		barrier,
+		{},
+		{},
+		*ctx.loader);
+}
+
+void barrierBlasBuildComplete(const AsBuildContext& ctx, vk::CommandBuffer cmd)
+{
+	const vk::MemoryBarrier barrier = vk::MemoryBarrier()
+		.setSrcAccessMask(vk::AccessFlagBits::eAccelerationStructureWriteKHR)
+		.setDstAccessMask(vk::AccessFlagBits::eAccelerationStructureReadKHR);
+	cmd.pipelineBarrier(
+		vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+		vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+		vk::DependencyFlags(),
+		barrier,
+		{},
+		{},
+		*ctx.loader);
+}
+
+vk::DeviceSize scratchBufferAllocationSize(const AsBuildContext& ctx, vk::DeviceSize buildScratchSize)
+{
+	const vk::DeviceSize alignment = std::max<vk::DeviceSize>(
+		ctx.asProperties.minAccelerationStructureScratchOffsetAlignment, 1);
+	return buildScratchSize + alignment;
+}
+
+AsGpuBuffer createScratchBuffer(const AsBuildContext& ctx, vk::DeviceSize buildScratchSize)
+{
+	AsGpuBuffer result;
+	const vk::DeviceSize allocSize = scratchBufferAllocationSize(ctx, buildScratchSize);
+	if (allocSize == 0)
+	{
+		return result;
+	}
+
+	const vk::BufferUsageFlags usage =
+		vk::BufferUsageFlagBits::eShaderDeviceAddress
+		| vk::BufferUsageFlagBits::eStorageBuffer;
+
+	const vk::BufferCreateInfo bufferInfo = vk::BufferCreateInfo()
+		.setSize(allocSize)
+		.setUsage(usage)
+		.setSharingMode(vk::SharingMode::eExclusive);
+
+	VmaAllocationCreateInfo allocInfo = {};
+	allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+	const VkResult createResult = vmaCreateBuffer(
+		ctx.allocator,
+		reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo),
+		&allocInfo,
+		reinterpret_cast<VkBuffer*>(&result.buffer),
+		&result.allocation,
+		nullptr);
+	if (createResult != VK_SUCCESS)
+	{
+		debug(LOG_ERROR, "VkASManager: failed to create scratch buffer");
+		return {};
+	}
+
+	result.size = allocSize;
+	return result;
+}
+
+vk::DeviceAddress getScratchDeviceAddress(const AsBuildContext& ctx, vk::Buffer scratchBuffer)
+{
+	const vk::DeviceSize alignment = ctx.asProperties.minAccelerationStructureScratchOffsetAlignment;
+	const vk::DeviceAddress base = getBufferDeviceAddress(ctx, scratchBuffer);
+	if (alignment <= 1)
+	{
+		return base;
+	}
+	const vk::DeviceAddress alignMask = static_cast<vk::DeviceAddress>(alignment - 1);
+	return (base + alignMask) & ~alignMask;
 }
 
 bool copyBufferRegion(const AsBuildContext& ctx, vk::CommandBuffer cmd,
@@ -124,6 +245,75 @@ bool copyBufferRegion(const AsBuildContext& ctx, vk::CommandBuffer cmd,
 	return true;
 }
 
+struct TempStagingBuffer
+{
+	vk::Buffer buffer {};
+	VmaAllocation allocation = VK_NULL_HANDLE;
+};
+
+void destroyTempStagingBuffer(const AsBuildContext& ctx, TempStagingBuffer& staging)
+{
+	if (staging.buffer && staging.allocation != VK_NULL_HANDLE)
+	{
+		vmaDestroyBuffer(ctx.allocator, static_cast<VkBuffer>(staging.buffer), staging.allocation);
+	}
+	staging = {};
+}
+
+void deferDestroyTempStagingBuffer(TempStagingBuffer& staging)
+{
+	AsGpuBuffer asGpuBuffer;
+	asGpuBuffer.buffer = staging.buffer;
+	asGpuBuffer.allocation = staging.allocation;
+	deferDestroyAsGpuBuffer(asGpuBuffer);
+	staging = {};
+}
+
+bool uploadToDeviceLocalBuffer(const AsBuildContext& ctx, vk::CommandBuffer cmd,
+                               vk::Buffer dst, const void* srcData, vk::DeviceSize size,
+                               TempStagingBuffer& stagingOut)
+{
+	if (size == 0 || srcData == nullptr)
+	{
+		return false;
+	}
+
+	const vk::BufferCreateInfo bufferInfo = vk::BufferCreateInfo()
+		.setSize(size)
+		.setUsage(vk::BufferUsageFlagBits::eTransferSrc)
+		.setSharingMode(vk::SharingMode::eExclusive);
+
+	VmaAllocationCreateInfo allocInfo = {};
+	allocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+
+	const VkResult createResult = vmaCreateBuffer(
+		ctx.allocator,
+		reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo),
+		&allocInfo,
+		reinterpret_cast<VkBuffer*>(&stagingOut.buffer),
+		&stagingOut.allocation,
+		nullptr);
+	if (createResult != VK_SUCCESS)
+	{
+		debug(LOG_ERROR, "VkASManager: failed to create staging buffer");
+		return false;
+	}
+
+	void* mapped = nullptr;
+	const VkResult mapResult = vmaMapMemory(ctx.allocator, stagingOut.allocation, &mapped);
+	if (mapResult != VK_SUCCESS || mapped == nullptr)
+	{
+		destroyTempStagingBuffer(ctx, stagingOut);
+		debug(LOG_ERROR, "VkASManager: failed to map staging buffer");
+		return false;
+	}
+
+	memcpy(mapped, srcData, static_cast<size_t>(size));
+	vmaUnmapMemory(ctx.allocator, stagingOut.allocation);
+
+	return copyBufferRegion(ctx, cmd, stagingOut.buffer, 0, dst, 0, size);
+}
+
 void destroyCachedBlas(const AsBuildContext& ctx, CachedBlas& blas)
 {
 	if (blas.handle)
@@ -132,91 +322,144 @@ void destroyCachedBlas(const AsBuildContext& ctx, CachedBlas& blas)
 	}
 	destroyAsGpuBuffer(ctx, blas.structure);
 	destroyAsGpuBuffer(ctx, blas.scratch);
-	destroyAsGpuBuffer(ctx, blas.vertexData);
-	destroyAsGpuBuffer(ctx, blas.indexData);
 	blas = {};
 }
 
-bool buildBlas(const AsBuildContext& ctx, vk::CommandBuffer cmd, const SceneDescription::StaticBlasEntry& entry, CachedBlas& outBlas)
+void deferDestroyCachedBlas(CachedBlas& blas)
 {
-	const VkBuf* srcVertices = toVkBuf(entry.mesh.vertexBuffer);
-	const VkBuf* srcIndices = toVkBuf(entry.mesh.indexBuffer);
-	ASSERT_OR_RETURN(false, srcVertices != nullptr && srcIndices != nullptr, "VkASManager: invalid terrain buffers");
-	ASSERT_OR_RETURN(false, entry.mesh.vertexCount > 0 && entry.mesh.indexCount > 0, "VkASManager: empty mesh");
+	deferDestroyAccelerationStructure(blas.handle);
+	deferDestroyAsGpuBuffer(blas.structure);
+	deferDestroyAsGpuBuffer(blas.scratch);
+	blas.structureAddress = 0;
+}
 
-	const vk::DeviceSize vertexBytes = static_cast<vk::DeviceSize>(entry.mesh.vertexCount) * entry.mesh.vertexStride;
-	const vk::DeviceSize indexBytes = static_cast<vk::DeviceSize>(entry.mesh.indexCount) * (entry.mesh.uses32BitIndices ? sizeof(uint32_t) : sizeof(uint16_t));
+vk::DeviceAddress meshBufferDeviceAddress(const AsBuildContext& ctx, const gfx_api::buffer* buffer, uint32_t byteOffset)
+{
+	const VkBuf* vkBuffer = toVkBuf(buffer);
+	ASSERT_OR_RETURN(0, vkBuffer != nullptr, "VkASManager: invalid mesh buffer");
+	return getBufferDeviceAddress(ctx, vkBuffer->object) + static_cast<vk::DeviceAddress>(byteOffset);
+}
 
-	outBlas.vertexData = createDeviceAddressBuffer(ctx, vertexBytes, vk::BufferUsageFlagBits::eVertexBuffer);
-	outBlas.indexData = createDeviceAddressBuffer(ctx, indexBytes, vk::BufferUsageFlagBits::eIndexBuffer);
-	ASSERT_OR_RETURN(false, outBlas.vertexData.buffer && outBlas.indexData.buffer, "VkASManager: failed to allocate BLAS geometry buffers");
+bool buildBlasFromGeometries(const AsBuildContext& ctx, vk::CommandBuffer cmd,
+                             const std::vector<vk::AccelerationStructureGeometryKHR>& geometries,
+                             const std::vector<uint32_t>& primitiveCounts,
+                             CachedBlas& outBlas)
+{
+	ASSERT_OR_RETURN(false, !geometries.empty() && geometries.size() == primitiveCounts.size(),
+		"VkASManager: geometry/range mismatch");
 
-	copyBufferRegion(ctx, cmd,
-		srcVertices->object, entry.mesh.vertexByteOffset,
-		outBlas.vertexData.buffer, 0, vertexBytes);
-	copyBufferRegion(ctx, cmd,
-		srcIndices->object, entry.mesh.indexByteOffset,
-		outBlas.indexData.buffer, 0, indexBytes);
-
-	const vk::DeviceAddress vertexAddress = getBufferDeviceAddress(ctx, outBlas.vertexData.buffer);
-	const vk::DeviceAddress indexAddress = getBufferDeviceAddress(ctx, outBlas.indexData.buffer);
-
-	vk::AccelerationStructureGeometryTrianglesDataKHR triangles = vk::AccelerationStructureGeometryTrianglesDataKHR()
-		.setVertexFormat(vk::Format::eR32G32B32Sfloat)
-		.setVertexData(vertexAddress)
-		.setVertexStride(entry.mesh.vertexStride)
-		.setMaxVertex(entry.mesh.vertexCount)
-		.setIndexType(entry.mesh.uses32BitIndices ? vk::IndexType::eUint32 : vk::IndexType::eUint16)
-		.setIndexData(indexAddress);
-
-	vk::AccelerationStructureGeometryKHR geometry = vk::AccelerationStructureGeometryKHR()
-		.setGeometryType(vk::GeometryTypeKHR::eTriangles)
-		.setGeometry(triangles);
-
-	const uint32_t primitiveCount = entry.mesh.indexCount / 3;
 	vk::AccelerationStructureBuildGeometryInfoKHR geometryInfo = vk::AccelerationStructureBuildGeometryInfoKHR()
 		.setType(vk::AccelerationStructureTypeKHR::eBottomLevel)
 		.setFlags(vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace)
 		.setMode(vk::BuildAccelerationStructureModeKHR::eBuild)
 		.setDstAccelerationStructure({})
-		.setGeometries(geometry)
-		.setGeometryCount(1);
+		.setGeometries(geometries)
+		.setGeometryCount(static_cast<uint32_t>(geometries.size()));
 
 	vk::AccelerationStructureBuildSizesInfoKHR sizeInfo =
-		ctx.device.getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eDevice, geometryInfo, primitiveCount, *ctx.loader);
+		ctx.device.getAccelerationStructureBuildSizesKHR(
+			vk::AccelerationStructureBuildTypeKHR::eDevice,
+			geometryInfo,
+			primitiveCounts,
+			*ctx.loader);
 
 	outBlas.structure = createDeviceAddressBuffer(ctx, sizeInfo.accelerationStructureSize, vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR);
-	outBlas.scratch = createDeviceAddressBuffer(ctx, sizeInfo.buildScratchSize, {});
+	outBlas.scratch = createScratchBuffer(ctx, sizeInfo.buildScratchSize);
 	ASSERT_OR_RETURN(false, outBlas.structure.buffer && outBlas.scratch.buffer, "VkASManager: failed to allocate BLAS structure/scratch");
 
-	const vk::AccelerationStructureCreateInfoKHR createInfo = vk::AccelerationStructureCreateInfoKHR()
-		.setBuffer(outBlas.structure.buffer)
-		.setSize(sizeInfo.accelerationStructureSize)
-		.setType(vk::AccelerationStructureTypeKHR::eBottomLevel);
-
-	outBlas.handle = ctx.device.createAccelerationStructureKHR(createInfo, nullptr, *ctx.loader);
-	outBlas.structureAddress = getBufferDeviceAddress(ctx, outBlas.structure.buffer);
+	outBlas.handle = ctx.device.createAccelerationStructureKHR(
+		vk::AccelerationStructureCreateInfoKHR()
+			.setBuffer(outBlas.structure.buffer)
+			.setSize(sizeInfo.accelerationStructureSize)
+			.setType(vk::AccelerationStructureTypeKHR::eBottomLevel),
+		nullptr, *ctx.loader);
+	outBlas.structureAddress = getAccelerationStructureDeviceAddress(ctx, outBlas.handle);
 
 	geometryInfo.setDstAccelerationStructure(outBlas.handle);
-	geometryInfo.setScratchData(getBufferDeviceAddress(ctx, outBlas.scratch.buffer));
+	geometryInfo.setScratchData(getScratchDeviceAddress(ctx, outBlas.scratch.buffer));
 
-	const vk::AccelerationStructureBuildRangeInfoKHR rangeInfo = vk::AccelerationStructureBuildRangeInfoKHR()
-		.setPrimitiveCount(primitiveCount);
+	std::vector<vk::AccelerationStructureBuildRangeInfoKHR> rangeInfos;
+	rangeInfos.reserve(primitiveCounts.size());
+	for (const uint32_t primitiveCount : primitiveCounts)
+	{
+		rangeInfos.push_back(vk::AccelerationStructureBuildRangeInfoKHR().setPrimitiveCount(primitiveCount));
+	}
 
-	const vk::AccelerationStructureBuildRangeInfoKHR* rangeInfos[] = { &rangeInfo };
-	cmd.buildAccelerationStructuresKHR(geometryInfo, rangeInfos, *ctx.loader);
+	const vk::AccelerationStructureBuildRangeInfoKHR* rangeInfoArray[] = { rangeInfos.data() };
+	cmd.buildAccelerationStructuresKHR(geometryInfo, rangeInfoArray, *ctx.loader);
+	barrierBlasBuildComplete(ctx, cmd);
 	return true;
+}
+
+bool makeTriangleGeometry(const AsBuildContext& ctx, const SceneDescription::BlasMeshSource& mesh,
+                          vk::AccelerationStructureGeometryKHR& outGeometry, uint32_t& outPrimitiveCount)
+{
+	ASSERT_OR_RETURN(false, mesh.vertexCount > 0 && mesh.indexCount >= 3, "VkASManager: empty mesh");
+	ASSERT_OR_RETURN(false, mesh.indexCount % 3 == 0, "VkASManager: index count is not a multiple of 3");
+
+	const vk::DeviceAddress vertexAddress = meshBufferDeviceAddress(ctx, mesh.vertexBuffer, mesh.vertexByteOffset);
+	const vk::DeviceAddress indexAddress = meshBufferDeviceAddress(ctx, mesh.indexBuffer, mesh.indexByteOffset);
+
+	vk::AccelerationStructureGeometryTrianglesDataKHR triangles = vk::AccelerationStructureGeometryTrianglesDataKHR()
+		.setVertexFormat(vk::Format::eR32G32B32Sfloat)
+		.setVertexData(vertexAddress)
+		.setVertexStride(mesh.vertexStride)
+		.setMaxVertex(mesh.vertexCount > 0 ? mesh.vertexCount - 1 : 0)
+		.setIndexType(mesh.uses32BitIndices ? vk::IndexType::eUint32 : vk::IndexType::eUint16)
+		.setIndexData(indexAddress);
+
+	outGeometry = vk::AccelerationStructureGeometryKHR()
+		.setGeometryType(vk::GeometryTypeKHR::eTriangles)
+		.setGeometry(triangles);
+	outPrimitiveCount = mesh.indexCount / 3;
+	return true;
+}
+
+bool buildBlas(const AsBuildContext& ctx, vk::CommandBuffer cmd, const SceneDescription::StaticBlasEntry& entry, CachedBlas& outBlas)
+{
+	std::vector<vk::AccelerationStructureGeometryKHR> geometries(1);
+	uint32_t primitiveCount = 0;
+	ASSERT_OR_RETURN(false, makeTriangleGeometry(ctx, entry.mesh, geometries[0], primitiveCount), "VkASManager: invalid mesh geometry");
+	return buildBlasFromGeometries(ctx, cmd, geometries, { primitiveCount }, outBlas);
+}
+
+bool buildTerrainBatchBlas(const AsBuildContext& ctx, vk::CommandBuffer cmd,
+                           const std::vector<const SceneDescription::StaticBlasEntry*>& terrainSectors,
+                           CachedBlas& outBlas)
+{
+	std::vector<vk::AccelerationStructureGeometryKHR> geometries;
+	std::vector<uint32_t> primitiveCounts;
+	geometries.reserve(terrainSectors.size());
+	primitiveCounts.reserve(terrainSectors.size());
+
+	for (const SceneDescription::StaticBlasEntry* entry : terrainSectors)
+	{
+		if (entry == nullptr)
+		{
+			continue;
+		}
+		geometries.emplace_back();
+		uint32_t primitiveCount = 0;
+		if (!makeTriangleGeometry(ctx, entry->mesh, geometries.back(), primitiveCount))
+		{
+			geometries.pop_back();
+			continue;
+		}
+		primitiveCounts.push_back(primitiveCount);
+	}
+
+	ASSERT_OR_RETURN(false, !geometries.empty(), "VkASManager: no valid terrain geometries");
+	return buildBlasFromGeometries(ctx, cmd, geometries, primitiveCounts, outBlas);
 }
 
 vk::TransformMatrixKHR toVkTransform(const glm::mat4& transform)
 {
 	vk::TransformMatrixKHR matrix {};
-	const glm::mat4 transposed = glm::transpose(transform);
 	for (uint32_t row = 0; row < 3; ++row)
 	{
 		for (uint32_t col = 0; col < 4; ++col)
 		{
-			matrix.matrix[row][col] = transposed[col][row];
+			matrix.matrix[row][col] = transform[col][row];
 		}
 	}
 	return matrix;
@@ -228,9 +471,8 @@ struct VkASManager::Impl
 {
 	AsBuildContext ctx {};
 	std::unordered_map<uint64_t, CachedBlas> blasCache;
-	CachedBlas tlas {};
-	vk::CommandPool commandPool {};
-	vk::Fence fence {};
+	std::array<CachedBlas, TLAS_SLOT_COUNT> terrainBlasSlots {};
+	std::array<CachedBlas, TLAS_SLOT_COUNT> tlasSlots {};
 	bool supported = false;
 };
 
@@ -271,13 +513,6 @@ void VkASManager::init(VkRoot& root)
 	root.physicalDevice.getProperties2(&propertiesChain.get(), root.vkDynLoader);
 	_impl->ctx.asProperties = propertiesChain.get<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
 
-	_impl->commandPool = root.dev.createCommandPool(
-		vk::CommandPoolCreateInfo()
-			.setQueueFamilyIndex(_impl->ctx.queueFamilyIndex)
-			.setFlags(vk::CommandPoolCreateFlagBits::eTransient),
-		nullptr, root.vkDynLoader);
-	_impl->fence = root.dev.createFence(vk::FenceCreateInfo(), nullptr, root.vkDynLoader);
-
 	_impl->supported = true;
 	_capabilities.accelerationStructure = true;
 	_capabilities.rayQuery = true;
@@ -305,17 +540,13 @@ void VkASManager::shutdown()
 			destroyCachedBlas(ctx, pair.second);
 		}
 		_impl->blasCache.clear();
-		destroyCachedBlas(ctx, _impl->tlas);
-
-		if (_impl->fence)
+		for (CachedBlas& terrainBlasSlot : _impl->terrainBlasSlots)
 		{
-			_root->dev.destroyFence(_impl->fence, nullptr, _root->vkDynLoader);
-			_impl->fence = vk::Fence();
+			destroyCachedBlas(ctx, terrainBlasSlot);
 		}
-		if (_impl->commandPool)
+		for (CachedBlas& tlasSlot : _impl->tlasSlots)
 		{
-			_root->dev.destroyCommandPool(_impl->commandPool, nullptr, _root->vkDynLoader);
-			_impl->commandPool = vk::CommandPool();
+			destroyCachedBlas(ctx, tlasSlot);
 		}
 	}
 
@@ -326,7 +557,7 @@ void VkASManager::shutdown()
 	_root = nullptr;
 }
 
-void VkASManager::build(const SceneDescription& scene)
+void VkASManager::build(const SceneDescription& scene, vk::CommandBuffer cmd)
 {
 	if (!_initialized || !_impl || !_impl->supported)
 	{
@@ -340,51 +571,123 @@ void VkASManager::build(const SceneDescription& scene)
 	}
 
 	AsBuildContext& ctx = _impl->ctx;
-	destroyCachedBlas(ctx, _impl->tlas);
+	const size_t tlasSlotIndex = buffering_mechanism::get_current_frame_num() % TLAS_SLOT_COUNT;
+	CachedBlas& frameTlas = _impl->tlasSlots[tlasSlotIndex];
+	CachedBlas& terrainBlas = _impl->terrainBlasSlots[tlasSlotIndex];
+	deferDestroyCachedBlas(frameTlas);
 
-	const vk::CommandBuffer cmd = ctx.device.allocateCommandBuffers(
-		vk::CommandBufferAllocateInfo()
-			.setCommandPool(_impl->commandPool)
-			.setLevel(vk::CommandBufferLevel::ePrimary)
-			.setCommandBufferCount(1),
-		*ctx.loader).front();
+	std::vector<const SceneDescription::StaticBlasEntry*> terrainSectors;
+	terrainSectors.reserve(staticEntries.size());
+	for (const SceneDescription::StaticBlasEntry& entry : staticEntries)
+	{
+		if (entry.includeInTlas)
+		{
+			terrainSectors.push_back(&entry);
+		}
+	}
 
-	cmd.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), *ctx.loader);
+	barrierGeometryVisibleToAsBuild(ctx, cmd);
 
-	std::vector<vk::AccelerationStructureInstanceKHR> instances;
-	instances.reserve(staticEntries.size());
+	deferDestroyCachedBlas(terrainBlas);
+	if (!terrainSectors.empty())
+	{
+		if (!buildTerrainBatchBlas(ctx, cmd, terrainSectors, terrainBlas))
+		{
+			debug(LOG_ERROR, "VkASManager: failed to build terrain BLAS");
+			return;
+		}
+	}
 
 	for (const SceneDescription::StaticBlasEntry& entry : staticEntries)
 	{
+		if (entry.includeInTlas)
+		{
+			continue;
+		}
+
 		CachedBlas& cached = _impl->blasCache[entry.cacheKey];
 		if (!cached.handle)
 		{
 			if (!buildBlas(ctx, cmd, entry, cached))
 			{
-				cmd.end(*ctx.loader);
-				ctx.device.freeCommandBuffers(_impl->commandPool, 1, &cmd, *ctx.loader);
+				debug(LOG_ERROR, "VkASManager: failed to build mesh BLAS");
 				return;
 			}
 		}
+	}
 
-		vk::AccelerationStructureInstanceKHR instance = vk::AccelerationStructureInstanceKHR()
-			.setTransform(toVkTransform(entry.transform))
+	const auto& dynamicInstances = scene.instances();
+	const size_t tlasInstanceCount = (terrainBlas.handle ? 1 : 0) + dynamicInstances.size();
+	if (tlasInstanceCount == 0)
+	{
+		return;
+	}
+
+	std::vector<vk::AccelerationStructureInstanceKHR> instances;
+	instances.reserve(tlasInstanceCount);
+
+	if (terrainBlas.handle)
+	{
+		const glm::mat4 terrainTransform = terrainSectors.empty() ? glm::mat4(1.f) : terrainSectors.front()->transform;
+		instances.push_back(vk::AccelerationStructureInstanceKHR()
+			.setTransform(toVkTransform(terrainTransform))
 			.setInstanceCustomIndex(0)
 			.setMask(0xFF)
 			.setInstanceShaderBindingTableRecordOffset(0)
 			.setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable)
-			.setAccelerationStructureReference(cached.structureAddress);
-		instances.push_back(instance);
+			.setAccelerationStructureReference(terrainBlas.structureAddress));
+	}
+
+	for (const SceneDescription::DynamicInstance& dynamicInstance : dynamicInstances)
+	{
+		if (dynamicInstance.blasIndex >= staticEntries.size())
+		{
+			continue;
+		}
+
+		const SceneDescription::StaticBlasEntry& blasEntry = staticEntries[dynamicInstance.blasIndex];
+		const auto blasIt = _impl->blasCache.find(blasEntry.cacheKey);
+		if (blasIt == _impl->blasCache.end() || !blasIt->second.handle)
+		{
+			continue;
+		}
+
+		instances.push_back(vk::AccelerationStructureInstanceKHR()
+			.setTransform(toVkTransform(dynamicInstance.transform))
+			.setInstanceCustomIndex(dynamicInstance.instanceCustomIndex)
+			.setMask(dynamicInstance.mask)
+			.setInstanceShaderBindingTableRecordOffset(0)
+			.setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable)
+			.setAccelerationStructureReference(blasIt->second.structureAddress));
+	}
+
+	if (instances.empty())
+	{
+		return;
 	}
 
 	const vk::DeviceSize instanceBufferSize = instances.size() * sizeof(vk::AccelerationStructureInstanceKHR);
-	AsGpuBuffer instanceBuffer = createDeviceAddressBuffer(ctx, instanceBufferSize, vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst);
+	AsGpuBuffer instanceBuffer = createDeviceAddressBuffer(ctx, instanceBufferSize, vk::BufferUsageFlagBits::eTransferDst);
 	ASSERT_OR_RETURN(, instanceBuffer.buffer, "VkASManager: failed to allocate TLAS instance buffer");
 
-	void* mapped = nullptr;
-	vmaMapMemory(ctx.allocator, instanceBuffer.allocation, &mapped);
-	memcpy(mapped, instances.data(), static_cast<size_t>(instanceBufferSize));
-	vmaUnmapMemory(ctx.allocator, instanceBuffer.allocation);
+	TempStagingBuffer instanceStaging {};
+	ASSERT_OR_RETURN(, uploadToDeviceLocalBuffer(ctx, cmd, instanceBuffer.buffer, instances.data(), instanceBufferSize, instanceStaging),
+		"VkASManager: failed to upload TLAS instance buffer");
+
+	const vk::BufferMemoryBarrier instanceUploadBarrier = vk::BufferMemoryBarrier()
+		.setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+		.setDstAccessMask(vk::AccessFlagBits::eAccelerationStructureReadKHR)
+		.setBuffer(instanceBuffer.buffer)
+		.setOffset(0)
+		.setSize(instanceBufferSize);
+	cmd.pipelineBarrier(
+		vk::PipelineStageFlagBits::eTransfer,
+		vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+		vk::DependencyFlags(),
+		{},
+		instanceUploadBarrier,
+		{},
+		*ctx.loader);
 
 	vk::AccelerationStructureGeometryInstancesDataKHR instancesData = vk::AccelerationStructureGeometryInstancesDataKHR()
 		.setData(getBufferDeviceAddress(ctx, instanceBuffer.buffer));
@@ -403,21 +706,21 @@ void VkASManager::build(const SceneDescription& scene)
 	const vk::AccelerationStructureBuildSizesInfoKHR tlasSizeInfo =
 		ctx.device.getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eDevice, tlasGeometryInfo, static_cast<uint32_t>(instances.size()), *ctx.loader);
 
-	_impl->tlas.structure = createDeviceAddressBuffer(ctx, tlasSizeInfo.accelerationStructureSize, vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR);
-	_impl->tlas.scratch = createDeviceAddressBuffer(ctx, tlasSizeInfo.buildScratchSize, {});
-	ASSERT_OR_RETURN(, _impl->tlas.structure.buffer && _impl->tlas.scratch.buffer, "VkASManager: failed to allocate TLAS buffers");
+	frameTlas.structure = createDeviceAddressBuffer(ctx, tlasSizeInfo.accelerationStructureSize, vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR);
+	frameTlas.scratch = createScratchBuffer(ctx, tlasSizeInfo.buildScratchSize);
+	ASSERT_OR_RETURN(, frameTlas.structure.buffer && frameTlas.scratch.buffer, "VkASManager: failed to allocate TLAS buffers");
 
-	_impl->tlas.handle = ctx.device.createAccelerationStructureKHR(
+	frameTlas.handle = ctx.device.createAccelerationStructureKHR(
 		vk::AccelerationStructureCreateInfoKHR()
-			.setBuffer(_impl->tlas.structure.buffer)
+			.setBuffer(frameTlas.structure.buffer)
 			.setSize(tlasSizeInfo.accelerationStructureSize)
 			.setType(vk::AccelerationStructureTypeKHR::eTopLevel),
 		nullptr, *ctx.loader);
-	_impl->tlas.structureAddress = getBufferDeviceAddress(ctx, _impl->tlas.structure.buffer);
+	frameTlas.structureAddress = getAccelerationStructureDeviceAddress(ctx, frameTlas.handle);
 
 	vk::AccelerationStructureBuildGeometryInfoKHR tlasBuildInfo = tlasGeometryInfo;
-	tlasBuildInfo.setDstAccelerationStructure(_impl->tlas.handle);
-	tlasBuildInfo.setScratchData(getBufferDeviceAddress(ctx, _impl->tlas.scratch.buffer));
+	tlasBuildInfo.setDstAccelerationStructure(frameTlas.handle);
+	tlasBuildInfo.setScratchData(getScratchDeviceAddress(ctx, frameTlas.scratch.buffer));
 
 	const vk::AccelerationStructureBuildRangeInfoKHR tlasRangeInfo = vk::AccelerationStructureBuildRangeInfoKHR()
 		.setPrimitiveCount(static_cast<uint32_t>(instances.size()));
@@ -436,24 +739,23 @@ void VkASManager::build(const SceneDescription& scene)
 		{},
 		*ctx.loader);
 
-	cmd.end(*ctx.loader);
-
-	const vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR;
-	ctx.queue.submit(vk::SubmitInfo().setCommandBuffers(cmd).setPWaitDstStageMask(&waitStage), _impl->fence, *ctx.loader);
-	(void)ctx.device.waitForFences(1, &_impl->fence, VK_TRUE, UINT64_MAX, *ctx.loader);
-	(void)ctx.device.resetFences(1, &_impl->fence, *ctx.loader);
-	ctx.device.freeCommandBuffers(_impl->commandPool, 1, &cmd, *ctx.loader);
-
-	destroyAsGpuBuffer(ctx, instanceBuffer);
+	deferDestroyTempStagingBuffer(instanceStaging);
+	deferDestroyAsGpuBuffer(instanceBuffer);
 }
 
 void* VkASManager::tlasHandleForBinding() const
 {
-	if (!_impl || !_impl->tlas.handle)
+	if (!_impl)
 	{
 		return nullptr;
 	}
-	return static_cast<void*>(static_cast<VkAccelerationStructureKHR>(_impl->tlas.handle));
+	const size_t tlasSlotIndex = buffering_mechanism::get_current_frame_num() % TLAS_SLOT_COUNT;
+	const CachedBlas& frameTlas = _impl->tlasSlots[tlasSlotIndex];
+	if (!frameTlas.handle)
+	{
+		return nullptr;
+	}
+	return static_cast<void*>(static_cast<VkAccelerationStructureKHR>(frameTlas.handle));
 }
 
 #endif // defined(WZ_VULKAN_ENABLED)

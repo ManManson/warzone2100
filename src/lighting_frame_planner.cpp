@@ -5,12 +5,12 @@
 #include "scene_description.h"
 
 void LightingFramePlanner::planSunShadowPrePasses(gfx_api::RenderGraph& graph,
-                                                  SceneDescription& scene,
+                                                  SceneDescription scene,
                                                   SunShadowFrameContext& sunCtx)
 {
 	_sunTechnique = sunCtx.technique;
 	auto sunBackend = createSunShadowBackend(sunCtx.technique);
-	sunBackend->planPreScenePasses(graph, sunCtx, scene);
+	sunBackend->planPreScenePasses(graph, sunCtx, std::move(scene));
 }
 
 gfx_api::PassHandle LightingFramePlanner::addScenePass(gfx_api::RenderGraph& graph,

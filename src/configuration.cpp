@@ -719,6 +719,7 @@ bool loadConfig()
 	}
 	setDrawTerrainShadows(iniGetBool("terrainShadows", true).value());
 	war_setShadowFilterSize(iniGetInteger("shadowFilterSize", (int)war_getShadowFilterSize()).value());
+	war_setSunShadowRayQuery(iniGetBool("sunShadowRayQuery", false).value());
 	if (auto value = iniGetIntegerOpt("shadowMapResolution"))
 	{
 		war_setShadowMapResolution(value.value());
@@ -931,6 +932,7 @@ bool saveConfig()
 	iniSetInteger("terrainShadows", (int)(getDrawTerrainShadows()));
 	iniSetInteger("shadowFilterSize", (int)war_getShadowFilterSize());
 	iniSetInteger("shadowMapResolution", (int)war_getShadowMapResolution());
+	iniSetBool("sunShadowRayQuery", war_getSunShadowRayQuery());
 	iniSetBool("pointLightsPerpixel", war_getPointLightPerPixelLighting());
 	iniSetString("defaultSkirmishAI", getDefaultSkirmishAI());
 	iniSetBool("audioCueGroupReporting", war_getPlayAudioCue_GroupReporting());

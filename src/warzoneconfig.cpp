@@ -102,6 +102,7 @@ struct WARZONE_GLOBALS
 	uint32_t shadowFilteringMode = 1;
 	uint32_t shadowFilterSize = 5;
 	uint32_t shadowMapResolution = 0; // this defaults to 0, which causes the gfx backend to figure out a recommended default based on the system properties
+	bool sunShadowRayQuery = false;
 	bool pointLightLighting = false;
 	// UI config
 	bool groupsMenuEnabled = true;
@@ -731,6 +732,16 @@ void war_setShadowFilterSize(uint32_t filterSize)
 uint32_t war_getShadowMapResolution()
 {
 	return warGlobs.shadowMapResolution;
+}
+
+bool war_getSunShadowRayQuery()
+{
+	return warGlobs.sunShadowRayQuery;
+}
+
+void war_setSunShadowRayQuery(bool enabled)
+{
+	warGlobs.sunShadowRayQuery = enabled;
 }
 
 void war_setShadowMapResolution(uint32_t resolution)

@@ -58,6 +58,22 @@ OptionInfo::AvailabilityResult SupportsShadowMapping(const OptionInfo&)
 	return result;
 }
 
+OptionInfo::AvailabilityResult SupportsSunShadowRayQuery(const OptionInfo&)
+{
+	OptionInfo::AvailabilityResult result;
+	result.available = pie_supportsSunShadowRayQuery();
+	result.localizedUnavailabilityReason = _("Ray-traced sun shadows require Vulkan with ray query support.");
+	return result;
+}
+
+OptionInfo::AvailabilityResult CsmSunShadowsEnabled(const OptionInfo&)
+{
+	OptionInfo::AvailabilityResult result;
+	result.available = !pie_getSunShadowRayQuery();
+	result.localizedUnavailabilityReason = _("Not used when ray-traced sun shadows are enabled.");
+	return result;
+}
+
 OptionInfo::AvailabilityResult PerPixelLightingAvailable(const OptionInfo&)
 {
 	OptionInfo::AvailabilityResult result;
@@ -172,9 +188,41 @@ std::shared_ptr<OptionsForm> makeGraphicsOptionsForm()
 		result->addOption(optionInfo, valueChanger, true, 1);
 	}
 	{
+		auto optionInfo = OptionInfo("gfx.sunShadowTechnique", N_("Sun Shadow Technique"), N_("How direct sunlight shadows are computed. Ray-traced shadows use Vulkan hardware ray queries and skip cascaded shadow maps."));
+		optionInfo.addAvailabilityCondition(ShadowsEnabled);
+		optionInfo.addAvailabilityCondition(SupportsShadowMapping);
+		optionInfo.addAvailabilityCondition(SupportsSunShadowRayQuery);
+		auto valueChanger = OptionsDropdown<bool>::make(
+			[]() {
+				OptionChoices<bool> result;
+				result.choices = {
+					{ _("Cascaded Shadow Maps"), _("Classic shadow maps. Compatible with all supported graphics backends."), false },
+					{ _("Ray Traced (Vulkan)"), _("Hardware ray-traced sun shadows via acceleration structures. May improve contact shadow quality."), true },
+				};
+				result.setCurrentIdxForValue(pie_getSunShadowRayQuery());
+				return result;
+			},
+			[](const auto& newValue) -> bool {
+				if (newValue && !pie_supportsSunShadowRayQuery())
+				{
+					return false;
+				}
+				if (!pie_setSunShadowRayQuery(newValue))
+				{
+					debug(LOG_ERROR, "Failed to set sun shadow ray query: %d", (int)newValue);
+					return false;
+				}
+				war_setSunShadowRayQuery(newValue);
+				return true;
+			}, false
+		);
+		result->addOption(optionInfo, valueChanger, true);
+	}
+	{
 		auto optionInfo = OptionInfo("gfx.shadowResolution", N_("Shadow Resolution"), N_("The internal resolution used to render shadow maps. Higher values improve shadow appearance at the expense of performance and memory usage."));
 		optionInfo.addAvailabilityCondition(ShadowsEnabled);
 		optionInfo.addAvailabilityCondition(SupportsShadowMapping);
+		optionInfo.addAvailabilityCondition(CsmSunShadowsEnabled);
 		auto valueChanger = OptionsDropdown<uint32_t>::make(
 			[]() {
 				OptionChoices<uint32_t> result;
@@ -211,6 +259,7 @@ std::shared_ptr<OptionsForm> makeGraphicsOptionsForm()
 		auto optionInfo = OptionInfo("gfx.shadowFiltering", N_("Shadow Filtering"), N_("How much filtering / smoothing is applied to shadow appearance. Higher settings smooth shadows more at the expense of performance."));
 		optionInfo.addAvailabilityCondition(ShadowsEnabled);
 		optionInfo.addAvailabilityCondition(SupportsShadowMapping);
+		optionInfo.addAvailabilityCondition(CsmSunShadowsEnabled);
 		auto valueChanger = OptionsDropdown<uint32_t>::make(
 			[]() {
 				OptionChoices<uint32_t> result;

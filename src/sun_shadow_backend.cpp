@@ -29,7 +29,7 @@ class CsmSunShadowBackend final : public SunShadowBackend
 public:
 	void planPreScenePasses(gfx_api::RenderGraph& graph,
 	                        SunShadowFrameContext& ctx,
-	                        SceneDescription& /*scene*/) override
+	                        SceneDescription /*scene*/) override
 	{
 		if (ctx.shadowMode != ShadowMode::Shadow_Mapping)
 		{
@@ -85,7 +85,7 @@ class RayQuerySunShadowBackend final : public SunShadowBackend
 public:
 	void planPreScenePasses(gfx_api::RenderGraph& graph,
 	                        SunShadowFrameContext& ctx,
-	                        SceneDescription& scene) override
+	                        SceneDescription scene) override
 	{
 		if (ctx.shadowMode != ShadowMode::Shadow_Mapping)
 		{
@@ -93,7 +93,7 @@ public:
 		}
 
 		graph.addRenderPass(gfx_api::makeCommandPass("ASBuild",
-			[&scene](const gfx_api::RenderPassContext&)
+			[scene = std::move(scene)](const gfx_api::RenderPassContext&)
 			{
 				gfx_api::context::get().buildAccelerationStructures(scene);
 			}));
@@ -131,10 +131,9 @@ SunShadowTechnique resolveSunShadowTechnique()
 		return SunShadowTechnique::Csm;
 	}
 
-	const auto caps = gfx_api::context::get().capabilities();
-	if (caps.rayQuery && caps.accelerationStructure)
+	if (pie_supportsSunShadowRayQuery() && pie_getSunShadowRayQuery())
 	{
-		// Phase 4: check user setting for RayQuery tier
+		return SunShadowTechnique::RayQuery;
 	}
 
 	return SunShadowTechnique::Csm;

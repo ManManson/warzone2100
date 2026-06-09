@@ -1489,6 +1489,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	SceneDescription sceneDescription;
 	sceneDescription.beginFrame();
 	populateSceneDescriptionShadowCasters(sceneDescription);
+	pie_PopulateSceneDescriptionMeshShadowCasters(sceneDescription);
 
 	auto& renderGraph = pie_GetFrameRenderGraph();
 	gfx_api::PassHandle scenePass = gfx_api::kInvalidPassHandle;
@@ -1507,7 +1508,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	sunCtx.cameraPos = cameraPos;
 
 	LightingFramePlanner lightingPlanner;
-	lightingPlanner.planSunShadowPrePasses(renderGraph, sceneDescription, sunCtx);
+	lightingPlanner.planSunShadowPrePasses(renderGraph, std::move(sceneDescription), sunCtx);
 
 	const ssao::SceneMatrices ssaoMatrices {
 		.perspectiveViewMatrix = perspectiveViewMatrix,
