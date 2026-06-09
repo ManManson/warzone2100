@@ -351,6 +351,12 @@ namespace gfx_api
 		}
 	};
 
+	struct GfxCapabilities
+	{
+		bool rayQuery = false;
+		bool accelerationStructure = false;
+	};
+
 	struct context
 	{
 		enum class buffer_storage_hint
@@ -460,6 +466,7 @@ namespace gfx_api
 		virtual bool setShadowConstants(lighting_constants values) = 0;
 		// instanced rendering APIs
 		virtual bool supportsInstancedRendering() = 0;
+		virtual GfxCapabilities capabilities() const { return {}; }
 		virtual void draw_instanced(const std::size_t& offset, const std::size_t &count, const primitive_type &primitive, std::size_t instance_count) = 0;
 		virtual void draw_elements_instanced(const std::size_t& offset, const std::size_t& count, const primitive_type& primitive, const index_type& index, std::size_t instance_count) = 0;
 		// debug apis for recompiling pipelines

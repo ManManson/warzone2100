@@ -4705,6 +4705,11 @@ bool gl_context::supportsInstancedRendering()
 	return hasInstancedRenderingSupport;
 }
 
+gfx_api::GfxCapabilities gl_context::capabilities() const
+{
+	return {};
+}
+
 bool gl_context::textureFormatIsSupported(gfx_api::pixel_format_target target, gfx_api::pixel_format format, gfx_api::pixel_format_usage::flags usage)
 {
 	size_t formatIdx = static_cast<size_t>(format);

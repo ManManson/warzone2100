@@ -5606,6 +5606,11 @@ bool VkRoot::supportsInstancedRendering()
 	return true;
 }
 
+gfx_api::GfxCapabilities VkRoot::capabilities() const
+{
+	return {};
+}
+
 gfx_api::texture* VkRoot::create_texture(const std::size_t& mipmap_count, const std::size_t& width, const std::size_t& height, const gfx_api::pixel_format& internal_format, const std::string& filename)
 {
 	auto result = new VkTexture(*this, mipmap_count, width, height, internal_format, filename);

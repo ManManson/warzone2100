@@ -36,6 +36,8 @@
 #include "lib/ivis_opengl/piematrix.h"
 #include "lib/ivis_opengl/piemode.h"
 #include "lib/ivis_opengl/gfx_api_render_graph.h"
+#include "lighting_frame_planner.h"
+#include "scene_description.h"
 #include "ssao.h"
 #include "lib/framework/fixedpoint.h"
 #include "lib/ivis_opengl/piefunc.h"
@@ -90,7 +92,6 @@
 #include "animation.h"
 #include "faction.h"
 #include "wzcrashhandlingproviders.h"
-#include "shadowcascades.h"
 #include "profiling.h"
 #include "game_world.h"
 
@@ -1310,19 +1311,6 @@ inline bool quadIntersectsWithScreen(const QUAD & quad)
 	return false;
 }
 
-glm::mat4 getBiasedShadowMapMVPMatrix(glm::mat4 lightOrthoMatrix, const glm::mat4& lightViewMatrix)
-{
-	glm::mat4 biasMatrix(
-		0.5, 0.0, 0.0, 0.0,
-		0.0, 0.5, 0.0, 0.0,
-		0.0, 0.0, 0.5, 0.0,
-		0.5, 0.5, 0.5, 1.0
-	);
-
-	glm::mat4 shadowMatrix = lightOrthoMatrix * lightViewMatrix;
-	return biasMatrix * shadowMatrix;
-}
-
 /// Draw the terrain and all droids, missiles and other objects on it
 static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap, ILightingManager& lightManager)
 {
@@ -1353,14 +1341,9 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 		glm::rotate(UNDEG(player->r.y), glm::vec3(0.f, 1.f, 0.f)) *
 		glm::translate(glm::vec3(0, -player->p.y, 0));
 
-	// Calculate shadow mapping cascades
-	glm::vec3 lightInvDir = getTheSun();
-	size_t numShadowCascades = std::min<size_t>(gfx_api::context::get().numDepthPasses(), WZ_MAX_SHADOW_CASCADES);
-	std::vector<Cascade> shadowCascades;
-	if (currShadowMode == ShadowMode::Shadow_Mapping)
-	{
-		calculateShadowCascades(player, distance, baseViewMatrix, lightInvDir, numShadowCascades, shadowCascades);
-	}
+	// Shadow cascade matrices are computed when sun shadow prepasses are planned.
+	const glm::vec3 lightInvDir = getTheSun();
+	const size_t numShadowCascades = std::min<size_t>(gfx_api::context::get().numDepthPasses(), WZ_MAX_SHADOW_CASCADES);
 
 	// Incorporate all the view transforms into viewMatrix
 	const glm::mat4 viewMatrix = baseViewMatrix * glm::translate(glm::vec3(-player->p.x, 0, player->p.z));
@@ -1503,38 +1486,27 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	pie_UpdateLightmap(getTerrainLightmapTexture(), getModelUVLightmapMatrix());
 	pie_FinalizeMeshes(currentGameFrame);
 
+	SceneDescription sceneDescription;
+	sceneDescription.beginFrame();
+
 	auto& renderGraph = pie_GetFrameRenderGraph();
 	gfx_api::PassHandle scenePass = gfx_api::kInvalidPassHandle;
 	gfx_api::PassHandle depthPrePass = gfx_api::kInvalidPassHandle;
 
-	// shadow/depth-mapping passes
-	ShadowCascadesInfo shadowCascadesInfo;
-	shadowCascadesInfo.shadowMapSize = gfx_api::context::get().getDepthPassDimensions(0); // Note: Currently assumes that every depth pass has the same dimensions
-	for (size_t i = 0; i < std::min<size_t>(shadowCascades.size(), WZ_MAX_SHADOW_CASCADES); ++i)
-	{
-		shadowCascadesInfo.shadowMVPMatrix[i] = getBiasedShadowMapMVPMatrix(shadowCascades[i].projectionMatrix, shadowCascades[i].viewMatrix);
-		shadowCascadesInfo.shadowCascadeSplit[i] = shadowCascades[i].splitDepth;
-	}
+	SunShadowFrameContext sunCtx {};
+	sunCtx.shadowMode = currShadowMode;
+	sunCtx.technique = resolveSunShadowTechnique();
+	sunCtx.baseViewMatrix = baseViewMatrix;
+	sunCtx.lightInvDir = lightInvDir;
+	sunCtx.terrainDistance = distance;
+	sunCtx.player = player;
+	sunCtx.numShadowCascades = static_cast<uint32_t>(numShadowCascades);
+	sunCtx.drawTerrainShadows = bDrawTerrainShadows;
+	sunCtx.currentGameFrame = currentGameFrame;
+	sunCtx.cameraPos = cameraPos;
 
-	if (currShadowMode == ShadowMode::Shadow_Mapping)
-	{
-		for (size_t i = 0; i < numShadowCascades; ++i)
-		{
-			WZ_PROFILE_SCOPE(ShadowMapping);
-			renderGraph.addRenderPass(
-				gfx_api::makeDepthCascadePass(i, "ShadowCascade" + std::to_string(i),
-					[cascadeProjMatrix = shadowCascades[i].projectionMatrix,
-							cascadeViewMatrix = shadowCascades[i].viewMatrix,
-							cameraPos, shadowCascadesInfo](const gfx_api::RenderPassContext&)
-			{
-				if (bDrawTerrainShadows)
-				{
-					drawTerrainDepthOnly(cascadeProjMatrix * cascadeViewMatrix);
-				}
-				pie_DrawAllMeshes(currentGameFrame, cascadeProjMatrix, cascadeViewMatrix, cameraPos, shadowCascadesInfo, MeshDepthPassMode::ShadowMap);
-			}));
-		}
-	}
+	LightingFramePlanner lightingPlanner;
+	lightingPlanner.planSunShadowPrePasses(renderGraph, sceneDescription, sunCtx);
 
 	const ssao::SceneMatrices ssaoMatrices {
 		.perspectiveViewMatrix = perspectiveViewMatrix,
@@ -1544,46 +1516,42 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	};
 
 	depthPrePass = ssao::addDepthPrePass(
-		renderGraph, ssaoMatrices, cameraPos, shadowCascadesInfo, currentGameFrame);
+		renderGraph, ssaoMatrices, cameraPos, sunCtx.cascadesInfo, currentGameFrame);
 
-	// start main render pass
-	scenePass = renderGraph.addRenderPass(
-		gfx_api::makeScenePass("ScenePass",
-			[perspectiveViewMatrix, viewMatrix, cameraPos,
-					shadowCascadesInfo, baseViewMatrix, perspectiveMatrix](const gfx_api::RenderPassContext&)
-	{
-		// now we are about to draw the terrain
-		wzPerfBegin(PERF_TERRAIN, "3D scene - terrain");
-		pie_SetFogStatus(true);
-		drawTerrain(perspectiveViewMatrix, viewMatrix, cameraPos, -getTheSun(), shadowCascadesInfo);
-		wzPerfEnd(PERF_TERRAIN);
+	scenePass = lightingPlanner.addScenePass(renderGraph, sunCtx.cascadesInfo,
+		ScenePassCallbacks {
+			.recordScenePass =
+				[perspectiveViewMatrix, viewMatrix, cameraPos, baseViewMatrix, perspectiveMatrix]
+				(const ShadowCascadesInfo& shadowCascadesInfo)
+			{
+				wzPerfBegin(PERF_TERRAIN, "3D scene - terrain");
+				pie_SetFogStatus(true);
+				drawTerrain(perspectiveViewMatrix, viewMatrix, cameraPos, -getTheSun(), shadowCascadesInfo);
+				wzPerfEnd(PERF_TERRAIN);
 
-		// draw skybox
-		// NOTE: Must come *after* drawTerrain *if* using the fallback (old) terrain shaders
-		wzPerfBegin(PERF_SKYBOX, "3D scene - skybox");
-		renderSurroundings(pie_SkyboxPerspectiveGet(), baseViewMatrix);
-		wzPerfEnd(PERF_SKYBOX);
+				wzPerfBegin(PERF_SKYBOX, "3D scene - skybox");
+				renderSurroundings(pie_SkyboxPerspectiveGet(), baseViewMatrix);
+				wzPerfEnd(PERF_SKYBOX);
 
-		wzPerfBegin(PERF_WATER, "3D scene - water");
-		// prepare for the water and the lightmap
-		pie_SetFogStatus(true);
-		// also, make sure we can use world coordinates directly
-		drawWater(perspectiveViewMatrix, viewMatrix, cameraPos, -getTheSun(), shadowCascadesInfo);
-		wzPerfEnd(PERF_WATER);
+				wzPerfBegin(PERF_WATER, "3D scene - water");
+				pie_SetFogStatus(true);
+				drawWater(perspectiveViewMatrix, viewMatrix, cameraPos, -getTheSun(), shadowCascadesInfo);
+				wzPerfEnd(PERF_WATER);
 
-		wzPerfBegin(PERF_MODELS, "3D scene - models");
-		{
-			WZ_PROFILE_SCOPE(pie_DrawAllMeshes);
-			pie_DrawAllMeshes(currentGameFrame, perspectiveMatrix, viewMatrix, cameraPos, shadowCascadesInfo, MeshDepthPassMode::None);
-		}
-		wzPerfEnd(PERF_MODELS);
+				wzPerfBegin(PERF_MODELS, "3D scene - models");
+				{
+					WZ_PROFILE_SCOPE(pie_DrawAllMeshes);
+					pie_DrawAllMeshes(currentGameFrame, perspectiveMatrix, viewMatrix, cameraPos, shadowCascadesInfo, MeshDepthPassMode::None);
+				}
+				wzPerfEnd(PERF_MODELS);
 
-		if (!gamePaused())
-		{
-			doConstructionLines(viewMatrix);
-		}
-		locateMouse();
-	}));
+				if (!gamePaused())
+				{
+					doConstructionLines(viewMatrix);
+				}
+				locateMouse();
+			},
+		});
 
 	gfx_api::abstract_texture* sceneColorSurf = gfx_api::context::get().getPipelineSurface(
 		gfx_api::PipelineSurfaceId::SceneColor);
