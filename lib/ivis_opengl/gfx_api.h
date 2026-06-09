@@ -341,13 +341,15 @@ namespace gfx_api
 		uint32_t shadowFilterSize = 5;
 		uint32_t shadowCascadesCount = WZ_MAX_SHADOW_CASCADES;
 		bool isPointLightPerPixelEnabled = false;
+		bool sunShadowRayQuery = false;
 
 		bool operator==(const lighting_constants& rhs) const
 		{
 			return shadowMode == rhs.shadowMode
 			&& shadowFilterSize == rhs.shadowFilterSize
 			&& shadowCascadesCount == rhs.shadowCascadesCount
-			&& isPointLightPerPixelEnabled == rhs.isPointLightPerPixelEnabled;
+			&& isPointLightPerPixelEnabled == rhs.isPointLightPerPixelEnabled
+			&& sunShadowRayQuery == rhs.sunShadowRayQuery;
 		}
 	};
 
@@ -468,6 +470,7 @@ struct GfxCapabilities
 		virtual bool supportsInstancedRendering() = 0;
 		virtual GfxCapabilities capabilities() const { return {}; }
 		virtual void buildAccelerationStructures(const struct SceneDescription& scene) { (void)scene; }
+		virtual void bindSunShadowDescriptors() {}
 		virtual void draw_instanced(const std::size_t& offset, const std::size_t &count, const primitive_type &primitive, std::size_t instance_count) = 0;
 		virtual void draw_elements_instanced(const std::size_t& offset, const std::size_t& count, const primitive_type& primitive, const index_type& index, std::size_t instance_count) = 0;
 		// debug apis for recompiling pipelines

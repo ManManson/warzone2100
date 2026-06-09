@@ -1,4 +1,4 @@
-#version 450
+#version 460
 
 #include "terrain_combined.glsl"
 
@@ -6,6 +6,10 @@ layout (constant_id = 0) const float WZ_MIP_LOAD_BIAS = 0.f;
 layout (constant_id = 1) const uint WZ_SHADOW_MODE = 1;
 layout (constant_id = 2) const uint WZ_SHADOW_FILTER_SIZE = 5;
 layout (constant_id = 3) const uint WZ_SHADOW_CASCADES_COUNT = 3;
+#ifdef WZ_ENABLE_SUN_SHADOW_RAY_QUERY
+layout (constant_id = 5) const uint WZ_SUN_SHADOW_RAY_QUERY = 0;
+#define WZ_SUN_SHADOW_TLAS_DESCRIPTOR_SET 2
+#endif
 
 layout(set = 1, binding = 0) uniform sampler2D lightmap_tex;
 
@@ -42,7 +46,7 @@ vec4 main_classic() {
 	vec3 L = normalize(frag.groundLightDir);
 	vec3 N = vec3(0,0,1);
 	float diffuseFactor = lambertTerm(N, L); // diffuse lighting
-	float visibility = getShadowVisibility(frag.posModelSpace, frag.posViewSpace, diffuseFactor, 0.001f);
+	float visibility = getShadowVisibilityEx(frag.posModelSpace, frag.posViewSpace, N, sunPos.xyz, diffuseFactor, 0.001f);
 
 	vec4 lightmap_vec4 = texture(lightmap_tex, frag.uvLightmap);
 	vec4 light = (visibility*diffuseLight*0.75*diffuseFactor + ambientLight*0.25) * lightmap_vec4.a; // ... * tile brightness / ambient occlusion (stored in lightmap.a);

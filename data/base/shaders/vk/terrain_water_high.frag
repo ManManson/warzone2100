@@ -1,4 +1,4 @@
-#version 450
+#version 460
 
 #include "terrain_water_high.glsl"
 
@@ -6,6 +6,10 @@ layout (constant_id = 0) const float WZ_MIP_LOAD_BIAS = 0.f;
 layout (constant_id = 1) const uint WZ_SHADOW_MODE = 1;
 layout (constant_id = 2) const uint WZ_SHADOW_FILTER_SIZE = 5;
 layout (constant_id = 3) const uint WZ_SHADOW_CASCADES_COUNT = 3;
+#ifdef WZ_ENABLE_SUN_SHADOW_RAY_QUERY
+layout (constant_id = 5) const uint WZ_SUN_SHADOW_RAY_QUERY = 0;
+#define WZ_SUN_SHADOW_TLAS_DESCRIPTOR_SET 2
+#endif
 
 layout(set = 1, binding = 0) uniform sampler2DArray tex;
 layout(set = 1, binding = 1) uniform sampler2DArray tex_nm;
@@ -60,7 +64,7 @@ vec4 main_bumpMapping()
 
 	// Light
 	float diffuseFactor = lambertTerm(N, lightDir);
-	float visibility = getShadowVisibility(frag.posModelSpace, frag.posViewSpace, diffuseFactor, 0.0f);
+	float visibility = getShadowVisibilityEx(frag.posModelSpace, frag.posViewSpace, N, sunPos.xyz, diffuseFactor, 0.0f);
 	diffuseFactor = min(diffuseFactor, visibility*diffuseFactor);
 	float specularFactor = blinnTerm(N, halfVec, 0.f, 128.f);
 	vec3 reflectLight = reflect(-lightDir, N);

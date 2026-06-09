@@ -75,6 +75,7 @@ bool pie_setShadowCascades(uint32_t newValue);
 uint32_t pie_getShadowCascades();
 
 optional<bool> pie_supportsShadowMapping();
+bool pie_supportsSunShadowRayQuery();
 bool pie_setShadowMapResolution(uint32_t resolution);
 uint32_t pie_getShadowMapResolution();
 

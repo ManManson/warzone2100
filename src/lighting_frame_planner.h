@@ -28,4 +28,7 @@ public:
 	gfx_api::PassHandle addScenePass(gfx_api::RenderGraph& graph,
 	                                 const ShadowCascadesInfo& cascadesInfo,
 	                                 const ScenePassCallbacks& callbacks);
+
+private:
+	SunShadowTechnique _sunTechnique = SunShadowTechnique::Csm;
 };

@@ -1,4 +1,4 @@
-#version 450
+#version 460
 
 #include "terrain_combined.glsl"
 
@@ -7,6 +7,10 @@ layout (constant_id = 1) const uint WZ_SHADOW_MODE = 1;
 layout (constant_id = 2) const uint WZ_SHADOW_FILTER_SIZE = 5;
 layout (constant_id = 3) const uint WZ_SHADOW_CASCADES_COUNT = 3;
 layout (constant_id = 4) const uint WZ_POINT_LIGHT_ENABLED = 0;
+#ifdef WZ_ENABLE_SUN_SHADOW_RAY_QUERY
+layout (constant_id = 5) const uint WZ_SUN_SHADOW_RAY_QUERY = 0;
+#define WZ_SUN_SHADOW_TLAS_DESCRIPTOR_SET 2
+#endif
 
 layout(set = 1, binding = 0) uniform sampler2D lightmap_tex;
 
@@ -63,7 +67,8 @@ vec3 blendAddEffectLighting(vec3 a, vec3 b) {
 vec4 doBumpMapping(BumpData b, vec3 groundLightDir, vec3 groundHalfVec) {
 	vec3 L = normalize(groundLightDir);
 	float diffuseFactor = lambertTerm(b.N, L); // diffuse lighting
-	float visibility = getShadowVisibility(frag.posModelSpace, frag.posViewSpace, diffuseFactor, 0.001f);
+	vec3 worldNormal = normalize(ModelTangentMatrix * b.N);
+	float visibility = getShadowVisibilityEx(frag.posModelSpace, frag.posViewSpace, worldNormal, sunPos.xyz, diffuseFactor, 0.001f);
 	diffuseFactor = min(diffuseFactor, visibility*diffuseFactor);
 
 	float specularFactor = blinnTerm(b.N, normalize(groundHalfVec), b.gloss, 16.f);

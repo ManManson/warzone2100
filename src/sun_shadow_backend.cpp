@@ -101,7 +101,7 @@ public:
 
 	void bindForForwardPass() override
 	{
-		// Phase 2: bind TLAS descriptor set.
+		gfx_api::context::get().bindSunShadowDescriptors();
 	}
 
 	SunShadowTechnique technique() const override

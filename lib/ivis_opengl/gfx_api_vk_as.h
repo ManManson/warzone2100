@@ -26,6 +26,7 @@ public:
 	void build(const SceneDescription& scene);
 
 	gfx_api::GfxCapabilities capabilities() const { return _capabilities; }
+	void* tlasHandleForBinding() const;
 
 private:
 	struct Impl;

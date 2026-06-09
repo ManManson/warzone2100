@@ -1202,45 +1202,69 @@ struct shader_infos
 {
 	std::string vertexSpv;
 	std::string fragmentSpv;
+	std::string fragmentSpvRayQuery;
 	bool specializationConstant_0_mipLoadBias = false;
 	bool specializationConstant_1_shadowMode = false;
 	bool specializationConstant_2_shadowFilterSize = false;
 	bool specializationConstant_3_shadowCascadesCount = false;
 	bool specializationConstant_4_pointLightEnabled = false;
+	bool specializationConstant_5_sunShadowRayQuery = false;
 };
+
+static bool shaderSupportsSunShadowRayQuery(SHADER_MODE shader_mode)
+{
+	switch (shader_mode)
+	{
+	case SHADER_TERRAIN_COMBINED_CLASSIC:
+	case SHADER_TERRAIN_COMBINED_MEDIUM:
+	case SHADER_TERRAIN_COMBINED_HIGH:
+	case SHADER_COMPONENT_INSTANCED:
+	case SHADER_WATER_HIGH:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool useSunShadowRayQuerySpv(const VkRoot& root, SHADER_MODE shader_mode)
+{
+	return root.shadowConstants.sunShadowRayQuery
+		&& root.capabilities().rayQuery
+		&& shaderSupportsSunShadowRayQuery(shader_mode);
+}
 
 static const std::map<SHADER_MODE, shader_infos> spv_files
 {
-	std::make_pair(SHADER_COMPONENT, shader_infos{ "shaders/vk/tcmask.vert.spv", "shaders/vk/tcmask.frag.spv", true }),
-	std::make_pair(SHADER_COMPONENT_INSTANCED, shader_infos{ "shaders/vk/tcmask_instanced.vert.spv", "shaders/vk/tcmask_instanced.frag.spv", true, true, true, true, true }),
-	std::make_pair(SHADER_COMPONENT_DEPTH_INSTANCED, shader_infos{ "shaders/vk/tcmask_depth_instanced.vert.spv", "shaders/vk/tcmask_depth_instanced.frag.spv" }),
-	std::make_pair(SHADER_COMPONENT_DEPTH_SSAO_INSTANCED, shader_infos{ "shaders/vk/tcmask_depth_ssao_instanced.vert.spv", "shaders/vk/tcmask_depth_instanced.frag.spv" }),
-	std::make_pair(SHADER_NOLIGHT, shader_infos{ "shaders/vk/nolight.vert.spv", "shaders/vk/nolight.frag.spv", true }),
-	std::make_pair(SHADER_NOLIGHT_INSTANCED, shader_infos{ "shaders/vk/nolight_instanced.vert.spv", "shaders/vk/nolight_instanced.frag.spv", true }),
-	std::make_pair(SHADER_TERRAIN_DEPTH, shader_infos{ "shaders/vk/terrain_depth.vert.spv", "shaders/vk/terraindepth.frag.spv" }),
-	std::make_pair(SHADER_TERRAIN_DEPTHMAP, shader_infos{ "shaders/vk/terrain_depth_only.vert.spv", "shaders/vk/terrain_depth_only.frag.spv" }),
-	std::make_pair(SHADER_TERRAIN_DEPTH_SSAO, shader_infos{ "shaders/vk/terrain_depth.vert.spv", "shaders/vk/terrain_depth_ssao.frag.spv" }),
-	std::make_pair(SHADER_TERRAIN_COMBINED_CLASSIC, shader_infos{ "shaders/vk/terrain_combined.vert.spv", "shaders/vk/terrain_combined_classic.frag.spv", true, true, true, true }),
-	std::make_pair(SHADER_TERRAIN_COMBINED_MEDIUM, shader_infos{ "shaders/vk/terrain_combined.vert.spv", "shaders/vk/terrain_combined_medium.frag.spv", true, true, true, true }),
-	std::make_pair(SHADER_TERRAIN_COMBINED_HIGH, shader_infos{ "shaders/vk/terrain_combined.vert.spv", "shaders/vk/terrain_combined_high.frag.spv", true, true, true, true, true }),
-	std::make_pair(SHADER_WATER, shader_infos{ "shaders/vk/terrain_water.vert.spv", "shaders/vk/water.frag.spv", true }),
-	std::make_pair(SHADER_WATER_HIGH, shader_infos{ "shaders/vk/terrain_water_high.vert.spv", "shaders/vk/terrain_water_high.frag.spv", true, true, true, true }),
-	std::make_pair(SHADER_WATER_CLASSIC, shader_infos{ "shaders/vk/terrain_water_classic.vert.spv", "shaders/vk/terrain_water_classic.frag.spv", true }),
-	std::make_pair(SHADER_RECT, shader_infos{ "shaders/vk/rect.vert.spv", "shaders/vk/rect.frag.spv" }),
-	std::make_pair(SHADER_RECT_INSTANCED, shader_infos{ "shaders/vk/rect_instanced.vert.spv", "shaders/vk/rect_instanced.frag.spv" }),
-	std::make_pair(SHADER_TEXRECT, shader_infos{ "shaders/vk/rect.vert.spv", "shaders/vk/texturedrect.frag.spv" }),
-	std::make_pair(SHADER_GFX_COLOUR, shader_infos{ "shaders/vk/gfx_color.vert.spv", "shaders/vk/gfx.frag.spv" }),
-	std::make_pair(SHADER_GFX_TEXT, shader_infos{ "shaders/vk/gfx_text.vert.spv", "shaders/vk/texturedrect.frag.spv" }),
-	std::make_pair(SHADER_SKYBOX, shader_infos{ "shaders/vk/skybox.vert.spv", "shaders/vk/skybox.frag.spv" }),
-	std::make_pair(SHADER_GENERIC_COLOR, shader_infos{ "shaders/vk/generic.vert.spv", "shaders/vk/rect.frag.spv" }),
-	std::make_pair(SHADER_LINE, shader_infos{ "shaders/vk/line.vert.spv", "shaders/vk/rect.frag.spv" }),
-	std::make_pair(SHADER_TEXT, shader_infos{ "shaders/vk/rect.vert.spv", "shaders/vk/text.frag.spv" }),
-	std::make_pair(SHADER_WORLD_TO_SCREEN, shader_infos{ "shaders/vk/world_to_screen.vert.spv", "shaders/vk/world_to_screen.frag.spv" }),
-	std::make_pair(SHADER_SSAO_GENERATE, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/ssao_generate.frag.spv" }),
-	std::make_pair(SHADER_SSAO_BLUR, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/ssao_blur.frag.spv" }),
-	std::make_pair(SHADER_SCENE_COMPOSE_SSAO, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/scene_compose_ssao.frag.spv" }),
-	std::make_pair(SHADER_DEBUG_TEXTURE2D_QUAD, shader_infos{ "shaders/vk/quad_texture2d.vert.spv", "shaders/vk/quad_texture2d.frag.spv" }),
-	std::make_pair(SHADER_DEBUG_TEXTURE2DARRAY_QUAD, shader_infos{ "shaders/vk/quad_texture2darray.vert.spv", "shaders/vk/quad_texture2darray.frag.spv" })
+	std::make_pair(SHADER_COMPONENT, shader_infos{ "shaders/vk/tcmask.vert.spv", "shaders/vk/tcmask.frag.spv", "", true }),
+	std::make_pair(SHADER_COMPONENT_INSTANCED, shader_infos{ "shaders/vk/tcmask_instanced.vert.spv", "shaders/vk/tcmask_instanced.frag.spv", "shaders/vk/tcmask_instanced.frag_rq.spv", true, true, true, true, true, true }),
+	std::make_pair(SHADER_COMPONENT_DEPTH_INSTANCED, shader_infos{ "shaders/vk/tcmask_depth_instanced.vert.spv", "shaders/vk/tcmask_depth_instanced.frag.spv", "" }),
+	std::make_pair(SHADER_COMPONENT_DEPTH_SSAO_INSTANCED, shader_infos{ "shaders/vk/tcmask_depth_ssao_instanced.vert.spv", "shaders/vk/tcmask_depth_instanced.frag.spv", "" }),
+	std::make_pair(SHADER_NOLIGHT, shader_infos{ "shaders/vk/nolight.vert.spv", "shaders/vk/nolight.frag.spv", "", true }),
+	std::make_pair(SHADER_NOLIGHT_INSTANCED, shader_infos{ "shaders/vk/nolight_instanced.vert.spv", "shaders/vk/nolight_instanced.frag.spv", "", true }),
+	std::make_pair(SHADER_TERRAIN_DEPTH, shader_infos{ "shaders/vk/terrain_depth.vert.spv", "shaders/vk/terraindepth.frag.spv", "" }),
+	std::make_pair(SHADER_TERRAIN_DEPTHMAP, shader_infos{ "shaders/vk/terrain_depth_only.vert.spv", "shaders/vk/terrain_depth_only.frag.spv", "" }),
+	std::make_pair(SHADER_TERRAIN_DEPTH_SSAO, shader_infos{ "shaders/vk/terrain_depth.vert.spv", "shaders/vk/terrain_depth_ssao.frag.spv", "" }),
+	std::make_pair(SHADER_TERRAIN_COMBINED_CLASSIC, shader_infos{ "shaders/vk/terrain_combined.vert.spv", "shaders/vk/terrain_combined_classic.frag.spv", "shaders/vk/terrain_combined_classic.frag_rq.spv", true, true, true, true, false, true }),
+	std::make_pair(SHADER_TERRAIN_COMBINED_MEDIUM, shader_infos{ "shaders/vk/terrain_combined.vert.spv", "shaders/vk/terrain_combined_medium.frag.spv", "shaders/vk/terrain_combined_medium.frag_rq.spv", true, true, true, true, false, true }),
+	std::make_pair(SHADER_TERRAIN_COMBINED_HIGH, shader_infos{ "shaders/vk/terrain_combined.vert.spv", "shaders/vk/terrain_combined_high.frag.spv", "shaders/vk/terrain_combined_high.frag_rq.spv", true, true, true, true, true, true }),
+	std::make_pair(SHADER_WATER, shader_infos{ "shaders/vk/terrain_water.vert.spv", "shaders/vk/water.frag.spv", "", true }),
+	std::make_pair(SHADER_WATER_HIGH, shader_infos{ "shaders/vk/terrain_water_high.vert.spv", "shaders/vk/terrain_water_high.frag.spv", "shaders/vk/terrain_water_high.frag_rq.spv", true, true, true, true, false, true }),
+	std::make_pair(SHADER_WATER_CLASSIC, shader_infos{ "shaders/vk/terrain_water_classic.vert.spv", "shaders/vk/terrain_water_classic.frag.spv", "", true }),
+	std::make_pair(SHADER_RECT, shader_infos{ "shaders/vk/rect.vert.spv", "shaders/vk/rect.frag.spv", "" }),
+	std::make_pair(SHADER_RECT_INSTANCED, shader_infos{ "shaders/vk/rect_instanced.vert.spv", "shaders/vk/rect_instanced.frag.spv", "" }),
+	std::make_pair(SHADER_TEXRECT, shader_infos{ "shaders/vk/rect.vert.spv", "shaders/vk/texturedrect.frag.spv", "" }),
+	std::make_pair(SHADER_GFX_COLOUR, shader_infos{ "shaders/vk/gfx_color.vert.spv", "shaders/vk/gfx.frag.spv", "" }),
+	std::make_pair(SHADER_GFX_TEXT, shader_infos{ "shaders/vk/gfx_text.vert.spv", "shaders/vk/texturedrect.frag.spv", "" }),
+	std::make_pair(SHADER_SKYBOX, shader_infos{ "shaders/vk/skybox.vert.spv", "shaders/vk/skybox.frag.spv", "" }),
+	std::make_pair(SHADER_GENERIC_COLOR, shader_infos{ "shaders/vk/generic.vert.spv", "shaders/vk/rect.frag.spv", "" }),
+	std::make_pair(SHADER_LINE, shader_infos{ "shaders/vk/line.vert.spv", "shaders/vk/rect.frag.spv", "" }),
+	std::make_pair(SHADER_TEXT, shader_infos{ "shaders/vk/rect.vert.spv", "shaders/vk/text.frag.spv", "" }),
+	std::make_pair(SHADER_WORLD_TO_SCREEN, shader_infos{ "shaders/vk/world_to_screen.vert.spv", "shaders/vk/world_to_screen.frag.spv", "" }),
+	std::make_pair(SHADER_SSAO_GENERATE, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/ssao_generate.frag.spv", "" }),
+	std::make_pair(SHADER_SSAO_BLUR, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/ssao_blur.frag.spv", "" }),
+	std::make_pair(SHADER_SCENE_COMPOSE_SSAO, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/scene_compose_ssao.frag.spv", "" }),
+	std::make_pair(SHADER_DEBUG_TEXTURE2D_QUAD, shader_infos{ "shaders/vk/quad_texture2d.vert.spv", "shaders/vk/quad_texture2d.frag.spv", "" }),
+	std::make_pair(SHADER_DEBUG_TEXTURE2DARRAY_QUAD, shader_infos{ "shaders/vk/quad_texture2darray.vert.spv", "shaders/vk/quad_texture2darray.frag.spv", "" })
 };
 
 std::vector<uint32_t> VkPSO::readShaderBuf(const std::string& name)
@@ -1732,6 +1756,14 @@ VkPSO::VkPSO(vk::Device _dev,
 	textures_first_set = static_cast<uint32_t>(layout_desc.size()); // Store descriptor set index for textures
 	layout_desc.push_back(textures_set_layout);
 
+	const bool useRayQuerySpv = useSunShadowRayQuerySpv(*root, shader_mode);
+	usesSunShadowRayQuerySpv = useRayQuerySpv;
+	if (useRayQuerySpv && root->isSunShadowDescriptorsInitialized())
+	{
+		layout_desc.push_back(root->getSunShadowTlasDescriptorSetLayout());
+		sunShadowTlasDescriptorSetIndex = static_cast<uint32_t>(layout_desc.size() - 1);
+	}
+
 
 	const auto layoutCreateInfo = vk::PipelineLayoutCreateInfo()
 		.setPSetLayouts(layout_desc.data())
@@ -1808,8 +1840,11 @@ VkPSO::VkPSO(vk::Device _dev,
 	depthBiasEnabled = state_desc.offset;
 	const auto rasterizationState = to_vk(state_desc.offset, state_desc.cull);
 	const auto& shaderInfo = spv_files.at(shader_mode);
+	const std::string& fragmentSpvPath = (useRayQuerySpv && !shaderInfo.fragmentSpvRayQuery.empty())
+		? shaderInfo.fragmentSpvRayQuery
+		: shaderInfo.fragmentSpv;
 	vertexShader = get_module(shaderInfo.vertexSpv, *pVkDynLoader);
-	fragmentShader = get_module(shaderInfo.fragmentSpv, *pVkDynLoader);
+	fragmentShader = get_module(fragmentSpvPath, *pVkDynLoader);
 	auto pipelineStages = get_stages(vertexShader, fragmentShader);
 
 	std::vector<char> specializationConstantsDataBuffer;
@@ -1848,6 +1883,11 @@ VkPSO::VkPSO(vk::Device _dev,
 	{
 		appendSpecializationConstant_uint32(4, static_cast<uint32_t>(root->shadowConstants.isPointLightPerPixelEnabled));
 		hasSpecializationConstant_PointLightConstants = true;
+	}
+	if (useRayQuerySpv && shaderInfo.specializationConstant_5_sunShadowRayQuery)
+	{
+		appendSpecializationConstant_uint32(5, root->shadowConstants.sunShadowRayQuery ? 1u : 0u);
+		hasSpecializationConstant_SunShadowRayQuery = true;
 	}
 	if (!specializationEntries.empty())
 	{
@@ -3845,6 +3885,7 @@ void VkRoot::shutdown()
 
 	// destroy allocator
 	asManager.shutdown();
+	shutdownSunShadowDescriptors();
 	if (allocator != VK_NULL_HANDLE)
 	{
 		vmaDestroyAllocator(allocator);
@@ -5008,6 +5049,7 @@ bool VkRoot::_initialize(const gfx_api::backend_Impl_Factory& impl, int32_t anti
 	}
 
 	asManager.init(*this);
+	initSunShadowDescriptors();
 
 	getQueues();
 
@@ -5659,6 +5701,120 @@ gfx_api::GfxCapabilities VkRoot::capabilities() const
 void VkRoot::buildAccelerationStructures(const struct SceneDescription& scene)
 {
 	asManager.build(scene);
+	updateSunShadowTlasDescriptor();
+}
+
+void VkRoot::bindSunShadowDescriptors()
+{
+	updateSunShadowTlasDescriptor();
+}
+
+void VkRoot::initSunShadowDescriptors()
+{
+	if (sunShadowDescriptorsInitialized || !capabilities().rayQuery)
+	{
+		return;
+	}
+
+	const vk::DescriptorSetLayoutBinding tlasBinding = vk::DescriptorSetLayoutBinding()
+		.setBinding(0)
+		.setDescriptorCount(1)
+		.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
+		.setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
+	sunShadowTlasDescriptorSetLayout = dev.createDescriptorSetLayout(
+		vk::DescriptorSetLayoutCreateInfo()
+			.setBindingCount(1)
+			.setPBindings(&tlasBinding),
+		nullptr, vkDynLoader);
+
+	const vk::DescriptorPoolSize poolSize = vk::DescriptorPoolSize()
+		.setType(vk::DescriptorType::eAccelerationStructureKHR)
+		.setDescriptorCount(1);
+	sunShadowTlasDescriptorPool = dev.createDescriptorPool(
+		vk::DescriptorPoolCreateInfo()
+			.setMaxSets(1)
+			.setPoolSizeCount(1)
+			.setPPoolSizes(&poolSize),
+		nullptr, vkDynLoader);
+
+	const std::array<vk::DescriptorSetLayout, 1> tlasSetLayouts = { sunShadowTlasDescriptorSetLayout };
+	sunShadowTlasDescriptorSet = dev.allocateDescriptorSets(
+		vk::DescriptorSetAllocateInfo()
+			.setDescriptorPool(sunShadowTlasDescriptorPool)
+			.setPSetLayouts(tlasSetLayouts.data())
+			.setDescriptorSetCount(static_cast<uint32_t>(tlasSetLayouts.size())),
+		vkDynLoader).front();
+
+	sunShadowDescriptorsInitialized = true;
+}
+
+void VkRoot::shutdownSunShadowDescriptors()
+{
+	if (!sunShadowDescriptorsInitialized)
+	{
+		return;
+	}
+
+	if (dev)
+	{
+		if (sunShadowTlasDescriptorPool)
+		{
+			dev.destroyDescriptorPool(sunShadowTlasDescriptorPool, nullptr, vkDynLoader);
+			sunShadowTlasDescriptorPool = vk::DescriptorPool();
+		}
+		if (sunShadowTlasDescriptorSetLayout)
+		{
+			dev.destroyDescriptorSetLayout(sunShadowTlasDescriptorSetLayout, nullptr, vkDynLoader);
+			sunShadowTlasDescriptorSetLayout = vk::DescriptorSetLayout();
+		}
+	}
+
+	sunShadowTlasDescriptorSet = vk::DescriptorSet();
+	sunShadowDescriptorsInitialized = false;
+}
+
+void VkRoot::updateSunShadowTlasDescriptor()
+{
+	if (!sunShadowDescriptorsInitialized)
+	{
+		return;
+	}
+
+	const vk::AccelerationStructureKHR tlas = vk::AccelerationStructureKHR(static_cast<VkAccelerationStructureKHR>(asManager.tlasHandleForBinding()));
+	if (!tlas)
+	{
+		return;
+	}
+
+	vk::WriteDescriptorSetAccelerationStructureKHR accelerationStructureInfo = vk::WriteDescriptorSetAccelerationStructureKHR()
+		.setAccelerationStructureCount(1)
+		.setAccelerationStructures(tlas);
+
+	const vk::WriteDescriptorSet write = vk::WriteDescriptorSet()
+		.setDstSet(sunShadowTlasDescriptorSet)
+		.setDstBinding(0)
+		.setDescriptorCount(1)
+		.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
+		.setPNext(&accelerationStructureInfo);
+
+	dev.updateDescriptorSets(write, nullptr, vkDynLoader);
+}
+
+void VkRoot::bindSunShadowTlasDescriptorSetIfNeeded()
+{
+	if (!shadowConstants.sunShadowRayQuery || !currentPSO || !currentPSO->sunShadowTlasDescriptorSetIndex.has_value())
+	{
+		return;
+	}
+
+	buffering_mechanism::get_current_resources().currentDrawCmdBuffer()->bindDescriptorSets(
+		vk::PipelineBindPoint::eGraphics,
+		currentPSO->layout,
+		currentPSO->sunShadowTlasDescriptorSetIndex.value(),
+		sunShadowTlasDescriptorSet,
+		nullptr,
+		vkDynLoader);
 }
 
 gfx_api::texture* VkRoot::create_texture(const std::size_t& mipmap_count, const std::size_t& width, const std::size_t& height, const gfx_api::pixel_format& internal_format, const std::string& filename)
@@ -5827,6 +5983,7 @@ void VkRoot::bind_textures(const std::vector<gfx_api::texture_input>& attribute_
 	}
 	dev.updateDescriptorSets(write_info, nullptr, vkDynLoader);
 	buffering_mechanism::get_current_resources().currentDrawCmdBuffer()->bindDescriptorSets(vk::PipelineBindPoint::eGraphics, currentPSO->layout, currentPSO->textures_first_set, set, nullptr, vkDynLoader);
+	bindSunShadowTlasDescriptorSetIfNeeded();
 }
 
 void VkRoot::set_constants(const void* buffer, const std::size_t& size)
@@ -7606,7 +7763,11 @@ bool VkRoot::setShadowConstants(gfx_api::lighting_constants newValues)
 			auto& renderPass = renderPasses[renderPassId];
 
 			ASSERT(pipeline->renderpass_compat, "Pipeline has no associated renderpass compat structure");
-			if (pipeline->hasSpecializationConstant_ShadowConstants || pipeline->hasSpecializationConstant_PointLightConstants)
+			if (pipeline->hasSpecializationConstant_ShadowConstants
+				|| pipeline->hasSpecializationConstant_PointLightConstants
+				|| pipeline->hasSpecializationConstant_SunShadowRayQuery
+				|| pipeline->usesSunShadowRayQuerySpv
+				|| (capabilities().rayQuery && shaderSupportsSunShadowRayQuery(pipelineInfo.createInfo.shader_mode)))
 			{
 				buffering_mechanism::get_current_resources().pso_to_delete.emplace_back(pipeline);
 				pipelineInfo.renderPassPSO[renderPassId] = new VkPSO(dev, physDeviceProps.limits, pipelineInfo.createInfo, renderPass.rp, renderPass.rp_compat_info, renderPass.msaaSamples, vkDynLoader, *this);

@@ -224,3 +224,20 @@ float getShadowVisibility(vec3 fragPosModelSpace, vec3 fragPosViewSpace, float N
 		return visibility;
 	}
 }
+
+#ifdef WZ_ENABLE_SUN_SHADOW_RAY_QUERY
+#include "sun_shadow_ray_query.glsl"
+#endif
+
+float getShadowVisibilityEx(vec3 fragPosModelSpace, vec3 fragPosViewSpace, vec3 worldNormal, vec3 sunDir,
+                            float NdotL, float offset)
+{
+#ifdef WZ_ENABLE_SUN_SHADOW_RAY_QUERY
+	if (WZ_SUN_SHADOW_RAY_QUERY != 0u)
+	{
+		const float visibility = traceSunVisibility(fragPosModelSpace, normalize(worldNormal), sunDir, sunShadowBias(NdotL, offset));
+		return clamp(visibility, 0.5, 1.0);
+	}
+#endif
+	return getShadowVisibility(fragPosModelSpace, fragPosViewSpace, NdotL, offset);
+}

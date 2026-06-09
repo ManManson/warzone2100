@@ -164,6 +164,17 @@ optional<bool> pie_supportsShadowMapping()
 	return gfx_api::context::get().supportsInstancedRendering();
 }
 
+bool pie_supportsSunShadowRayQuery()
+{
+	if (!gfx_api::context::isInitialized())
+	{
+		return false;
+	}
+
+	const auto caps = gfx_api::context::get().capabilities();
+	return caps.rayQuery && caps.accelerationStructure;
+}
+
 bool pie_setShadowMapResolution(uint32_t resolution)
 {
 	ASSERT_OR_RETURN(false, resolution && !(resolution & (resolution - 1)), "Expecting power-of-2 resolution, received: %" PRIu32, resolution);

@@ -1,4 +1,4 @@
-#version 450
+#version 460
 //#pragma debug(on)
 
 #include "tcmask_instanced.glsl"
@@ -8,6 +8,10 @@ layout (constant_id = 1) const uint WZ_SHADOW_MODE = 1;
 layout (constant_id = 2) const uint WZ_SHADOW_FILTER_SIZE = 5;
 layout (constant_id = 3) const uint WZ_SHADOW_CASCADES_COUNT = 3;
 layout (constant_id = 4) const uint WZ_POINT_LIGHT_ENABLED = 0;
+#ifdef WZ_ENABLE_SUN_SHADOW_RAY_QUERY
+layout (constant_id = 5) const uint WZ_SUN_SHADOW_RAY_QUERY = 0;
+#define WZ_SUN_SHADOW_TLAS_DESCRIPTOR_SET 3
+#endif
 
 layout(set = 2, binding = 0) uniform sampler2D Texture; // diffuse
 layout(set = 2, binding = 1) uniform sampler2D TextureTcmask; // tcmask
@@ -90,7 +94,7 @@ void main()
 	vec4 light = sceneColor;
 	vec3 L = normalize(lightDir);
 	float diffuseFactor = lambertTerm(N, L); //diffuse light
-	float visibility = getShadowVisibility(posModelSpace, posViewSpace, diffuseFactor, 0.0002f);
+	float visibility = getShadowVisibilityEx(posModelSpace, posViewSpace, N, L, diffuseFactor, 0.0002f);
 	diffuseFactor = min(diffuseFactor, visibility*diffuseFactor);
 	visibility = mix(visibility, 1.0, min(float(specularmap), 1.0)); // check to exclude double multiply for hq models
 	vec4 lightmap_vec4 = texture(lightmap_tex, uvLightmap.xy, 0.f);

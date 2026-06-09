@@ -377,6 +377,9 @@ struct VkPSO final
 	std::shared_ptr<VkhRenderPassCompat> renderpass_compat;
 	bool hasSpecializationConstant_ShadowConstants = false;
 	bool hasSpecializationConstant_PointLightConstants = false;
+	bool hasSpecializationConstant_SunShadowRayQuery = false;
+	bool usesSunShadowRayQuerySpv = false;
+	optional<uint32_t> sunShadowTlasDescriptorSetIndex = nullopt;
 	bool depthBiasEnabled = false;
 
 private:
@@ -968,6 +971,9 @@ public:
 	virtual bool supportsInstancedRendering() override;
 	gfx_api::GfxCapabilities capabilities() const override;
 	void buildAccelerationStructures(const struct SceneDescription& scene) override;
+	void bindSunShadowDescriptors() override;
+	bool isSunShadowDescriptorsInitialized() const { return sunShadowDescriptorsInitialized; }
+	vk::DescriptorSetLayout getSunShadowTlasDescriptorSetLayout() const { return sunShadowTlasDescriptorSetLayout; }
 	virtual void draw_instanced(const std::size_t& offset, const std::size_t &count, const gfx_api::primitive_type &primitive, std::size_t instance_count) override;
 	virtual void draw_elements_instanced(const std::size_t& offset, const std::size_t& count, const gfx_api::primitive_type& primitive, const gfx_api::index_type& index, std::size_t instance_count) override;
 	// debug apis for recompiling pipelines
@@ -1007,6 +1013,10 @@ private:
 	void beginDynamicAttachmentPass(gfx_api::RenderPassDesc& pass, const gfx_api::CompiledPass* compiledPass = nullptr);
 	void endSwapchainPass();
 	void endDynamicAttachmentPass(const gfx_api::CompiledPass* compiledPass = nullptr);
+	void bindSunShadowTlasDescriptorSetIfNeeded();
+	void initSunShadowDescriptors();
+	void shutdownSunShadowDescriptors();
+	void updateSunShadowTlasDescriptor();
 private:
 	size_t depthPassCount = WZ_MAX_SHADOW_CASCADES;
 	std::string formattedRendererInfoString;
@@ -1042,6 +1052,11 @@ private:
 	PassLayoutKey _activeCustomLayoutKey;
 
 	std::unordered_map<gfx_api::abstract_texture*, vk::ImageLayout> _imageLayoutTracker;
+
+	vk::DescriptorSetLayout sunShadowTlasDescriptorSetLayout {};
+	vk::DescriptorPool sunShadowTlasDescriptorPool {};
+	vk::DescriptorSet sunShadowTlasDescriptorSet {};
+	bool sunShadowDescriptorsInitialized = false;
 };
 
 #endif // defined(WZ_VULKAN_ENABLED)

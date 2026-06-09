@@ -447,4 +447,13 @@ void VkASManager::build(const SceneDescription& scene)
 	destroyAsGpuBuffer(ctx, instanceBuffer);
 }
 
+void* VkASManager::tlasHandleForBinding() const
+{
+	if (!_impl || !_impl->tlas.handle)
+	{
+		return nullptr;
+	}
+	return static_cast<void*>(static_cast<VkAccelerationStructureKHR>(_impl->tlas.handle));
+}
+
 #endif // defined(WZ_VULKAN_ENABLED)

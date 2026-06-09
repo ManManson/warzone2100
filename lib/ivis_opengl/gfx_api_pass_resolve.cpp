@@ -302,15 +302,17 @@ bool resolvePassDescription(RenderPassDesc& pass)
 
 bool passIsCommandOnly(const RenderPassDesc& pass)
 {
+	// Command passes declare no attachments. Transient attachments have texture == nullptr
+	// until resolvePassDescription() runs and must not be treated as command-only.
 	if (!pass.colorAttachments.empty())
 	{
 		return false;
 	}
-	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
+	if (pass.depthAttachment.has_value())
 	{
 		return false;
 	}
-	if (pass.resolveAttachment.has_value() && pass.resolveAttachment->texture != nullptr)
+	if (pass.resolveAttachment.has_value())
 	{
 		return false;
 	}
@@ -353,9 +355,7 @@ ResolvedPassRoute routeResolvedPass(const RenderPassDesc& pass)
 
 bool passIsDepthOnly(const RenderPassDesc& pass)
 {
-	return pass.colorAttachments.empty()
-		&& pass.depthAttachment.has_value()
-		&& pass.depthAttachment->texture != nullptr;
+	return pass.colorAttachments.empty() && pass.depthAttachment.has_value();
 }
 
 bool passNeedsMsaaResolve(const RenderPassDesc& pass)

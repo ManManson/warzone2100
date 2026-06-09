@@ -156,6 +156,26 @@ if(GLSLC)
 		)
 		list(APPEND SHADER_LIST "${_output_dir}/${_output_name}")
 	endforeach()
+
+	set(VK_SUN_SHADOW_RAY_QUERY_SHADERS
+		"terrain_combined_classic.frag"
+		"terrain_combined_medium.frag"
+		"terrain_combined_high.frag"
+		"tcmask_instanced.frag"
+		"terrain_water_high.frag"
+	)
+	foreach(SHADER_FILE ${VK_SUN_SHADOW_RAY_QUERY_SHADERS})
+		set(_rq_output_name "${SHADER_FILE}_rq.spv")
+		add_custom_command(OUTPUT "${_output_dir}/${_rq_output_name}"
+			COMMAND "${GLSLC}"
+			ARGS "-c" "${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/${SHADER_FILE}" "-o" "${_output_dir}/${_rq_output_name}" "-DWZ_ENABLE_SUN_SHADOW_RAY_QUERY=1" "--target-env=vulkan1.2"
+			WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk"
+			DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/${SHADER_FILE}" "${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/shadow_mapping.glsl" "${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/sun_shadow_ray_query.glsl"
+			VERBATIM
+		)
+		list(APPEND SHADER_LIST "${_output_dir}/${_rq_output_name}")
+	endforeach()
+
 	add_custom_target(glsl_compilation DEPENDS ${SHADER_LIST})
 	set_property(TARGET glsl_compilation PROPERTY FOLDER "data")
 else()
