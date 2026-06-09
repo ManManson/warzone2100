@@ -80,6 +80,36 @@ public:
 	}
 };
 
+class RayQuerySunShadowBackend final : public SunShadowBackend
+{
+public:
+	void planPreScenePasses(gfx_api::RenderGraph& graph,
+	                        SunShadowFrameContext& ctx,
+	                        SceneDescription& scene) override
+	{
+		if (ctx.shadowMode != ShadowMode::Shadow_Mapping)
+		{
+			return;
+		}
+
+		graph.addRenderPass(gfx_api::makeCommandPass("ASBuild",
+			[&scene](const gfx_api::RenderPassContext&)
+			{
+				gfx_api::context::get().buildAccelerationStructures(scene);
+			}));
+	}
+
+	void bindForForwardPass() override
+	{
+		// Phase 2: bind TLAS descriptor set.
+	}
+
+	SunShadowTechnique technique() const override
+	{
+		return SunShadowTechnique::RayQuery;
+	}
+};
+
 } // namespace
 
 std::unique_ptr<SunShadowBackend> createSunShadowBackend(SunShadowTechnique technique)
@@ -89,8 +119,7 @@ std::unique_ptr<SunShadowBackend> createSunShadowBackend(SunShadowTechnique tech
 	case SunShadowTechnique::Csm:
 		return std::make_unique<CsmSunShadowBackend>();
 	case SunShadowTechnique::RayQuery:
-		// Phase 4: RayQuerySunShadowBackend
-		return std::make_unique<CsmSunShadowBackend>();
+		return std::make_unique<RayQuerySunShadowBackend>();
 	}
 	return std::make_unique<CsmSunShadowBackend>();
 }

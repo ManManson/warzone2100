@@ -14,6 +14,8 @@
 using nonstd::optional;
 using nonstd::nullopt;
 
+struct SceneDescription;
+
 namespace gfx_api
 {
 
@@ -164,6 +166,7 @@ private:
 
 RenderPassDesc makeDepthCascadePass(size_t cascadeIndex, const std::string& debugName,
 	RenderPassDesc::RecordFunc recordFunc);
+RenderPassDesc makeCommandPass(const std::string& debugName, RenderPassDesc::RecordFunc recordFunc);
 RenderPassDesc makeDepthPrePass(const std::string& debugName, RenderPassDesc::RecordFunc recordFunc);
 RenderPassDesc makeScenePass(const std::string& debugName, RenderPassDesc::RecordFunc recordFunc);
 RenderPassDesc makeSwapchainPass(const std::string& debugName, AttachmentLoadOp loadOp,

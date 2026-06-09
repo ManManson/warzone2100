@@ -6,10 +6,6 @@
 #define GLM_FORCE_SWIZZLE
 #endif
 
-#ifndef GLM_FORCE_SWIZZLE
-#define GLM_FORCE_SWIZZLE
-#endif
-
 #include "lib/ivis_opengl/piedef.h"
 #include "lib/ivis_opengl/shadows.h"
 #include "shadowcascades.h"

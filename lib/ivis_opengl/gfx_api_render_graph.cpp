@@ -165,6 +165,14 @@ RenderPassDesc makeDepthCascadePass(size_t cascadeIndex, const std::string& debu
 	return pass;
 }
 
+RenderPassDesc makeCommandPass(const std::string& debugName, RenderPassDesc::RecordFunc recordFunc)
+{
+	RenderPassDesc pass;
+	pass.debugName = debugName;
+	pass.recordFunc = std::move(recordFunc);
+	return pass;
+}
+
 RenderPassDesc makeDepthPrePass(const std::string& debugName, RenderPassDesc::RecordFunc recordFunc)
 {
 	auto& ctx = gfx_api::context::get();

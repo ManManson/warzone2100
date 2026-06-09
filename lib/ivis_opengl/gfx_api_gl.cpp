@@ -4680,6 +4680,9 @@ void gl_context::beginPass(gfx_api::RenderPassDesc& pass, const gfx_api::Compile
 	case gfx_api::ResolvedPassRoute::DynamicAttachments:
 		beginDynamicAttachmentPass(pass);
 		break;
+	case gfx_api::ResolvedPassRoute::Command:
+		ASSERT(false, "Command passes must not call beginPass");
+		break;
 	}
 }
 
@@ -4694,6 +4697,8 @@ void gl_context::endPass(const gfx_api::CompiledPass* /*compiledPass*/)
 		break;
 	case gfx_api::ResolvedPassRoute::DynamicAttachments:
 		endDynamicAttachmentPass();
+		break;
+	case gfx_api::ResolvedPassRoute::Command:
 		break;
 	}
 

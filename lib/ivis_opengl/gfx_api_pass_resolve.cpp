@@ -265,6 +265,11 @@ void applyDefaultAttachmentStoreOps(RenderPassDesc& pass)
 
 bool resolvePassDescription(RenderPassDesc& pass)
 {
+	if (passIsCommandOnly(pass))
+	{
+		return true;
+	}
+
 	auto& ctx = gfx_api::context::get();
 
 	resolveMissingAttachments(pass, ctx);
@@ -295,6 +300,23 @@ bool resolvePassDescription(RenderPassDesc& pass)
 	return true;
 }
 
+bool passIsCommandOnly(const RenderPassDesc& pass)
+{
+	if (!pass.colorAttachments.empty())
+	{
+		return false;
+	}
+	if (pass.depthAttachment.has_value() && pass.depthAttachment->texture != nullptr)
+	{
+		return false;
+	}
+	if (pass.resolveAttachment.has_value() && pass.resolveAttachment->texture != nullptr)
+	{
+		return false;
+	}
+	return true;
+}
+
 nonstd::optional<AttachmentLoadOp> getSwapchainColorLoadOp(const RenderPassDesc& pass)
 {
 	for (const auto& colorAttachment : pass.colorAttachments)
@@ -317,6 +339,10 @@ bool canExtendSwapchainBatch(const RenderPassDesc& pass)
 
 ResolvedPassRoute routeResolvedPass(const RenderPassDesc& pass)
 {
+	if (passIsCommandOnly(pass))
+	{
+		return ResolvedPassRoute::Command;
+	}
 	if (passHasSwapchainColorAttachment(pass))
 	{
 		return ResolvedPassRoute::Swapchain;

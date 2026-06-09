@@ -16,7 +16,8 @@ struct RenderPassDesc;
 enum class ResolvedPassRoute
 {
 	Swapchain,
-	DynamicAttachments
+	DynamicAttachments,
+	Command,
 };
 
 struct PassOutputView
@@ -37,6 +38,9 @@ void applyDefaultAttachmentStoreOps(RenderPassDesc& pass);
 
 /// Resolved store op after applyDefaultAttachmentStoreOps(); unset attachments default to Store.
 AttachmentStoreOp attachmentStoreOpOr(const AttachmentDesc& attachment);
+
+/// True when the pass has no attachments and only runs recordFunc (e.g. AS build).
+bool passIsCommandOnly(const RenderPassDesc& pass);
 
 /// Select the backend execution path after resolvePassDescription().
 ResolvedPassRoute routeResolvedPass(const RenderPassDesc& pass);

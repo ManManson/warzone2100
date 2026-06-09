@@ -7279,6 +7279,9 @@ void VkRoot::beginPass(gfx_api::RenderPassDesc& pass, const gfx_api::CompiledPas
 	case gfx_api::ResolvedPassRoute::DynamicAttachments:
 		beginDynamicAttachmentPass(pass, compiledPass);
 		break;
+	case gfx_api::ResolvedPassRoute::Command:
+		ASSERT(false, "Command passes must not call beginPass");
+		break;
 	}
 }
 
@@ -7293,6 +7296,8 @@ void VkRoot::endPass(const gfx_api::CompiledPass* compiledPass)
 		break;
 	case gfx_api::ResolvedPassRoute::DynamicAttachments:
 		endDynamicAttachmentPass(compiledPass);
+		break;
+	case gfx_api::ResolvedPassRoute::Command:
 		break;
 	}
 
