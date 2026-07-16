@@ -44,10 +44,15 @@ file(GLOB HEADERS
 	"vk/screen_frame_coordinator.h"
 	"vk/screenshot_readback.h"
 	"vk/swapchain_presentation_state.h"
-	"vk/wsi_platform_policy.h"
+	"vk/texture_binding_strategy.h"
+	"vk/texture_descriptor_types.h"
+	"vk/texture_descriptor_writer.h"
+	"vk/texture_signature.h"
+	"vk/vulkan_backend_texture_type.h"
 	"vk/transfer_recorder.h"
 	"vk/transfer_recording_context.h"
 	"vk/warm_entry.h"
+	"vk/wsi_platform_policy.h"
 	"vk/wz_vk.h"
 	"imd.h"
 	"ivisdef.h"
@@ -217,8 +222,11 @@ if(WZ_ENABLE_BACKEND_VULKAN)
 			"vk/screen_frame_coordinator.cpp"
 			"vk/screenshot_readback.cpp"
 			"vk/swapchain_presentation_state.cpp"
-			"vk/wsi_platform_policy.cpp"
-			"vk/transfer_recorder.cpp")
+			"vk/texture_binding_strategy.cpp"
+			"vk/texture_descriptor_writer.cpp"
+			"vk/texture_signature.cpp"
+			"vk/transfer_recorder.cpp"
+			"vk/wsi_platform_policy.cpp")
 		CHECK_CXX_COMPILER_FLAG(-Wno-pedantic COMPILER_SUPPORTS_WNO_PEDANTIC)
 		if(COMPILER_SUPPORTS_WNO_PEDANTIC)
 			set_source_files_properties("3rdparty/vk_mem_alloc.cpp" PROPERTIES COMPILE_FLAGS -Wno-pedantic)
@@ -313,7 +321,10 @@ if (CMAKE_CXX_STANDARD GREATER_EQUAL 20)
 		"vk/screen_frame_coordinator.cpp"
 		"vk/screenshot_readback.cpp"
 		"vk/swapchain_presentation_state.cpp"
-		"vk/wsi_platform_policy.cpp"
-		"vk/transfer_recorder.cpp")
+		"vk/texture_binding_strategy.cpp"
+		"vk/texture_descriptor_writer.cpp"
+		"vk/texture_signature.cpp"
+		"vk/transfer_recorder.cpp"
+		"vk/wsi_platform_policy.cpp")
 	set_source_files_properties(${cpp17_source_files} PROPERTIES COMPILE_FLAGS "-std=c++17")
 endif()
