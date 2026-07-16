@@ -28,6 +28,8 @@
 #include "lib/ivis_opengl/gfx_api_vk.h"
 
 #include <chrono>
+#include <cinttypes>
+#include <cstdlib>
 #include <thread>
 
 namespace gfx_api::vk
@@ -324,6 +326,21 @@ void ScreenFrameCoordinator::advanceRingBufferAfterSubmit(ScreenFramePipelineSta
 	{
 		return;
 	}
+
+	_root.lastSubmittedTextureDescriptorStats =
+		buffering_mechanism::get_current_resources().textureDescriptorStats;
+#if defined(DEBUG)
+	if (getenv("WZ_VK_TEXTURE_DESCRIPTOR_STATS") != nullptr && (_root.frameNum % 120 == 0))
+	{
+		const auto& s = _root.lastSubmittedTextureDescriptorStats;
+		debug(LOG_INFO,
+			"TextureDescriptorStats: bindCalls=%" PRIu64 " allocatedSets=%" PRIu64
+			" updateCalls=%" PRIu64 " boundSets=%" PRIu64 " pushCalls=%" PRIu64
+			" pushedDescriptors=%" PRIu64,
+			s.bindCalls, s.allocatedSets, s.updateCalls, s.boundSets,
+			s.pushCalls, s.pushedDescriptors);
+	}
+#endif
 
 	try {
 		buffering_mechanism::swap(_root.dev, _root.vkDynLoader); // must be called *before* acquireNextSwapchainImage()

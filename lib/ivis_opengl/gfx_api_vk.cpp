@@ -62,6 +62,9 @@
 #include "vk/layout_translation.h"
 #include "vk/transfer_recorder.h"
 #include "vk/transfer_recording_context.h"
+#include "vk/texture_binding_strategy.h"
+#include "vk/texture_descriptor_writer.h"
+#include "vk/vulkan_backend_texture_type.h"
 #include "lib/framework/physfs_ext.h"
 #include "lib/framework/wzapp.h"
 #include "lib/exceptionhandler/dumpinfo.h"
@@ -71,6 +74,7 @@
 #include <unordered_set>
 #include <map>
 #include <limits>
+#include <numeric>
 #include <chrono>
 #include <thread>
 
@@ -206,19 +210,6 @@ const std::vector<vk::LayerSettingEXT> vulkan_mvk_layer_settings = {
 #if defined(WZ_DEBUG_GFX_API_LEAKS)
 static std::unordered_set<const VkTexture*> debugLiveTextures;
 #endif
-
-enum class VulkanBackendInternalTextureType : size_t
-{
-	Invalid = 0,
-	Texture,
-	TextureArray,
-	DepthMap,
-	RenderedImage,
-	AttachmentImage,
-	SwapchainColorSurface,
-	SwapchainMsaaColorSurface,
-	SwapchainDepthSurface,
-};
 
 // MARK: General helper functions
 
@@ -1104,6 +1095,7 @@ void buffering_mechanism::swap(vk::Device dev, const WZ_vk::DispatchLoaderDynami
 
 	buffering_mechanism::get_current_resources().clean();
 	buffering_mechanism::get_current_resources().numalloc = 0;
+	buffering_mechanism::get_current_resources().textureDescriptorStats.reset();
 }
 
 void buffering_mechanism::destroy(vk::Device dev, const WZ_vk::DispatchLoaderDynamic& vkDynLoader)
@@ -1732,8 +1724,13 @@ VkPSO::VkPSO(vk::Device _dev,
 
 	auto textures_layout_desc = std::vector<vk::DescriptorSetLayoutBinding>();
 	samplers.reserve(texture_desc.size());
+	std::unordered_set<uint32_t> textureBindingIds;
 	for (const auto& texture : texture_desc)
 	{
+		ASSERT(texture.id <= std::numeric_limits<uint32_t>::max(), "Texture binding id (%zu) exceeds uint32_t max", texture.id);
+		const uint32_t bindingId = static_cast<uint32_t>(texture.id);
+		ASSERT(textureBindingIds.insert(bindingId).second, "Duplicate texture binding id: %" PRIu32, bindingId);
+
 		samplers.emplace_back(dev.createSampler(to_vk(texture.sampler, texture.target, texture.border), nullptr, *pVkDynLoader));
 
 		textures_layout_desc.emplace_back(
@@ -1745,13 +1742,39 @@ VkPSO::VkPSO(vk::Device _dev,
 				.setStageFlags(vk::ShaderStageFlagBits::eFragment)
 		);
 	}
-	textures_set_layout = dev.createDescriptorSetLayout(
+	const TextureSignature textureSignature = TextureSignature::from(texture_desc);
+	textures.descriptorCount = textureSignature.descriptorCount();
+	const TextureBindingDecision bindingDecision = TextureBindingPlanner::select(
+		textureSignature,
+		_root.getPushDescriptorSupport());
+	textures.mode = bindingDecision.mode;
+	const vk::DescriptorSetLayoutCreateFlags textureLayoutFlags = textureLayoutFlagsFor(textures.mode);
+
+	if (getenv("WZ_VK_TEXTURE_BINDING_LOG") != nullptr && !texture_desc.empty())
+	{
+		debug(LOG_3D,
+			"Texture binding decision: shader=%d descriptors=%" PRIu32 " mode=%s reason=%s",
+			static_cast<int>(shader_mode),
+			textures.descriptorCount,
+			textureBindingModeName(textures.mode),
+			bindingDecision.reason);
+	}
+
+	textures.layout = dev.createDescriptorSetLayout(
 		vk::DescriptorSetLayoutCreateInfo()
+			.setFlags(textureLayoutFlags)
 			.setBindingCount(static_cast<uint32_t>(textures_layout_desc.size()))
 			.setPBindings(textures_layout_desc.data())
 		, nullptr, *pVkDynLoader);
-	textures_first_set = static_cast<uint32_t>(layout_desc.size()); // Store descriptor set index for textures
-	layout_desc.push_back(textures_set_layout);
+	textures.setIndex = static_cast<uint32_t>(layout_desc.size());
+	layout_desc.push_back(textures.layout);
+
+	ASSERT((textures.mode == TextureDescriptorBindingMode::Push)
+		== ((textureLayoutFlags & vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR)
+			== vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR),
+		"Texture descriptor binding mode must match push layout flags");
+	ASSERT((textures.mode != TextureDescriptorBindingMode::Push) || (textures.descriptorCount > 0),
+		"Push texture descriptor layout must contain at least one descriptor");
 
 
 	const auto layoutCreateInfo = vk::PipelineLayoutCreateInfo()
@@ -1913,7 +1936,7 @@ VkPSO::~VkPSO()
 	dev.destroyShaderModule(vertexShader, nullptr, *pVkDynLoader);
 	dev.destroyShaderModule(fragmentShader, nullptr, *pVkDynLoader);
 	dev.destroyPipelineLayout(layout, nullptr, *pVkDynLoader);
-	dev.destroyDescriptorSetLayout(textures_set_layout, nullptr, *pVkDynLoader);
+	dev.destroyDescriptorSetLayout(textures.layout, nullptr, *pVkDynLoader);
 	for (auto & sampler : samplers)
 	{
 		dev.destroySampler(sampler, nullptr, *pVkDynLoader);
@@ -5121,6 +5144,121 @@ bool VkRoot::getQueueFamiliesInfo()
 	return true;
 }
 
+bool VkRoot::instanceExtensionEnabled(const char *name) const
+{
+	return std::find(instanceExtensions.begin(), instanceExtensions.end(), name)
+		!= instanceExtensions.end();
+}
+
+void VkRoot::negotiatePushTextureDescriptors()
+{
+	pushDescriptorSupport = {};
+
+	static const std::vector<const char*> pushDescriptorExtension = {
+		VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME
+	};
+	const auto supported = findSupportedDeviceExtensions(physicalDevice, pushDescriptorExtension, vkDynLoader);
+	pushDescriptorSupport.extensionAdvertised = !supported.empty();
+	pushDescriptorSupport.disabledByPolicy = (getenv("WZ_VK_DISABLE_PUSH_DESCRIPTORS") != nullptr);
+
+	if (!pushDescriptorSupport.extensionAdvertised)
+	{
+		return;
+	}
+
+	if (pushDescriptorSupport.disabledByPolicy)
+	{
+		return;
+	}
+
+	bool gotProperties = false;
+	try
+	{
+		if (canUseVulkanDeviceAPI(VK_MAKE_VERSION(1, 1, 0))
+			&& vkDynLoader.vkGetPhysicalDeviceProperties2 != nullptr)
+		{
+			auto chain = physicalDevice.getProperties2<
+				vk::PhysicalDeviceProperties2,
+				vk::PhysicalDevicePushDescriptorPropertiesKHR>(vkDynLoader);
+			pushDescriptorSupport.maxDescriptors = chain
+				.get<vk::PhysicalDevicePushDescriptorPropertiesKHR>()
+				.maxPushDescriptors;
+			gotProperties = true;
+		}
+		else if (instanceExtensionEnabled(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)
+			&& vkDynLoader.vkGetPhysicalDeviceProperties2KHR != nullptr)
+		{
+			auto chain = physicalDevice.getProperties2KHR<
+				vk::PhysicalDeviceProperties2KHR,
+				vk::PhysicalDevicePushDescriptorPropertiesKHR>(vkDynLoader);
+			pushDescriptorSupport.maxDescriptors = chain
+				.get<vk::PhysicalDevicePushDescriptorPropertiesKHR>()
+				.maxPushDescriptors;
+			gotProperties = true;
+		}
+	}
+	catch (const vk::SystemError& e)
+	{
+		debug(LOG_3D, "Push texture descriptors: Properties2 query failed: %s", e.what());
+	}
+
+	if (!gotProperties || pushDescriptorSupport.maxDescriptors == 0)
+	{
+		return;
+	}
+
+	enabledDeviceExtensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+}
+
+void VkRoot::finalizePushTextureDescriptorSupport()
+{
+	const bool extensionRequested = std::find_if(
+		enabledDeviceExtensions.begin(),
+		enabledDeviceExtensions.end(),
+		[](const char* extensionName) {
+			return strcmp(extensionName, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME) == 0;
+		}) != enabledDeviceExtensions.end();
+
+	pushDescriptorSupport.extensionEnabled = extensionRequested;
+	pushDescriptorSupport.commandLoaded = (vkDynLoader.vkCmdPushDescriptorSetKHR != nullptr);
+
+	const char* reason = "disabled";
+	if (pushDescriptorSupport.disabledByPolicy)
+	{
+		reason = "disabled by WZ_VK_DISABLE_PUSH_DESCRIPTORS";
+	}
+	else if (!pushDescriptorSupport.extensionAdvertised)
+	{
+		reason = "extension not advertised";
+	}
+	else if (!pushDescriptorSupport.extensionEnabled)
+	{
+		reason = "Properties2 query failed or maxPushDescriptors is zero";
+	}
+	else if (!pushDescriptorSupport.commandLoaded)
+	{
+		reason = "vkCmdPushDescriptorSetKHR unavailable";
+	}
+	else if (pushDescriptorSupport.usableFor(1))
+	{
+		reason = "available";
+	}
+
+	debug(LOG_INFO,
+		"Push texture descriptors: advertised=%d enabled=%d command=%d max=%u policyOff=%d -> %s",
+		static_cast<int>(pushDescriptorSupport.extensionAdvertised),
+		static_cast<int>(pushDescriptorSupport.extensionEnabled),
+		static_cast<int>(pushDescriptorSupport.commandLoaded),
+		pushDescriptorSupport.maxDescriptors,
+		static_cast<int>(pushDescriptorSupport.disabledByPolicy),
+		reason);
+}
+
+const PushDescriptorSupport& VkRoot::getPushDescriptorSupport() const
+{
+	return pushDescriptorSupport;
+}
+
 bool VkRoot::createLogicalDevice()
 {
 	ASSERT(physicalDevice, "Physical device is null");
@@ -5132,6 +5270,7 @@ bool VkRoot::createLogicalDevice()
 	enabledDeviceExtensions = deviceExtensions;
 	auto supportedOptionalExtensions = findSupportedDeviceExtensions(physicalDevice, optionalDeviceExtensions, vkDynLoader);
 	enabledDeviceExtensions.insert(std::end(enabledDeviceExtensions), supportedOptionalExtensions.begin(), supportedOptionalExtensions.end());
+	negotiatePushTextureDescriptors();
 
 	// create logical device
 	std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos;
@@ -5200,6 +5339,8 @@ bool VkRoot::createLogicalDevice()
 	// that bypass dynamic dispatch logic (for increased performance)
 	// See: https://stackoverflow.com/a/35504844
 	vkDynLoader.init(static_cast<VkInstance>(inst), vkDynLoader.vkGetInstanceProcAddr, static_cast<VkDevice>(dev), vkDynLoader.vkGetDeviceProcAddr);
+
+	finalizePushTextureDescriptorSupport();
 
 	return true;
 }
@@ -5607,103 +5748,84 @@ void VkRoot::unbind_index_buffer(gfx_api::buffer&)
 void VkRoot::bind_textures(const std::vector<gfx_api::texture_input>& attribute_descriptions, const std::vector<gfx_api::abstract_texture*>& textures)
 {
 	ASSERT_OR_RETURN(, currentPSO != nullptr, "currentPSO == NULL");
-	ASSERT(textures.size() <= attribute_descriptions.size(), "Received more textures than expected");
-	ASSERT(textures.size() <= std::numeric_limits<uint32_t>::max(), "Too many textures: %zu", textures.size());
+	ASSERT_OR_RETURN(, renderGraphExecuting() && hasActivePass,
+		"bind_textures() called outside an active render pass");
+	ASSERT_OR_RETURN(, !textures.empty(),
+		"bind_textures() called with no textures");
+	ASSERT_OR_RETURN(, textures.size() == attribute_descriptions.size(),
+		"Texture count (%zu) does not match description count (%zu)", textures.size(), attribute_descriptions.size());
 
-	const auto set = allocateDescriptorSet(currentPSO->textures_set_layout, vk::DescriptorType::eCombinedImageSampler, static_cast<uint32_t>(textures.size()));
+	auto& frame = buffering_mechanism::get_current_resources();
+	auto& texStats = frame.textureDescriptorStats;
+	++texStats.bindCalls;
 
-	uint32_t i = 0;
-	auto image_descriptor = std::vector<vk::DescriptorImageInfo>{};
-	for (auto* texture : textures)
+	vk::CommandBuffer* cmd = frame.currentDrawCmdBuffer();
+	const DefaultTextureViews defaults {
+		pDefaultTexture->view.get(),
+		pDefaultArrayTexture->view.get(),
+		pDefaultDepthMapTexture->view.get(),
+	};
+	const TextureSamplerMode samplerMode = textureSamplerModeFor(currentPSO->textures.mode);
+	const auto buildWrites = [&](vk::DescriptorSet dstSet) -> const std::vector<vk::WriteDescriptorSet>& {
+		return TextureDescriptorWriter::build(
+			frame.textureDescriptorScratch,
+			attribute_descriptions,
+			textures,
+			dstSet,
+			samplerMode,
+			defaults);
+	};
+
+	switch (currentPSO->textures.mode)
 	{
-		vk::ImageView imageView;
-		vk::ImageLayout imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-		if (texture != nullptr)
-		{
-			auto texture_type = static_cast<VulkanBackendInternalTextureType>(texture->backend_internal_value());
-			auto target_type = attribute_descriptions.at(i).target;
-			switch (texture_type)
-			{
-				case VulkanBackendInternalTextureType::Texture:
-					ASSERT(target_type == gfx_api::pixel_format_target::texture_2d, "Unexpected target type: (%d)", static_cast<int>(target_type));
-					imageView = static_cast<VkTexture*>(texture)->view.get();
-					break;
-				case VulkanBackendInternalTextureType::TextureArray:
-					ASSERT(target_type == gfx_api::pixel_format_target::texture_2d_array, "Unexpected target type: (%d)", static_cast<int>(target_type));
-					imageView = static_cast<VkTextureArray*>(texture)->view.get();
-					break;
-				case VulkanBackendInternalTextureType::DepthMap:
-					ASSERT(target_type == gfx_api::pixel_format_target::depth_map, "Unexpected target type: (%d)", static_cast<int>(target_type));
-					imageView = static_cast<VkDepthMapImage*>(texture)->view.get();
-					break;
-				case VulkanBackendInternalTextureType::RenderedImage:
-					ASSERT(target_type == gfx_api::pixel_format_target::texture_2d, "Unexpected target type: (%d)", static_cast<int>(target_type));
-					imageView = static_cast<VkRenderedImage*>(texture)->view.get();
-					break;
-				case VulkanBackendInternalTextureType::AttachmentImage:
-					ASSERT(target_type == gfx_api::pixel_format_target::texture_2d, "Unexpected target type: (%d)", static_cast<int>(target_type));
-					imageView = static_cast<VkAttachmentImage*>(texture)->view;
-					break;
-				case VulkanBackendInternalTextureType::SwapchainColorSurface:
-				case VulkanBackendInternalTextureType::SwapchainMsaaColorSurface:
-				case VulkanBackendInternalTextureType::SwapchainDepthSurface:
-					debug(LOG_FATAL, "Swapchain pipeline surfaces are not shader-sampled");
-					break;
-				case VulkanBackendInternalTextureType::Invalid:
-					debug(LOG_FATAL, "Invalid internal texture type??");
-					break;
-			}
-		}
-
-		if (!imageView)
-		{
-			switch (attribute_descriptions.at(i).target)
-			{
-				case gfx_api::pixel_format_target::texture_2d:
-					imageView = pDefaultTexture->view.get();
-					break;
-				case gfx_api::pixel_format_target::depth_map:
-					imageView = pDefaultDepthMapTexture->view.get();
-					break;
-				case gfx_api::pixel_format_target::texture_2d_array:
-					imageView = pDefaultArrayTexture->view.get();
-					break;
-			}
-		}
-
-		switch (attribute_descriptions.at(i).target)
-		{
-			case gfx_api::pixel_format_target::texture_2d:
-			case gfx_api::pixel_format_target::texture_2d_array:
-				// use the default: vk::ImageLayout::eShaderReadOnlyOptimal
-				break;
-			case gfx_api::pixel_format_target::depth_map:
-				imageLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
-				break;
-		}
-
-		image_descriptor.emplace_back(vk::DescriptorImageInfo()
-			.setImageView(imageView)
-			.setImageLayout(imageLayout));
-		i++;
-	}
-	i = 0;
-	auto write_info = std::vector<vk::WriteDescriptorSet>{};
-	for (auto* texture : textures)
+	case TextureDescriptorBindingMode::Push:
 	{
-		(void)texture; // silence unused variable warning
-		write_info.emplace_back(
-			vk::WriteDescriptorSet()
-				.setDescriptorCount(1)
-				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-				.setDstSet(set[0])
-				.setPImageInfo(&image_descriptor[i])
-				.setDstBinding(i)
-		);
-		i++;
+		const auto& writes = buildWrites(vk::DescriptorSet{});
+		ASSERT_OR_RETURN(, !writes.empty(),
+			"Push descriptor update must not be empty");
+		ASSERT(writes.front().dstSet == vk::DescriptorSet{},
+			"Push descriptor writes must not target an allocated set");
+
+		cmd->pushDescriptorSetKHR(
+			vk::PipelineBindPoint::eGraphics,
+			currentPSO->layout,
+			currentPSO->textures.setIndex,
+			static_cast<uint32_t>(writes.size()),
+			writes.data(),
+			vkDynLoader);
+
+		++texStats.pushCalls;
+		texStats.pushedDescriptors += writes.size();
+		break;
 	}
-	dev.updateDescriptorSets(write_info, nullptr, vkDynLoader);
-	buffering_mechanism::get_current_resources().currentDrawCmdBuffer()->bindDescriptorSets(vk::PipelineBindPoint::eGraphics, currentPSO->layout, currentPSO->textures_first_set, set, nullptr, vkDynLoader);
+	case TextureDescriptorBindingMode::AllocatedSet:
+	{
+		const auto sets = allocateDescriptorSet(
+			currentPSO->textures.layout,
+			vk::DescriptorType::eCombinedImageSampler,
+			static_cast<uint32_t>(textures.size()));
+		++texStats.allocatedSets;
+
+		const auto& write_info = buildWrites(sets[0]);
+		ASSERT(!write_info.empty(), "Allocated-set descriptor update must not be empty");
+		ASSERT(write_info.front().dstSet == sets[0],
+			"Allocated-set descriptor writes must target the allocated set");
+		dev.updateDescriptorSets(write_info, nullptr, vkDynLoader);
+		++texStats.updateCalls;
+		cmd->bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			currentPSO->layout,
+			currentPSO->textures.setIndex,
+			sets,
+			nullptr,
+			vkDynLoader);
+		++texStats.boundSets;
+		break;
+	}
+	default:
+		debug(LOG_FATAL, "Unsupported texture descriptor binding mode");
+		break;
+	}
 }
 
 void VkRoot::set_constants(const void* buffer, const std::size_t& size)
@@ -6955,6 +7077,11 @@ bool VkRoot::getScreenshot(std::function<void (std::unique_ptr<iV_Image>)> callb
 const size_t& VkRoot::current_FrameNum() const
 {
 	return frameNum;
+}
+
+const TextureDescriptorStats& VkRoot::getLastSubmittedTextureDescriptorStats() const
+{
+	return lastSubmittedTextureDescriptorStats;
 }
 
 bool VkRoot::supportsMipLodBias() const

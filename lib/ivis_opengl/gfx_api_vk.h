@@ -37,6 +37,7 @@
 #include "vk/pre_pass_barrier_emitter.h"
 #include "vk/render_pass_layout_cache.h"
 #include "vk/screen_frame_coordinator.h"
+#include "vk/texture_descriptor_types.h"
 #include "vk/warm_entry.h"
 #include <algorithm>
 #include <sstream>
@@ -248,6 +249,8 @@ struct perFrameResources_t
 	DescriptorPoolsContainer combinedImageSamplerDescriptorPools;
 	DescriptorPoolsContainer uniformDynamicDescriptorPools;
 	uint32_t numalloc = 0;
+	TextureDescriptorStats textureDescriptorStats;
+	TextureDescriptorWriteBatch textureDescriptorScratch;
 	vk::CommandPool pool;
 	vk::Fence previousSubmission;
 	vk::Semaphore imageAcquireSemaphore;
@@ -389,8 +392,7 @@ struct VkPSO final
 {
 	vk::Pipeline object;
 	std::vector<vk::DescriptorSetLayout> cbuffer_set_layout;
-	uint32_t textures_first_set = 0;
-	vk::DescriptorSetLayout textures_set_layout;
+	TextureDescriptorSetState textures;
 	vk::PipelineLayout layout;
 	vk::ShaderModule vertexShader;
 	vk::ShaderModule fragmentShader;
@@ -735,6 +737,7 @@ struct VkRoot final : gfx_api::context
 
 	QueueFamilyIndices queueFamilyIndices;
 	std::vector<const char*> enabledDeviceExtensions;
+	PushDescriptorSupport pushDescriptorSupport;
 	vk::Device dev;
 	vk::SurfaceKHR surface;
 	vk::Queue graphicsQueue;
@@ -841,6 +844,7 @@ struct VkRoot final : gfx_api::context
 	size_t frameNum = 0;
 	bool _screenFrameOpen = false;
 	gfx_api::vk::ScreenFrameCoordinator _screenFrameCoordinator;
+	TextureDescriptorStats lastSubmittedTextureDescriptorStats;
 
 public:
 	VkRoot(bool _debug);
@@ -876,6 +880,9 @@ private:
 	vk::PhysicalDevice pickPhysicalDevice();
 
 	bool createSurface();
+	bool instanceExtensionEnabled(const char *name) const;
+	void negotiatePushTextureDescriptors();
+	void finalizePushTextureDescriptorSupport();
 	bool canUseVulkanInstanceAPI(uint32_t minVulkanAPICoreVersion) const;
 	bool canUseVulkanDeviceAPI(uint32_t minVulkanAPICoreVersion) const;
 
@@ -973,6 +980,8 @@ public:
 	virtual bool shouldDraw() override;
 	virtual void shutdown() override;
 	virtual const size_t& current_FrameNum() const override;
+	const TextureDescriptorStats& getLastSubmittedTextureDescriptorStats() const;
+	const PushDescriptorSupport& getPushDescriptorSupport() const;
 	virtual bool setSwapInterval(gfx_api::context::swap_interval_mode mode, const SetSwapIntervalCompletionHandler& completionHandler) override;
 	virtual gfx_api::context::swap_interval_mode getSwapInterval() const override;
 	virtual bool textureFormatIsSupported(gfx_api::pixel_format_target target, gfx_api::pixel_format format, gfx_api::pixel_format_usage::flags usage) override;
