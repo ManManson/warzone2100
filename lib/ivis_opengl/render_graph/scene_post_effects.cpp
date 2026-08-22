@@ -32,9 +32,55 @@ namespace gfx_api
 namespace
 {
 
-void emitSsaoPreparePasses(BlueprintBuilder& builder, const RenderTopologySnapshot& snapshot)
+struct SeparableBlurPrepareChainDesc
 {
-	const bool ssaoDownsample = (snapshot.features & RenderFeatures::SSAODownsample) != 0;
+	PassId generatePass;
+	PassId downsamplePass;
+	PassId horizontalPass;
+	PassId verticalPass;
+	PipelineSurfaceId rawSurface;
+	PipelineSurfaceId horizontalSurface;
+	PipelineSurfaceId coarseSurface;
+	const char* downsampleName;
+	const char* horizontalName;
+	const char* verticalName;
+	ClearValue clearValue;
+	uint32_t downsampleFeature;
+};
+
+void emitSeparableBlurPasses(BlueprintBuilder& builder, const RenderTopologySnapshot& snapshot,
+	const SeparableBlurPrepareChainDesc& desc)
+{
+	// The routing mechanics are common to SSAO, SSR, and future screen-space effects.
+	// Formats, clear values, validity, accumulation, and compose contracts remain effect-owned.
+	const bool downsample = (snapshot.features & desc.downsampleFeature) != 0;
+	PassId horizontalInput = desc.generatePass;
+	PipelineSurfaceId verticalOutput = desc.rawSurface;
+	if (downsample)
+	{
+		builder.beginPass(desc.downsamplePass, desc.downsampleName)
+			.color(desc.coarseSurface, AttachmentLoadOp::Clear, AttachmentStoreOp::Store, desc.clearValue)
+			.viewport(ViewportRule::ColorTarget)
+			.readFrom(desc.generatePass, AttachmentRole::PrimaryColor);
+		horizontalInput = desc.downsamplePass;
+		verticalOutput = desc.coarseSurface;
+	}
+
+	builder.beginPass(desc.horizontalPass, desc.horizontalName)
+		.color(desc.horizontalSurface, AttachmentLoadOp::Clear, AttachmentStoreOp::Store, desc.clearValue)
+		.viewport(ViewportRule::ColorTarget)
+		.readFrom(horizontalInput, AttachmentRole::PrimaryColor)
+		.readFrom(PassId::ScenePrepass, AttachmentRole::Depth);
+
+	builder.beginPass(desc.verticalPass, desc.verticalName)
+		.color(verticalOutput, AttachmentLoadOp::Clear, AttachmentStoreOp::Store, desc.clearValue)
+		.viewport(ViewportRule::ColorTarget)
+		.readFrom(desc.horizontalPass, AttachmentRole::PrimaryColor)
+		.readFrom(PassId::ScenePrepass, AttachmentRole::Depth);
+}
+
+void emitSsaoPreparePasses(BlueprintBuilder& builder, const RenderTopologySnapshot& snapshot, PassId)
+{
 	const ClearValue ssaoUnoccludedClear = ClearValue::colorClear(1.f, 1.f, 1.f, 1.f);
 
 	builder.beginPass(PassId::SSAOGenerate, "SSAOGenerate")
@@ -43,42 +89,34 @@ void emitSsaoPreparePasses(BlueprintBuilder& builder, const RenderTopologySnapsh
 		.readFrom(PassId::ScenePrepass, AttachmentRole::Depth) // 0: prepass depth
 		.readFrom(PassId::ScenePrepass, AttachmentRole::Color, /*attachmentIndex=*/0); // 1: prepass normals
 
-	if (ssaoDownsample)
-	{
-		builder.beginPass(PassId::SSAODownsample, "SSAODownsample")
-			.color(PipelineSurfaceId::SSAOBlurred, AttachmentLoadOp::Clear, AttachmentStoreOp::Store, ssaoUnoccludedClear)
-			.viewport(ViewportRule::ColorTarget)
-			.readFrom(PassId::SSAOGenerate, AttachmentRole::PrimaryColor); // 0: generate AO
-
-		builder.beginPass(PassId::SSAOBlurH, "SSAOBlurH")
-			.color(PipelineSurfaceId::SSAOBlurH, AttachmentLoadOp::Clear, AttachmentStoreOp::Store, ssaoUnoccludedClear)
-			.viewport(ViewportRule::ColorTarget)
-			.readFrom(PassId::SSAODownsample, AttachmentRole::PrimaryColor) // 0: occlusion
-			.readFrom(PassId::ScenePrepass, AttachmentRole::Depth); // 1: prepass depth
-
-		builder.beginPass(PassId::SSAOBlurV, "SSAOBlurV")
-			.color(PipelineSurfaceId::SSAOBlurred, AttachmentLoadOp::Clear, AttachmentStoreOp::Store, ssaoUnoccludedClear)
-			.viewport(ViewportRule::ColorTarget)
-			.readFrom(PassId::SSAOBlurH, AttachmentRole::PrimaryColor) // 0: occlusion
-			.readFrom(PassId::ScenePrepass, AttachmentRole::Depth); // 1: prepass depth
-	}
-	else
-	{
-		builder.beginPass(PassId::SSAOBlurH, "SSAOBlurH")
-			.color(PipelineSurfaceId::SSAOBlurH, AttachmentLoadOp::Clear, AttachmentStoreOp::Store, ssaoUnoccludedClear)
-			.viewport(ViewportRule::ColorTarget)
-			.readFrom(PassId::SSAOGenerate, AttachmentRole::PrimaryColor) // 0: occlusion
-			.readFrom(PassId::ScenePrepass, AttachmentRole::Depth); // 1: prepass depth
-
-		builder.beginPass(PassId::SSAOBlurV, "SSAOBlurV")
-			.color(PipelineSurfaceId::SSAORaw, AttachmentLoadOp::Clear, AttachmentStoreOp::Store, ssaoUnoccludedClear)
-			.viewport(ViewportRule::ColorTarget)
-			.readFrom(PassId::SSAOBlurH, AttachmentRole::PrimaryColor) // 0: occlusion
-			.readFrom(PassId::ScenePrepass, AttachmentRole::Depth); // 1: prepass depth
-	}
+	emitSeparableBlurPasses(builder, snapshot, {
+		PassId::SSAOGenerate, PassId::SSAODownsample, PassId::SSAOBlurH, PassId::SSAOBlurV,
+		PipelineSurfaceId::SSAORaw, PipelineSurfaceId::SSAOBlurH, PipelineSurfaceId::SSAOBlurred,
+		"SSAODownsample", "SSAOBlurH", "SSAOBlurV", ssaoUnoccludedClear,
+		RenderFeatures::SSAODownsample,
+	});
 }
 
-void emitRangeRingPreparePasses(BlueprintBuilder& builder, const RenderTopologySnapshot&)
+void emitSsrPreparePasses(BlueprintBuilder& builder, const RenderTopologySnapshot& snapshot, PassId incomingColor)
+{
+	const ClearValue noReflection = ClearValue::colorClear(0.f, 0.f, 0.f, 0.f);
+
+	builder.beginPass(PassId::SSRGenerate, "SSRGenerate")
+		.color(PipelineSurfaceId::SsrRaw, AttachmentLoadOp::Clear, AttachmentStoreOp::Store, noReflection)
+		.viewport(ViewportRule::ColorTarget)
+		.readFrom(PassId::ScenePrepass, AttachmentRole::Depth) // 0: prepass depth
+		.readFrom(PassId::ScenePrepass, AttachmentRole::Color, /*attachmentIndex=*/0) // 1: prepass normals
+		.readFrom(incomingColor, AttachmentRole::PrimaryColor); // 2: current opaque scene
+
+	emitSeparableBlurPasses(builder, snapshot, {
+		PassId::SSRGenerate, PassId::SSRDownsample, PassId::SSRBlurH, PassId::SSRBlurV,
+		PipelineSurfaceId::SsrRaw, PipelineSurfaceId::SsrBlurH, PipelineSurfaceId::SsrBlurred,
+		"SSRDownsample", "SSRBlurH", "SSRBlurV", noReflection,
+		RenderFeatures::SSRDownsample,
+	});
+}
+
+void emitRangeRingPreparePasses(BlueprintBuilder& builder, const RenderTopologySnapshot&, PassId)
 {
 	static constexpr ClearValue SDF_UNCOVERED = ClearValue::colorClear(1.f, 1.f, 1.f, 1.f);
 
@@ -182,6 +220,22 @@ const std::array<ScenePostEffectDesc, static_cast<size_t>(ScenePostEffectId::Cou
 		.applyInputs = { ApplyInput::IncomingColor, ApplyInput::PreparedOutput, ApplyInput::PrepassNormals },
 		.applyInputCount = 3,
 		.preparedColorPass = PassId::SSAOBlurV,
+	},
+	{
+		.id = ScenePostEffectId::Ssr,
+		.prepassNeed = PrepassNeed::Depth | PrepassNeed::Normals,
+		.emitPreparePasses = emitSsrPreparePasses,
+		.applyPass = PassId::SSRCompose,
+		.applyDebugName = "SSRCompose",
+		.applyOutput = PipelineSurfaceId::SsrComposedColor,
+		.applyInputs = {
+			ApplyInput::IncomingColor,
+			ApplyInput::PreparedOutput,
+			ApplyInput::PrepassNormals,
+			ApplyInput::PrepassDepth,
+		},
+		.applyInputCount = 4,
+		.preparedColorPass = PassId::SSRBlurV,
 	},
 	{
 		.id = ScenePostEffectId::Fog,

@@ -18,7 +18,7 @@ layout(std140) uniform cbuffer {
 	int ShadowMapSize;
 	float timeSec;
 	float WZ_MIP_LOAD_BIAS;
-	float pad0;
+	float ssrBlend;
 	int viewportWidth;
 	int viewportHeight;
 	int bucketDimensionUsed;

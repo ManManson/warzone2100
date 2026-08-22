@@ -73,6 +73,8 @@
 #include "loop.h"
 #include "wzcrashhandlingproviders.h"
 #include "lighting.h"
+#include "scene_effect_surfaces.h"
+#include "ssr.h"
 
 #include "profiling.h"
 
@@ -2276,6 +2278,36 @@ void drawWaterDepthNormalPrepass(const glm::mat4& projection, const glm::mat4& v
 	}
 
 	const glm::mat4 mvp = projection * view;
+	const bool bumpPrepass = (terrainShaderQuality == TerrainShaderQuality::NORMAL_MAPPING)
+		&& (waterTexturesHigh.tex_nm != nullptr);
+	if (bumpPrepass)
+	{
+		gfx_api::WaterDepthPrepassBump::get().bind();
+		gfx_api::WaterDepthPrepassBump::get().bind_textures(waterTexturesHigh.tex_nm);
+		gfx_api::WaterDepthPrepassBump::get().bind_vertex_buffers(waterVBO);
+		gfx_api::WaterDepthPrepassBump::get().bind_constants({
+			mvp, view, waterOffset * 10.f, gfx_api::context::get().getSceneMipLodBias()
+		});
+		gfx_api::context::get().bind_index_buffer(*waterIndexVBO, gfx_api::index_type::u32);
+
+		for (int x = 0; x < xSectors; x++)
+		{
+			for (int y = 0; y < ySectors; y++)
+			{
+				if (sectors[x * ySectors + y].draw)
+				{
+					batchDrawElements<gfx_api::WaterDepthPrepassBump>(
+						sectors[x * ySectors + y].waterIndexSize,
+						sectors[x * ySectors + y].waterIndexOffset);
+				}
+			}
+		}
+		flushDrawElementsBatch<gfx_api::WaterDepthPrepassBump>();
+		gfx_api::WaterDepthPrepassBump::get().unbind_vertex_buffers(waterVBO);
+		gfx_api::context::get().unbind_index_buffer(*waterIndexVBO);
+		return;
+	}
+
 	gfx_api::WaterDepthPrepass::get().bind();
 	gfx_api::WaterDepthPrepass::get().bind_vertex_buffers(waterVBO);
 	gfx_api::WaterDepthPrepass::get().bind_constants({ mvp, view });
@@ -2417,7 +2449,8 @@ void drawWaterHighImpl(const glm::mat4 &ModelViewProjection, const glm::mat4& vi
 		glm::vec4(cameraPos, 0), glm::vec4(glm::normalize(sunPos), 0),
 		pie_GetLighting0(LIGHT_EMISSIVE), pie_GetLighting0(LIGHT_AMBIENT), pie_GetLighting0(LIGHT_DIFFUSE), pie_GetLighting0(LIGHT_SPECULAR),
 		{shadowCascades.shadowCascadeSplit[0], shadowCascades.shadowCascadeSplit[1], shadowCascades.shadowCascadeSplit[2], pie_getPerspectiveZFar()}, shadowCascades.shadowMapSize,
-		waterOffset*10, gfx_api::context::get().getSceneMipLodBias(), 0.f,
+		waterOffset*10, gfx_api::context::get().getSceneMipLodBias(),
+		ssr::activeSettings().enabled ? 1.f : 0.f,
 		static_cast<int>(dimension.first), static_cast<int>(dimension.second),
 		static_cast<int>(getCurrentLightingManager().getPointLightBuckets().bucketDimensionUsed), 0.f,
 		getCurrentLightingManager().getPointLightBuckets().bucketOffsetAndSize
@@ -2633,6 +2666,8 @@ bool setTerrainShaderQuality(TerrainShaderQuality newValue, bool force, bool for
 				debug(LOG_ERROR, "Failed to re-initialize terrain for mesh subdivision change");
 			}
 		}
+
+		applySceneEffectSurfaces();
 	}
 
 	return success;
