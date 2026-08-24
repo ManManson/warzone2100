@@ -702,6 +702,11 @@ float getCurrentSkyboxScale()
 	return skybox_scale;
 }
 
+float getCurrentSkyboxWindAngle()
+{
+	return wind;
+}
+
 static inline void rotateSomething(int &x, int &y, uint16_t angle)
 {
 	int64_t cra = iCos(angle), sra = iSin(angle);

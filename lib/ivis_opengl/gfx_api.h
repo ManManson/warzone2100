@@ -2152,9 +2152,11 @@ namespace gfx_api
 	{
 		glm::mat4 invProjectionMatrix;
 		glm::mat4 projectionMatrix;
+		glm::mat4 viewToSkyLocal;
 		glm::vec4 params;
 		glm::vec4 prepassUvScaleClamp;
 		glm::vec4 sceneUvScaleClamp;
+		glm::vec4 skyFogColor;
 		float stepCount;
 		float padding0 = 0.f;
 		float padding1 = 0.f;
@@ -2170,7 +2172,8 @@ namespace gfx_api
 	std::tuple<
 		texture_description<0, sampler_type::nearest_clamped, pixel_format_target::texture_2d>,
 		texture_description<1, sampler_type::nearest_clamped, pixel_format_target::texture_2d>,
-		texture_description<2, sampler_type::bilinear, pixel_format_target::texture_2d>
+		texture_description<2, sampler_type::bilinear, pixel_format_target::texture_2d>,
+		texture_description<3, sampler_type::bilinear_repeat, pixel_format_target::texture_2d>
 	>, SHADER_SSR_GENERATE>;
 
 	template<>

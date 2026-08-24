@@ -4,9 +4,11 @@
 layout(std140) uniform cbuffer {
 	mat4 invProjectionMatrix;
 	mat4 projectionMatrix;
+	mat4 viewToSkyLocal;
 	vec4 params;              // x=maxRayLength, y=thickness, z=minRayStart, w unused
 	vec4 prepassUvScaleClamp; // xy scale, zw clamp
 	vec4 sceneUvScaleClamp;
+	vec4 skyFogColor;         // rgb, a=fog enabled
 	float stepCount;
 	float padding0;
 	float padding1;
@@ -16,6 +18,7 @@ layout(std140) uniform cbuffer {
 uniform sampler2D depthTexture;
 uniform sampler2D normalsTexture;
 uniform sampler2D sceneTexture;
+uniform sampler2D skyboxTexture;
 
 #if (!defined(GL_ES) && (__VERSION__ >= 130)) || (defined(GL_ES) && (__VERSION__ >= 300))
 #define NEWGL
@@ -31,6 +34,7 @@ varying vec2 texCoords;
 #endif
 
 #include "view_position.glsl"
+#include "sky_radiance.glsl"
 
 const float SKY_DEPTH_THRESHOLD = 0.9999;
 const int MAX_STEPS = 64;
@@ -166,7 +170,11 @@ void main()
 
 	if (!hit)
 	{
-		writeColor(vec4(0.0));
+		// Screen-space color cannot supply sky that is behind the camera or off
+		// the framebuffer. A miss looks up the same 2D skybox the ScenePass uses.
+		float ndotv = clamp(dot(N, -V), 0.0, 1.0);
+		float confidence = ssrWeight * mix(0.4, 1.0, ndotv);
+		writeColor(vec4(wzSampleSkyRadiance(R), confidence));
 		return;
 	}
 
@@ -198,8 +206,6 @@ void main()
 		}
 	}
 
-	// Confidence combines material eligibility, ray length, screen-edge validity,
-	// and grazing angle. The compose pass uses it as reflection opacity.
 	float confidence = ssrWeight
 		* (0.25 + 0.75 * (1.0 - clamp(hitT / max(maxDist, 1e-6), 0.0, 1.0)))
 		* edgeFade(hitUV, prepassUvScaleClamp.zw)

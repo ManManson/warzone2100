@@ -3,9 +3,11 @@
 layout(std140, set = 0, binding = 0) uniform cbuffer {
 	mat4 invProjectionMatrix;
 	mat4 projectionMatrix;
+	mat4 viewToSkyLocal;
 	vec4 params;              // x=maxRayLength, y=thickness, z=minRayStart, w unused
 	vec4 prepassUvScaleClamp; // xy scale, zw clamp
 	vec4 sceneUvScaleClamp;
+	vec4 skyFogColor;         // rgb, a=fog enabled
 	float stepCount;
 	float padding0;
 	float padding1;
@@ -15,11 +17,13 @@ layout(std140, set = 0, binding = 0) uniform cbuffer {
 layout(set = 1, binding = 0) uniform sampler2D depthTexture;
 layout(set = 1, binding = 1) uniform sampler2D normalsTexture;
 layout(set = 1, binding = 2) uniform sampler2D sceneTexture;
+layout(set = 1, binding = 3) uniform sampler2D skyboxTexture;
 
 layout(location = 0) in vec2 texCoords;
 layout(location = 0) out vec4 FragColor;
 
 #include "view_position.glsl"
+#include "sky_radiance.glsl"
 
 const float SKY_DEPTH_THRESHOLD = 0.9999;
 const int MAX_STEPS = 64;
@@ -139,7 +143,11 @@ void main()
 
 	if (!hit)
 	{
-		FragColor = vec4(0.0);
+		// Screen-space color cannot supply sky that is behind the camera or off
+		// the framebuffer. A miss looks up the same 2D skybox the ScenePass uses.
+		float ndotv = clamp(dot(N, -V), 0.0, 1.0);
+		float confidence = ssrWeight * mix(0.4, 1.0, ndotv);
+		FragColor = vec4(wzSampleSkyRadiance(R), confidence);
 		return;
 	}
 
@@ -171,15 +179,11 @@ void main()
 		}
 	}
 
-	// Confidence combines material eligibility, ray length, screen-edge validity,
-	// and grazing angle. The compose pass uses it as reflection opacity.
 	float confidence = ssrWeight
 		* (0.25 + 0.75 * (1.0 - clamp(hitT / max(maxDist, 1e-6), 0.0, 1.0)))
 		* edgeFade(hitUV, prepassUvScaleClamp.zw)
 		* (0.2 + 0.8 * clamp(dot(N, -V), 0.0, 1.0));
 
-	// Convert from prepass allocation coordinates back through logical screen UV
-	// into the populated extent of the opaque scene-color texture.
 	vec2 sceneUv = clamp(hitUV / max(prepassUvScaleClamp.xy, vec2(1e-6)) * sceneUvScaleClamp.xy,
 		vec2(0.0), sceneUvScaleClamp.zw);
 	vec3 color = texture(sceneTexture, sceneUv).rgb;

@@ -1089,7 +1089,7 @@ static const std::map<SHADER_MODE, program_data> shader_to_file_table =
 		.uniform_block_names = { "cbuffer" } }),
 	std::make_pair(SHADER_SSR_GENERATE, program_data{ .friendly_name = "SSR generate program", .vertex_file = "shaders/postprocess_fullscreen.vert", .fragment_file = "shaders/ssr_generate.frag",
 		.uniform_names = {},
-		.additional_samplers = { {"depthTexture", 0}, {"normalsTexture", 1}, {"sceneTexture", 2} },
+		.additional_samplers = { {"depthTexture", 0}, {"normalsTexture", 1}, {"sceneTexture", 2}, {"skyboxTexture", 3} },
 		.uniform_block_names = { "cbuffer" } }),
 	std::make_pair(SHADER_SSR_BLUR, program_data{ .friendly_name = "SSR blur program", .vertex_file = "shaders/postprocess_fullscreen.vert", .fragment_file = "shaders/ssr_blur.frag",
 		.uniform_names = {},

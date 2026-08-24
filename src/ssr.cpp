@@ -24,6 +24,7 @@
 
 #include "ssr.h"
 
+#include "display3d.h"
 #include "display3d_render_graph.h"
 #include "display3d_render_internal.h"
 #include "depth_aware_blur.h"
@@ -31,11 +32,15 @@
 
 #include "lib/framework/frame.h"
 #include "lib/ivis_opengl/gfx_api.h"
+#include "lib/ivis_opengl/piefunc.h"
+#include "lib/ivis_opengl/pielight_convert.h"
 #include "lib/ivis_opengl/piestate.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
+#include <algorithm>
 #include <cstdint>
 
 namespace ssr
@@ -120,18 +125,31 @@ void drawSSRGenerate(
 	gfx_api::abstract_texture* depthTexture,
 	gfx_api::abstract_texture* normalsTexture,
 	gfx_api::abstract_texture* sceneTexture,
+	gfx_api::abstract_texture* skyboxTexture,
 	const glm::mat4& projectionMatrix,
-	const glm::mat4& invProjectionMatrix)
+	const glm::mat4& invProjectionMatrix,
+	const glm::mat4& viewMatrix)
 {
 	gfx_api::constant_buffer_type<SHADER_SSR_GENERATE> constants {};
 	constants.invProjectionMatrix = invProjectionMatrix;
 	constants.projectionMatrix = projectionMatrix;
+	const float skyScale = std::max(getCurrentSkyboxScale(), 1.f);
+	const glm::mat3 invViewRot = glm::inverse(glm::mat3(viewMatrix));
+	const glm::mat3 invWind = glm::mat3(glm::rotate(glm::mat4(1.f), glm::radians(-getCurrentSkyboxWindAngle()), glm::vec3(0.f, 1.f, 0.f)));
+	const glm::mat3 invScale(
+		glm::vec3(1.f / skyScale, 0.f, 0.f),
+		glm::vec3(0.f, 2.f / skyScale, 0.f),
+		glm::vec3(0.f, 0.f, 1.f / skyScale));
+	constants.viewToSkyLocal = glm::mat4(invScale * invWind * invViewRot);
 	constants.params = glm::vec4(s_tuning.maxRayLength, s_tuning.thickness, s_tuning.minRayStart, 0.f);
 	display3d_fillPassReadUvScaleClamp(passCtx, 0, constants.prepassUvScaleClamp);
 	display3d_fillPassReadUvScaleClamp(passCtx, 2, constants.sceneUvScaleClamp);
+	const auto& renderState = getCurrentRenderState();
+	const glm::vec4 fog = pielightToRGBAVec4(renderState.fogColour);
+	constants.skyFogColor = glm::vec4(fog.r, fog.g, fog.b, renderState.fogEnabled ? 1.f : 0.f);
 	constants.stepCount = static_cast<float>(activeSettings().stepCount);
 
-	display3d_drawFullscreenTriangle<gfx_api::SSRGeneratePSO>(constants, depthTexture, normalsTexture, sceneTexture);
+	display3d_drawFullscreenTriangle<gfx_api::SSRGeneratePSO>(constants, depthTexture, normalsTexture, sceneTexture, skyboxTexture);
 }
 
 } // namespace
@@ -155,13 +173,14 @@ void recordGenerate(const gfx_api::RenderPassContext& passCtx)
 	gfx_api::abstract_texture* depth = passCtx.getRead(0);
 	gfx_api::abstract_texture* normals = passCtx.getRead(1);
 	gfx_api::abstract_texture* scene = passCtx.getRead(2);
-	if (depth == nullptr || normals == nullptr || scene == nullptr)
+	gfx_api::abstract_texture* skybox = pie_Skybox_GetTexture();
+	if (depth == nullptr || normals == nullptr || scene == nullptr || skybox == nullptr)
 	{
 		return;
 	}
 
 	const auto& fc = pie_GetInGame3DFrameContext();
-	drawSSRGenerate(passCtx, depth, normals, scene, fc.perspectiveMatrix, glm::inverse(fc.perspectiveMatrix));
+	drawSSRGenerate(passCtx, depth, normals, scene, skybox, fc.perspectiveMatrix, glm::inverse(fc.perspectiveMatrix), fc.viewMatrix);
 }
 
 void recordDownsample(const gfx_api::RenderPassContext& passCtx)
