@@ -19,6 +19,9 @@ layout(location = 0) out vec4 FragColor;
 void main()
 {
 	vec3 modelN = wzWaterModelNormal(tex_nm, uv1_uv2.xy, uv1_uv2.zw, timeSec, mipLoadBias);
+	// Shading keeps the full ripple. SSR uses a calmer normal so reflected units
+	// stay readable instead of breaking up at the wave frequency.
+	modelN = normalize(mix(modelN, vec3(0.0, 1.0, 0.0), 0.45));
 	vec3 viewN = normalize(mat3(ViewMatrix) * modelN);
 	FragColor = vec4(viewN * 0.5 + 0.5, 0.0);
 }

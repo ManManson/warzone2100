@@ -66,6 +66,6 @@ void main()
 	vec3 V = normalize(-viewPos);
 	float ndotv = clamp(dot(N, V), 0.0, 1.0);
 	float F = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
-	float mixAmt = clamp(ssrWeight * max(F, 0.18) * ssr.a * intensity, 0.0, 1.0);
+	float mixAmt = clamp(ssrWeight * max(F, 0.28) * ssr.a * intensity, 0.0, 1.0);
 	writeColor(vec4(mix(scene, ssr.rgb, mixAmt), 1.0));
 }

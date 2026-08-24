@@ -145,8 +145,10 @@ void main()
 	{
 		// Screen-space color cannot supply sky that is behind the camera or off
 		// the framebuffer. A miss looks up the same 2D skybox the ScenePass uses.
+		// Keep miss confidence below nearby geometry hits so the blur does not
+		// wash units into the sky-colored ripples.
 		float ndotv = clamp(dot(N, -V), 0.0, 1.0);
-		float confidence = ssrWeight * mix(0.4, 1.0, ndotv);
+		float confidence = ssrWeight * mix(0.3, 0.65, ndotv);
 		FragColor = vec4(wzSampleSkyRadiance(R), confidence);
 		return;
 	}
@@ -179,10 +181,11 @@ void main()
 		}
 	}
 
+	// Geometry hits need to outrank the water's own ripple albedo. Distance still
+	// fades far hits; facing weight stays in compose so this alpha can stay high.
 	float confidence = ssrWeight
-		* (0.25 + 0.75 * (1.0 - clamp(hitT / max(maxDist, 1e-6), 0.0, 1.0)))
-		* edgeFade(hitUV, prepassUvScaleClamp.zw)
-		* (0.2 + 0.8 * clamp(dot(N, -V), 0.0, 1.0));
+		* mix(0.75, 1.0, 1.0 - clamp(hitT / max(maxDist, 1e-6), 0.0, 1.0))
+		* edgeFade(hitUV, prepassUvScaleClamp.zw);
 
 	vec2 sceneUv = clamp(hitUV / max(prepassUvScaleClamp.xy, vec2(1e-6)) * sceneUvScaleClamp.xy,
 		vec2(0.0), sceneUvScaleClamp.zw);

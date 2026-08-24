@@ -103,7 +103,7 @@ struct Tuning
 	float minRayStart;
 	/// Sigma of the blur's depth falloff, in normalized depth units
 	float blurDepthSigma;
-	/// Compose mix multiplier. >1 is intentional for visibility at default camera pitch.
+	/// Compose mix multiplier. Facing water needs a boost or unit reflections sit under the ripples.
 	float intensity;
 	/// Schlick F0. Physical water is ~0.02; a large value is required or facing water is invisible.
 	float F0;
@@ -114,7 +114,7 @@ constexpr Tuning DEFAULT_TUNING = {
 	.thickness = 400.f,
 	.minRayStart = 0.004f,
 	.blurDepthSigma = 0.0025f,
-	.intensity = 1.6f,
+	.intensity = 2.0f,
 	.F0 = 0.22f,
 };
 

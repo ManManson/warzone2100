@@ -65,7 +65,10 @@ vec4 main_bumpMapping()
 	specularFactor = (specularFactor + r) * 0.5;
 
 	vec4 ambientColor = vec4(ambientLight.rgb * foam, 0.15);
-	vec4 diffuseColor = vec4(diffuseLight.rgb * diffuseFactor * waterColor+noise*noise*0.5, 0.35);
+	// SSR already carries the sky and nearby geometry. Keep a little ripple albedo
+	// so the surface still reads as water, but do not let it bury reflected units.
+	float rippleAlbedo = noise * noise * mix(0.5, 0.18, ssrBlend);
+	vec4 diffuseColor = vec4(diffuseLight.rgb * diffuseFactor * waterColor + rippleAlbedo, 0.35);
 	vec4 specColor = vec4(specularLight.rgb * specularFactor * diffuseFactor, fresnel_alpha);
 
 	vec4 finalColor = vec4(0.0);
