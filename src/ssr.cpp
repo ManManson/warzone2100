@@ -103,8 +103,10 @@ struct Tuning
 	float minRayStart;
 	/// Sigma of the blur's depth falloff, in normalized depth units
 	float blurDepthSigma;
-	/// Compose mix multiplier. Facing water needs a boost or unit reflections sit under the ripples.
+	/// Analog compose gain after fresnel. Not a water-shader blend.
 	float intensity;
+	/// Fraction of SSR mixed over water as it looks with SSR off.
+	float overWaterMix;
 	/// Schlick F0. Physical water is ~0.02; a large value is required or facing water is invisible.
 	float F0;
 };
@@ -115,11 +117,13 @@ constexpr Tuning DEFAULT_TUNING = {
 	.minRayStart = 0.004f,
 	.blurDepthSigma = 0.0025f,
 	.intensity = 2.0f,
+	.overWaterMix = 0.6f,
 	.F0 = 0.22f,
 };
 
 Tuning s_tuning = DEFAULT_TUNING;
 
+// Graph reads are depth, normals, and scene. skyboxTexture is CPU-bound and may be null.
 void drawSSRGenerate(
 	const gfx_api::RenderPassContext& passCtx,
 	gfx_api::abstract_texture* depthTexture,
@@ -148,6 +152,7 @@ void drawSSRGenerate(
 	const glm::vec4 fog = pielightToRGBAVec4(renderState.fogColour);
 	constants.skyFogColor = glm::vec4(fog.r, fog.g, fog.b, renderState.fogEnabled ? 1.f : 0.f);
 	constants.stepCount = static_cast<float>(activeSettings().stepCount);
+	constants.skyboxAvailable = skyboxTexture != nullptr ? 1.f : 0.f;
 
 	display3d_drawFullscreenTriangle<gfx_api::SSRGeneratePSO>(constants, depthTexture, normalsTexture, sceneTexture, skyboxTexture);
 }
@@ -164,6 +169,8 @@ void shutdown()
 
 void recordGenerate(const gfx_api::RenderPassContext& passCtx)
 {
+	// Graph reads: 0 depth, 1 normals, 2 scene. The skybox is pie_Skybox_GetTexture(),
+	// a persistent CPU texture, not a PassId read.
 	ASSERT(passCtx.readCount() == 3, "SSR generate: 0 depth, 1 normals, 2 scene");
 	if (!pie_IsInGame3DFrameContextReady())
 	{
@@ -173,14 +180,13 @@ void recordGenerate(const gfx_api::RenderPassContext& passCtx)
 	gfx_api::abstract_texture* depth = passCtx.getRead(0);
 	gfx_api::abstract_texture* normals = passCtx.getRead(1);
 	gfx_api::abstract_texture* scene = passCtx.getRead(2);
-	gfx_api::abstract_texture* skybox = pie_Skybox_GetTexture();
-	if (depth == nullptr || normals == nullptr || scene == nullptr || skybox == nullptr)
+	if (depth == nullptr || normals == nullptr || scene == nullptr)
 	{
 		return;
 	}
 
 	const auto& fc = pie_GetInGame3DFrameContext();
-	drawSSRGenerate(passCtx, depth, normals, scene, skybox, fc.perspectiveMatrix, glm::inverse(fc.perspectiveMatrix), fc.viewMatrix);
+	drawSSRGenerate(passCtx, depth, normals, scene, pie_Skybox_GetTexture(), fc.perspectiveMatrix, glm::inverse(fc.perspectiveMatrix), fc.viewMatrix);
 }
 
 void recordDownsample(const gfx_api::RenderPassContext& passCtx)
@@ -218,7 +224,7 @@ void recordCompose(const gfx_api::RenderPassContext& passCtx)
 	const auto& fc = pie_GetInGame3DFrameContext();
 	gfx_api::constant_buffer_type<SHADER_SCENE_COMPOSE_SSR> constants {};
 	constants.invProjectionMatrix = glm::inverse(fc.perspectiveMatrix);
-	constants.intensity = s_tuning.intensity;
+	constants.intensity = s_tuning.intensity * s_tuning.overWaterMix;
 	constants.F0 = s_tuning.F0;
 	display3d_fillPassReadUvScaleClamp(passCtx, 0, constants.sceneUvScaleClamp);
 	display3d_fillPassReadUvScaleClamp(passCtx, 1, constants.ssrUvScaleClamp);

@@ -24,12 +24,14 @@ varying vec4 uv1_uv2;
 
 #include "water_normals.glsl"
 
+const float SSR_NORMAL_CALM = 0.45;
+
 void main()
 {
 	vec3 modelN = wzWaterModelNormal(tex_nm, uv1_uv2.xy, uv1_uv2.zw, timeSec, mipLoadBias);
 	// Shading keeps the full ripple. SSR uses a calmer normal so reflected units
 	// stay readable instead of breaking up at the wave frequency.
-	modelN = normalize(mix(modelN, vec3(0.0, 1.0, 0.0), 0.45));
+	modelN = normalize(mix(modelN, vec3(0.0, 1.0, 0.0), SSR_NORMAL_CALM));
 	vec3 viewN = normalize(mat3(ViewMatrix) * modelN);
 	#ifdef NEWGL
 	FragColor = vec4(viewN * 0.5 + 0.5, 0.0);

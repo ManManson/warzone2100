@@ -9,7 +9,7 @@ layout(std140, set = 0, binding = 0) uniform cbuffer {
 	vec4 sceneUvScaleClamp;
 	vec4 skyFogColor;         // rgb, a=fog enabled
 	float stepCount;
-	float padding0;
+	float skyboxAvailable;
 	float padding1;
 	float padding2;
 };
@@ -27,6 +27,17 @@ layout(location = 0) out vec4 FragColor;
 
 const float SKY_DEPTH_THRESHOLD = 0.9999;
 const int MAX_STEPS = 64;
+const float NORMAL_LENGTH_EPSILON = 1e-5;
+const float SSR_WEIGHT_EPSILON = 1e-3;
+const float UV_EPSILON = 1e-6;
+const float EDGE_FADE_WIDTH = 0.05;
+const float MIN_RAY_START_ABS = 1.0;
+const float MIN_RAY_START_MAX_FRACTION = 0.15;
+const float MISS_CONFIDENCE_MIN = 0.3;
+const float MISS_CONFIDENCE_MAX = 0.65;
+const float HIT_CONFIDENCE_MIN = 0.75;
+const float HIT_CONFIDENCE_MAX = 1.0;
+const int BINARY_SEARCH_STEPS = 4;
 
 vec2 clipToUV(vec4 clip)
 {
@@ -38,7 +49,7 @@ vec3 getViewNormal(vec2 uv)
 	vec3 n = texture(normalsTexture, uv).xyz * 2.0 - 1.0;
 	float len = length(n);
 	// Empty or invalid prepass normals must not inject NaNs into the ray direction.
-	if (len < 1e-5)
+	if (len < NORMAL_LENGTH_EPSILON)
 	{
 		return vec3(0.0, 0.0, 1.0);
 	}
@@ -49,9 +60,9 @@ float edgeFade(vec2 uv, vec2 clampZW)
 {
 	// Screen-space rays cannot recover data beyond the rendered prepass extent.
 	// Fade hits near that boundary instead of exposing a hard reflection cutoff.
-	vec2 n = uv / max(clampZW, vec2(1e-6));
-	float fadeX = smoothstep(0.0, 0.05, uv.x) * smoothstep(1.0, 0.95, n.x);
-	float fadeY = smoothstep(0.0, 0.05, uv.y) * smoothstep(1.0, 0.95, n.y);
+	vec2 n = uv / max(clampZW, vec2(UV_EPSILON));
+	float fadeX = smoothstep(0.0, EDGE_FADE_WIDTH, uv.x) * smoothstep(1.0, 1.0 - EDGE_FADE_WIDTH, n.x);
+	float fadeY = smoothstep(0.0, EDGE_FADE_WIDTH, uv.y) * smoothstep(1.0, 1.0 - EDGE_FADE_WIDTH, n.y);
 	return fadeX * fadeY;
 }
 
@@ -68,7 +79,7 @@ void main()
 
 	// Prepass normal alpha stores SSAO weight; its inverse identifies SSR-eligible water.
 	float ssrWeight = 1.0 - texture(normalsTexture, uv).a;
-	if (ssrWeight < 1e-3)
+	if (ssrWeight < SSR_WEIGHT_EPSILON)
 	{
 		FragColor = vec4(0.0);
 		return;
@@ -92,7 +103,7 @@ void main()
 	// Move the first sample away from the reflector to avoid immediate self-hits.
 	// The offset scales with view depth but remains bounded for near/far surfaces.
 	float minStart = params.z * abs(origin.z);
-	minStart = clamp(minStart, 1.0, maxDist * 0.15);
+	minStart = clamp(minStart, MIN_RAY_START_ABS, maxDist * MIN_RAY_START_MAX_FRACTION);
 	// Never use a depth tolerance narrower than one coarse march interval.
 	float thickness = max(params.y, maxDist / float(steps));
 
@@ -148,13 +159,18 @@ void main()
 		// Keep miss confidence below nearby geometry hits so the blur does not
 		// wash units into the sky-colored ripples.
 		float ndotv = clamp(dot(N, -V), 0.0, 1.0);
-		float confidence = ssrWeight * mix(0.3, 0.65, ndotv);
+		float confidence = ssrWeight * mix(MISS_CONFIDENCE_MIN, MISS_CONFIDENCE_MAX, ndotv);
+		if (skyboxAvailable < 0.5)
+		{
+			FragColor = vec4(0.0);
+			return;
+		}
 		FragColor = vec4(wzSampleSkyRadiance(R), confidence);
 		return;
 	}
 
 	// Refine the coarse first crossing without increasing the primary step count.
-	for (int b = 0; b < 4; ++b)
+	for (int b = 0; b < BINARY_SEARCH_STEPS; ++b)
 	{
 		vec3 mid = mix(lastMiss, hitP, 0.5);
 		vec4 clip = projectionMatrix * vec4(mid, 1.0);
@@ -184,10 +200,10 @@ void main()
 	// Geometry hits need to outrank the water's own ripple albedo. Distance still
 	// fades far hits; facing weight stays in compose so this alpha can stay high.
 	float confidence = ssrWeight
-		* mix(0.75, 1.0, 1.0 - clamp(hitT / max(maxDist, 1e-6), 0.0, 1.0))
+		* mix(HIT_CONFIDENCE_MIN, HIT_CONFIDENCE_MAX, 1.0 - clamp(hitT / max(maxDist, UV_EPSILON), 0.0, 1.0))
 		* edgeFade(hitUV, prepassUvScaleClamp.zw);
 
-	vec2 sceneUv = clamp(hitUV / max(prepassUvScaleClamp.xy, vec2(1e-6)) * sceneUvScaleClamp.xy,
+	vec2 sceneUv = clamp(hitUV / max(prepassUvScaleClamp.xy, vec2(UV_EPSILON)) * sceneUvScaleClamp.xy,
 		vec2(0.0), sceneUvScaleClamp.zw);
 	vec3 color = texture(sceneTexture, sceneUv).rgb;
 	FragColor = vec4(color, confidence);

@@ -74,7 +74,6 @@
 #include "wzcrashhandlingproviders.h"
 #include "lighting.h"
 #include "scene_effect_surfaces.h"
-#include "ssr.h"
 
 #include "profiling.h"
 
@@ -2450,7 +2449,6 @@ void drawWaterHighImpl(const glm::mat4 &ModelViewProjection, const glm::mat4& vi
 		pie_GetLighting0(LIGHT_EMISSIVE), pie_GetLighting0(LIGHT_AMBIENT), pie_GetLighting0(LIGHT_DIFFUSE), pie_GetLighting0(LIGHT_SPECULAR),
 		{shadowCascades.shadowCascadeSplit[0], shadowCascades.shadowCascadeSplit[1], shadowCascades.shadowCascadeSplit[2], pie_getPerspectiveZFar()}, shadowCascades.shadowMapSize,
 		waterOffset*10, gfx_api::context::get().getSceneMipLodBias(),
-		ssr::activeSettings().enabled ? 1.f : 0.f,
 		static_cast<int>(dimension.first), static_cast<int>(dimension.second),
 		static_cast<int>(getCurrentLightingManager().getPointLightBuckets().bucketDimensionUsed), 0.f,
 		getCurrentLightingManager().getPointLightBuckets().bucketOffsetAndSize

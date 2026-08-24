@@ -1654,7 +1654,6 @@ namespace gfx_api
 		int ShadowMapSize;
 		float timeSec;
 		float mipLoadBias;
-		float ssrBlend = 0.f;
 		int viewportWidth;
 		int viewportHeight;
 		int bucketDimensionUsed;
@@ -2158,7 +2157,7 @@ namespace gfx_api
 		glm::vec4 sceneUvScaleClamp;
 		glm::vec4 skyFogColor;
 		float stepCount;
-		float padding0 = 0.f;
+		float skyboxAvailable = 0.f;
 		float padding1 = 0.f;
 		float padding2 = 0.f;
 	};

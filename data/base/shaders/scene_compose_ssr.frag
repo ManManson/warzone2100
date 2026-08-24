@@ -33,6 +33,11 @@ varying vec2 texCoords;
 
 #include "view_position.glsl"
 
+const float SSR_WEIGHT_EPSILON = 1e-3;
+const float NORMAL_LENGTH_EPSILON = 1e-5;
+const float SCHLICK_EXPONENT = 5.0;
+const float FACING_FRESNEL_FLOOR = 0.28;
+
 void writeColor(vec4 color)
 {
 	#ifdef NEWGL
@@ -52,7 +57,7 @@ void main()
 	vec3 scene = texture(sceneTexture, sceneUv).rgb;
 	vec4 ssr = texture(ssrTexture, ssrUv);
 	float ssrWeight = 1.0 - texture(prepassNormals, nUv).a;
-	if (ssrWeight < 1e-3 || ssr.a < 1e-3)
+	if (ssrWeight < SSR_WEIGHT_EPSILON || ssr.a < SSR_WEIGHT_EPSILON)
 	{
 		writeColor(vec4(scene, 1.0));
 		return;
@@ -62,10 +67,10 @@ void main()
 	vec3 viewPos = wzGetViewPosition(dUv, depth, invProjectionMatrix);
 	vec3 N = texture(prepassNormals, nUv).xyz * 2.0 - 1.0;
 	float nLen = length(N);
-	N = (nLen < 1e-5) ? vec3(0.0, 0.0, 1.0) : (N / nLen);
+	N = (nLen < NORMAL_LENGTH_EPSILON) ? vec3(0.0, 0.0, 1.0) : (N / nLen);
 	vec3 V = normalize(-viewPos);
 	float ndotv = clamp(dot(N, V), 0.0, 1.0);
-	float F = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
-	float mixAmt = clamp(ssrWeight * max(F, 0.28) * ssr.a * intensity, 0.0, 1.0);
+	float F = F0 + (1.0 - F0) * pow(1.0 - ndotv, SCHLICK_EXPONENT);
+	float mixAmt = clamp(ssrWeight * max(F, FACING_FRESNEL_FLOOR) * ssr.a * intensity, 0.0, 1.0);
 	writeColor(vec4(mix(scene, ssr.rgb, mixAmt), 1.0));
 }
