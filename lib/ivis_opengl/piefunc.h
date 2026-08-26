@@ -36,7 +36,7 @@
 
 namespace gfx_api
 {
-	class texture;
+	struct texture;
 }
 
 void pie_TransColouredTriangle(const std::array<Vector3f, 3> &vrt, PIELIGHT c, const glm::mat4 &modelViewMatrix);
