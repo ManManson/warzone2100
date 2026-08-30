@@ -170,6 +170,9 @@ bool initNoiseTexture()
 
 bool initUnoccludedTexture()
 {
+	// 1x1 white so lighting shaders can always bind ssaoTexture. Intensity 0
+	// makes mix(1, sample, 0) a no-op; the sample still happens. Removing this
+	// dummy requires a second PSO without the sampler -- not worth it.
 	iV_Image white;
 	if (!white.allocate(1, 1, 4, false))
 	{
@@ -286,7 +289,7 @@ gfx_api::abstract_texture* unoccludedTexture()
 	return s_unoccludedTexture;
 }
 
-LightingBind lightingBind(const gfx_api::RenderPassContext& passCtx, gfx_api::abstract_texture* ssaoRead)
+LightingBind lightingBind(const gfx_api::RenderPassContext& passCtx, gfx_api::abstract_texture* ssaoRead, size_t ssaoReadIndex)
 {
 	LightingBind bind;
 	bind.texture = s_unoccludedTexture;
@@ -298,15 +301,14 @@ LightingBind lightingBind(const gfx_api::RenderPassContext& passCtx, gfx_api::ab
 	}
 	bind.texture = ssaoRead;
 	bind.intensity = s_tuning.intensity;
-	if (passCtx.readCount() > 0)
-	{
-		const size_t ssaoIndex = passCtx.readCount() - 1;
-		const auto& read = passCtx.resolvedRead(ssaoIndex);
-		if (!read.isDepth && read.texture == ssaoRead)
-		{
-			display3d_fillPassReadUvScaleClamp(passCtx, ssaoIndex, bind.uvScaleClamp);
-		}
-	}
+	ASSERT(ssaoReadIndex < passCtx.readCount(), "SSAO lighting bind: read index %zu out of range", ssaoReadIndex);
+	const auto& read = passCtx.resolvedRead(ssaoReadIndex);
+	ASSERT(read.texture == ssaoRead, "SSAO lighting bind: texture does not match read %zu", ssaoReadIndex);
+	ASSERT(read.pipelineSurfaceId.has_value()
+		&& (read.pipelineSurfaceId.value() == gfx_api::PipelineSurfaceId::SSAORaw
+			|| read.pipelineSurfaceId.value() == gfx_api::PipelineSurfaceId::SSAOBlurred),
+		"SSAO lighting bind: expected SSAORaw or SSAOBlurred");
+	display3d_fillPassReadUvScaleClamp(passCtx, ssaoReadIndex, bind.uvScaleClamp);
 	return bind;
 }
 

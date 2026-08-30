@@ -48,6 +48,8 @@ namespace gfx_api
 	struct texture; // forward-declare
 }
 
+struct ForwardSsaoBind;
+
 void perFrameTerrainUpdates(WorldMapState& mapState, const LightMap& lightData);
 // tessCameraMVP: the MAIN camera's MVP for this frame
 // under the hardware tessellation strategy, every pass must derive tessellation factors from the
@@ -63,10 +65,12 @@ void drawWaterDepthNormalPrepass(const glm::mat4& projection, const glm::mat4& v
 void drawWaterDepthOnlyPrepass(const glm::mat4& projection, const glm::mat4& view);
 void drawTerrain(const glm::mat4 &mvp, const glm::mat4& viewMatrix, const Vector3f &cameraPos, const Vector3f &sunPos,
 	const ShadowCascadesInfo& shadowMVPMatrix, gfx_api::abstract_texture* shadowMap,
-	const gfx_api::frame_uniform_block_ref<gfx_api::PointLightsUniforms>& pointLights);
+	const gfx_api::frame_uniform_block_ref<gfx_api::PointLightsUniforms>& pointLights,
+	const ForwardSsaoBind& ssao);
 void drawWater(const glm::mat4 &ModelViewProjection, const glm::mat4& viewMatrix, const Vector3f &cameraPos, const Vector3f &sunPos,
 	const ShadowCascadesInfo& shadowCascades, gfx_api::abstract_texture* shadowMap,
-	const gfx_api::frame_uniform_block_ref<gfx_api::PointLightsUniforms>& pointLights);
+	const gfx_api::frame_uniform_block_ref<gfx_api::PointLightsUniforms>& pointLights,
+	const ForwardSsaoBind& ssao);
 
 gfx_api::texture* getTerrainLightmapTexture();
 const glm::mat4& getModelUVLightmapMatrix();

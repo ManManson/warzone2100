@@ -25,6 +25,7 @@
 #pragma once
 
 #include "lib/ivis_opengl/gfx_api.h"
+#include "lib/ivis_opengl/piedraw.h"
 #include "warzoneconfig.h"
 
 namespace ssao
@@ -44,16 +45,15 @@ struct SsaoSettings
 SsaoSettings settingsFor(SSAO_MODE mode);
 SsaoSettings activeSettings();
 
-struct LightingBind {
-	gfx_api::abstract_texture* texture = nullptr;
-	float intensity = 0.f;
-	glm::vec4 uvScaleClamp {1.f, 1.f, 1.f, 1.f};
-};
+using LightingBind = ForwardSsaoBind;
 
-/// Dummy 1x1 white (unoccluded) used when SSAO is off or a shader must bind a texture it will not sample.
+/// Dummy 1x1 white (unoccluded) used when SSAO is off. Lighting shaders still
+/// declare ssaoTexture; Vulkan requires a bound sampler, so this dummy stays
+/// instead of forking every lit PSO. Intensity 0 makes the mix a no-op.
 gfx_api::abstract_texture* unoccludedTexture();
 /// ScenePass bind: blurred AO + intensity when `ssaoRead` is non-null, else dummy + intensity 0.
-LightingBind lightingBind(const gfx_api::RenderPassContext& passCtx, gfx_api::abstract_texture* ssaoRead);
+/// `ssaoReadIndex` is the ScenePass read used for UV clamp; ignored when `ssaoRead` is null.
+LightingBind lightingBind(const gfx_api::RenderPassContext& passCtx, gfx_api::abstract_texture* ssaoRead, size_t ssaoReadIndex);
 
 void init();
 void shutdown();

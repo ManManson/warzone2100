@@ -16,6 +16,9 @@ float wzSampleSsao()
 
 vec3 wzApplySsaoToAmbient(vec3 ambientRgb)
 {
+	// Always samples. Intensity 0 (dummy 1x1 white when SSAO is off) makes the
+	// mix a no-op. Do not fork shaders to skip this -- a cached 1x1 sample is
+	// cheaper than a second lighting PSO per quality/tess variant.
 	return ambientRgb * mix(1.0, wzSampleSsao(), ssaoIntensity);
 }
 

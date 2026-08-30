@@ -27,11 +27,11 @@ layout(std140) uniform globaluniforms {
 	float WZ_MIP_LOAD_BIAS;
 	int viewportWidth;
 	int viewportHeight;
-	vec4 ssaoUvScaleClamp;
 	float ssaoIntensity;
-	float pad0;
-	float pad1;
-	float pad2;
+	float padSsao0;
+	float padSsao1;
+	float padSsao2;
+	vec4 ssaoUvScaleClamp;
 };
 
 layout(std140) uniform meshuniforms {

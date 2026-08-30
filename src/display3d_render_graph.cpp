@@ -85,11 +85,21 @@ static Vector3f toVector3f(const glm::vec3& v)
 }
 
 /// ScenePass reads: cascade depths (sharing one array texture), then optional SSAO.
+/// Cascade grouping is positional (depths come first by construction). AO is identified
+/// by pipeline surface because ScenePass may grow more color reads; last color is not SSAO.
 struct SceneDrawReads
 {
 	gfx_api::abstract_texture* shadowMap = nullptr;
 	gfx_api::abstract_texture* ssao = nullptr;
+	size_t ssaoReadIndex = 0;
 };
+
+static bool isSsaoLightingSurface(const gfx_api::ResolvedRead& read)
+{
+	return read.pipelineSurfaceId.has_value()
+		&& (read.pipelineSurfaceId.value() == gfx_api::PipelineSurfaceId::SSAORaw
+			|| read.pipelineSurfaceId.value() == gfx_api::PipelineSurfaceId::SSAOBlurred);
+}
 
 static SceneDrawReads parseSceneDrawReads(const gfx_api::RenderPassContext& ctx)
 {
@@ -112,25 +122,21 @@ static SceneDrawReads parseSceneDrawReads(const gfx_api::RenderPassContext& ctx)
 			ASSERT(read.texture == reads.shadowMap, "Scene draw cascade reads must share ShadowMap texture");
 		}
 	}
-	if (i < ctx.readCount())
+	size_t ssaoCount = 0;
+	for (; i < ctx.readCount(); ++i)
 	{
-		const auto& ssaoRead = ctx.resolvedRead(i);
-		ASSERT(!ssaoRead.isDepth, "Scene draw SSAO read must be color");
-		ASSERT(i + 1 == ctx.readCount(), "Scene draw has extra reads after SSAO");
-		reads.ssao = ssaoRead.texture;
+		const auto& read = ctx.resolvedRead(i);
+		if (!isSsaoLightingSurface(read))
+		{
+			continue;
+		}
+		ASSERT(!read.isDepth, "Scene draw SSAO read must be color");
+		ASSERT(ssaoCount == 0, "Scene draw has more than one SSAO read");
+		reads.ssao = read.texture;
+		reads.ssaoReadIndex = i;
+		++ssaoCount;
 	}
 	return reads;
-}
-
-static void applySsaoLightingBind(const gfx_api::RenderPassContext& passCtx, gfx_api::abstract_texture* ssaoRead)
-{
-	const ssao::LightingBind bind = ssao::lightingBind(passCtx, ssaoRead);
-	pie_UpdateSsao(bind.texture, bind.intensity, bind.uvScaleClamp);
-}
-
-static void resetSsaoLightingBind()
-{
-	pie_UpdateSsao(ssao::unoccludedTexture(), 0.f, glm::vec4(1.f, 1.f, 1.f, 1.f));
 }
 
 static void recordScenePass(const gfx_api::RenderPassContext& passCtx)
@@ -144,11 +150,12 @@ static void recordScenePass(const gfx_api::RenderPassContext& passCtx)
 	const Vector3f cameraPos = toVector3f(fc.cameraPos);
 	const Vector3f sunPos = toVector3f(-getTheSun());
 	const SceneDrawReads reads = parseSceneDrawReads(passCtx);
-	applySsaoLightingBind(passCtx, reads.ssao);
+	const ForwardSsaoBind ssaoBind = ssao::lightingBind(passCtx, reads.ssao, reads.ssaoReadIndex);
+	pie_UpdateSsaoBind(ssaoBind);
 
 	wzPerfBegin(PERF_TERRAIN, "3D scene - terrain");
 	pie_SetFogStatus(true);
-	drawTerrain(fc.perspectiveViewMatrix, fc.viewMatrix, cameraPos, sunPos, fc.shadowCascadesInfo, reads.shadowMap, fc.pointLights);
+	drawTerrain(fc.perspectiveViewMatrix, fc.viewMatrix, cameraPos, sunPos, fc.shadowCascadesInfo, reads.shadowMap, fc.pointLights, ssaoBind);
 	wzPerfEnd(PERF_TERRAIN);
 
 	wzPerfBegin(PERF_SKYBOX, "3D scene - skybox");
@@ -157,7 +164,7 @@ static void recordScenePass(const gfx_api::RenderPassContext& passCtx)
 
 	wzPerfBegin(PERF_WATER, "3D scene - water");
 	pie_SetFogStatus(true);
-	drawWater(fc.perspectiveViewMatrix, fc.viewMatrix, cameraPos, sunPos, fc.shadowCascadesInfo, reads.shadowMap, fc.pointLights);
+	drawWater(fc.perspectiveViewMatrix, fc.viewMatrix, cameraPos, sunPos, fc.shadowCascadesInfo, reads.shadowMap, fc.pointLights, ssaoBind);
 	wzPerfEnd(PERF_WATER);
 
 	// When no PostOpaque apply is enabled, the blueprint emits no SceneTransparent pass and the transparents fuse back into this pass
@@ -184,7 +191,7 @@ static void recordScenePass(const gfx_api::RenderPassContext& passCtx)
 	}
 
 	display3d_locateMouse();
-	resetSsaoLightingBind();
+	pie_UpdateSsaoBind({ssao::unoccludedTexture(), 0.f, glm::vec4(1.f, 1.f, 1.f, 1.f)});
 }
 
 static void recordSceneTransparent(const gfx_api::RenderPassContext& passCtx)

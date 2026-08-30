@@ -1072,12 +1072,15 @@ namespace gfx_api
 		float mipLoadBias;
 		int viewportWidth = 1;
 		int viewportHeight = 1;
-		glm::vec4 ssaoUvScaleClamp {1.f, 1.f, 1.f, 1.f};
+		// Same std140 order as instanced/terrain/water: intensity, pad to 16, then uvScaleClamp.
 		float ssaoIntensity = 0.f;
-		float pad0 = 0.f;
-		float pad1 = 0.f;
-		float pad2 = 0.f;
+		float padSsao0 = 0.f;
+		float padSsao1 = 0.f;
+		float padSsao2 = 0.f;
+		glm::vec4 ssaoUvScaleClamp {1.f, 1.f, 1.f, 1.f};
 	};
+	static_assert(offsetof(Draw3DShapeGlobalUniforms, ssaoUvScaleClamp) % 16 == 0,
+		"ssaoUvScaleClamp must be 16-byte aligned for std140");
 
 	// Only change per mesh
 	struct Draw3DShapePerMeshUniforms

@@ -22,6 +22,7 @@
 #include "lib/framework/frame.h"
 #include "lib/framework/vector.h"
 #include <glm/mat4x4.hpp>
+#include <glm/vec4.hpp>
 #include "pietypes.h"
 #include "shadows.h"
 #include "gfx_api.h"
@@ -67,9 +68,15 @@ enum class MeshFogMode : uint8_t
 void pie_StartMeshes();
 void pie_UpdateLightmap(gfx_api::texture* lightmapTexture, const glm::mat4& modelUVLightmapMatrix);
 /// Forward-lighting SSAO bind for the current scene draw (dummy + intensity 0 when SSAO is off).
-void pie_UpdateSsao(gfx_api::abstract_texture* texture, float intensity, const glm::vec4& uvScaleClamp);
-gfx_api::abstract_texture* pie_GetSsaoTexture();
-float pie_GetSsaoIntensity();
-const glm::vec4& pie_GetSsaoUvScaleClamp();
+/// `pie_UpdateSsaoBind` / `pie_GetSsaoBind` are the mesh path (same idea as `pie_UpdateLightmap`).
+/// Terrain/water take this struct as a parameter; they must not call `pie_GetSsaoBind()`.
+/// Not stored on InGame3DFrameContext -- that is per-frame; this bind is per-pass.
+struct ForwardSsaoBind {
+	gfx_api::abstract_texture* texture = nullptr;
+	float intensity = 0.f;
+	glm::vec4 uvScaleClamp {1.f, 1.f, 1.f, 1.f};
+};
+void pie_UpdateSsaoBind(const ForwardSsaoBind& bind);
+const ForwardSsaoBind& pie_GetSsaoBind();
 void pie_FinalizeMeshes(uint64_t currentGameFrame);
 void pie_DrawAllMeshes(uint64_t currentGameFrame, const glm::mat4 &projectionMatrix, const glm::mat4 &viewMatrix, const Vector3f &cameraPos, const ShadowCascadesInfo& shadowMVPMatrix, gfx_api::abstract_texture* shadowMap, const gfx_api::frame_uniform_block_ref<gfx_api::PointLightsUniforms>& pointLights, MeshDepthPassMode depthPassMode = MeshDepthPassMode::None, MeshDrawParts drawFilter = MeshDrawParts::All, MeshFogMode fogMode = MeshFogMode::Disabled);
