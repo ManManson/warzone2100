@@ -21,10 +21,9 @@
 /** @file scene_post_effect_id.h
  * Ids and capability flags for post-lighting in-game screen-space effects.
  *
- * ScenePostEffectId is the feature/catalog key (`SceneEffectSurfaces.enabled`,
- * pipeline-surface `enableEffect`). The table `kScenePostEffects` is only the
- * fullscreen apply chain (Fog, RangeRings). SSAO is a lighting feature that
- * owns surfaces but has no apply pass -- it is not a table row.
+ * ScenePostEffectId is the apply-table key (`kScenePostEffects`,
+ * `SceneEffectSurfaces.enabled`, pipeline-surface `enableEffect` for fog/rings).
+ * SSAO is a lighting subgraph: it uses SurfaceEnablePolicy::SsaoActive, not this enum.
  *
  * Kept free of blueprint/topology types so the surface catalog can include it
  * without pulling `BlueprintBuilder`.
@@ -37,12 +36,11 @@
 namespace gfx_api
 {
 
-/// Catalog / surface-enable key. SSAO is lighting, not a kScenePostEffects row.
+/// Apply-table / post-effect catalog key (Fog, RangeRings).
 enum class ScenePostEffectId : uint8_t
 {
-	Ssao,       ///< Lighting subgraph (generate/blur). Not a kScenePostEffects row.
-	Fog,        ///< PostOpaque fullscreen apply.
-	RangeRings, ///< PostOpaque prepare (SDF) + fullscreen apply.
+	Fog,
+	RangeRings,
 	Count
 };
 

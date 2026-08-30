@@ -208,7 +208,7 @@ void emitApplyPass(BlueprintBuilder& builder, const ScenePostEffectDesc& effect,
 	}
 }
 
-const std::array<ScenePostEffectDesc, kScenePostEffectCount> kScenePostEffects = {{
+const std::array<ScenePostEffectDesc, static_cast<size_t>(ScenePostEffectId::Count)> kScenePostEffects = {{
 	{
 		.id = ScenePostEffectId::Fog,
 		.prepassNeed = PrepassNeed::Depth,

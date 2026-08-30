@@ -80,8 +80,6 @@ struct SceneEffectSurfaces
 	{
 		switch (id)
 		{
-		case ScenePostEffectId::Ssao:
-			return ssao;
 		case ScenePostEffectId::Fog:
 			return fog;
 		case ScenePostEffectId::RangeRings:
@@ -267,6 +265,8 @@ enum class SurfaceEnablePolicy : uint8_t
 	SmaaIntermediateActive,
 	/// Catalog row owned by a `ScenePostEffectId` (`enableEffect`).
 	ScenePostEffect,
+	/// SSAO generate/blur buffers when SSAO is on.
+	SsaoActive,
 	/// Extra blur-resolution buffer when blur is coarser than generate.
 	SsaoSeparateBlurBuffers,
 	/// Scene prepass depth/normals when `prepassNeeds` is not None.

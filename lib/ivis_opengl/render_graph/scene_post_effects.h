@@ -90,8 +90,6 @@ void emitApplyPass(BlueprintBuilder& builder, const ScenePostEffectDesc& effect,
 /// SSAO generate/blur after ScenePrepass, before ScenePass. Lighting subgraph, not a table row.
 void emitSsaoPreparePasses(BlueprintBuilder& builder, const RenderTopologySnapshot& snapshot);
 
-/// Fog then range rings. Not indexed by ScenePostEffectId (SSAO is not a row).
-constexpr std::size_t kScenePostEffectCount = 2;
-extern const std::array<ScenePostEffectDesc, kScenePostEffectCount> kScenePostEffects;
+extern const std::array<ScenePostEffectDesc, static_cast<size_t>(ScenePostEffectId::Count)> kScenePostEffects;
 
 } // namespace gfx_api

@@ -184,13 +184,12 @@ const PipelineSurfaceCatalogTable PIPELINE_SURFACE_CATALOG = {{
 		SurfaceFormatClass::SingleChannelR8,
 		SurfaceGpuUsage::ColorAttachment | SurfaceGpuUsage::Sampled,
 		SurfaceArrayLayerPolicy::One,
-		SurfaceEnablePolicy::ScenePostEffect,
+		SurfaceEnablePolicy::SsaoActive,
 		SurfaceProvisionMode::Allocate,
 		SurfaceStorageKind::SampledColor2D,
 		SurfaceLifetimePolicy::SwapchainBound,
 		PipelineSurfaceId::Count,
-		SurfaceExtentDivisorSource::SsaoGenerate,
-		ScenePostEffectId::Ssao),
+		SurfaceExtentDivisorSource::SsaoGenerate),
 	// SSAOBlurH - horizontal-blur ping-pong at blur resolution
 	makeCatalogEntry(
 		PipelineSurfaceUsage::ColorResolve,
@@ -199,13 +198,12 @@ const PipelineSurfaceCatalogTable PIPELINE_SURFACE_CATALOG = {{
 		SurfaceFormatClass::SingleChannelR8,
 		SurfaceGpuUsage::ColorAttachment | SurfaceGpuUsage::Sampled,
 		SurfaceArrayLayerPolicy::One,
-		SurfaceEnablePolicy::ScenePostEffect,
+		SurfaceEnablePolicy::SsaoActive,
 		SurfaceProvisionMode::Allocate,
 		SurfaceStorageKind::SampledColor2D,
 		SurfaceLifetimePolicy::SwapchainBound,
 		PipelineSurfaceId::Count,
-		SurfaceExtentDivisorSource::SsaoBlur,
-		ScenePostEffectId::Ssao),
+		SurfaceExtentDivisorSource::SsaoBlur),
 	// SSAOBlurred - blur-res dest when blur is coarser than generate
 	makeCatalogEntry(
 		PipelineSurfaceUsage::ColorResolve,
@@ -437,6 +435,8 @@ bool evalEnablePolicy(const PipelineSurfaceCatalogEntry& cat, const PipelineSurf
 				|| inputs.sceneDynamicResolution);
 	case SurfaceEnablePolicy::ScenePostEffect:
 		return inputs.effects.enabled(cat.enableEffect);
+	case SurfaceEnablePolicy::SsaoActive:
+		return inputs.effects.ssao;
 	case SurfaceEnablePolicy::SsaoSeparateBlurBuffers:
 		return inputs.effects.ssao
 			&& ssaoBlurIsCoarser(inputs.sceneW, inputs.sceneH,
