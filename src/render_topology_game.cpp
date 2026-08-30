@@ -119,7 +119,7 @@ public:
 	gfx_api::SceneEffectSurfaces sceneEffectSurfaces() const override
 	{
 		// Follow allocated surfaces rather than raw config. Config is applied in
-		// init3DView; before that the two disagree and post-effect passes compile
+		// init3DView; before that the two disagree and scene-effect passes compile
 		// without attachments.
 		gfx_api::SceneEffectSurfaces cfg = gfx_api::context::get().storedSceneEffectSurfaces();
 		// Keep the range-ring surfaces allocated while the option is on, but drop

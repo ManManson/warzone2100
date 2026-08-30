@@ -220,22 +220,7 @@ const PipelineSurfaceCatalogTable PIPELINE_SURFACE_CATALOG = {{
 		SurfaceLifetimePolicy::SwapchainBound,
 		PipelineSurfaceId::Count,
 		SurfaceExtentDivisorSource::SsaoBlur),
-	// SSAOComposedColor - lit scene with AO applied
-	makeCatalogEntry(
-		PipelineSurfaceUsage::ColorResolve,
-		SurfaceExtentPolicy::MatchScene,
-		SurfaceSamplePolicy::One,
-		SurfaceFormatClass::SceneColor,
-		SurfaceGpuUsage::ColorAttachment | SurfaceGpuUsage::Sampled,
-		SurfaceArrayLayerPolicy::One,
-		SurfaceEnablePolicy::ScenePostEffect,
-		SurfaceProvisionMode::Allocate,
-		SurfaceStorageKind::SampledColor2D,
-		SurfaceLifetimePolicy::SwapchainBound,
-		PipelineSurfaceId::Count,
-		SurfaceExtentDivisorSource::None,
-		ScenePostEffectId::Ssao),
-	// FogColor - lit(+AO) scene with distance fog applied
+	// FogColor - lit scene with distance fog applied
 	makeCatalogEntry(
 		PipelineSurfaceUsage::ColorResolve,
 		SurfaceExtentPolicy::MatchScene,

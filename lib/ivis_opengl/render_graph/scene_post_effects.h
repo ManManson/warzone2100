@@ -20,6 +20,21 @@
 */
 /** @file scene_post_effects.h
  * Descriptor table for screen-space effects after opaque ScenePass and before SceneTransparent.
+ *
+ * This table does not describe lighting inputs. SSAO multiplies ambient in the
+ * forward shaders; emitSsaoPreparePasses / ScenePass `readSsao` wire it like
+ * shadow cascades. A table row cannot be prepare-only.
+ *
+ * Every row has an applyPass. `emitPreparePasses` is an optional subgraph
+ * immediately before that row's apply (rings SDF). Fog leaves it null.
+ *
+ * FogApply samples prepass depth to identify the visible opaque surface only.
+ * Transparent layers use their own fragment distance and must apply fog before
+ * blending; a later fullscreen pass cannot recover them.
+ *
+ * Table order is the apply chain (fog -> rings). An enabled post-effect sitting
+ * between opaque ScenePass and transparents is what splits them into
+ * SceneTransparent -- never SSAO.
  */
 
 #pragma once
@@ -35,28 +50,18 @@
 namespace gfx_api
 {
 
-/// One screen-space effect after opaque ScenePass and before forward transparents.
-/// Table order of `applyPass` is the apply chain (SSAO compose -> fog -> rings).
-/// FogApply intentionally belongs here: its sampled prepass depth identifies the
-/// visible opaque surface only. Transparent layers use their own fragment distance
-/// and must apply fog before blending; a later fullscreen pass cannot recover them.
-///
-/// Two phases, both optional:
-/// - emitPreparePasses: offscreen subgraph that writes intermediates (AO, packed SDF).
-///   Does not write scene color. Fog leaves this null.
-/// - applyPass: fullscreen pass that samples IncomingColor plus extras.
 struct ScenePostEffectDesc
 {
 	ScenePostEffectId id = ScenePostEffectId::Count;
 
-	/// ScenePrepass attachments this effect needs when enabled (OR'd across the table).
+	/// ScenePrepass attachments this apply needs when enabled (OR'd across the table).
 	PrepassNeed prepassNeed = PrepassNeed::None;
 
-	/// Optional subgraph after opaque ScenePass and before this effect's apply pass.
-	/// Writes intermediate surfaces the apply pass samples; does not write scene color.
+	/// Optional subgraph immediately before this row's apply. Writes intermediates;
+	/// does not write scene color.
 	void (*emitPreparePasses)(BlueprintBuilder&, const RenderTopologySnapshot&) = nullptr;
 
-	/// Fullscreen pass that applies the effect to incoming scene color. `PassId::Count` = none.
+	/// Fullscreen pass that applies the effect to incoming scene color. Required.
 	PassId applyPass = PassId::Count;
 	/// `BlueprintPass::debugName` / `beginPass` string for `applyPass`.
 	const char* applyDebugName = nullptr;
@@ -72,15 +77,21 @@ struct ScenePostEffectDesc
 };
 
 bool effectEnabled(const RenderTopologySnapshot& snapshot, ScenePostEffectId id);
-/// True when at least one scene post-effect is enabled - i.e. something sits between opaque ScenePass and the transparents,
-/// so the blueprint separates them into the SceneTransparent pass (and the prepass must provide depth).
+/// True when an enabled post-effect has a color apply -- i.e. something sits between
+/// opaque ScenePass and the transparents, so the blueprint separates them into
+/// SceneTransparent (and the prepass must provide depth for that split).
+/// SSAO does not count: it is not a table row.
 bool anyScenePostEffectEnabled(const RenderTopologySnapshot& snapshot);
 bool anyScenePostEffectEnabled(const SceneEffectSurfaces& cfg);
 PrepassNeed prepassNeeds(const RenderTopologySnapshot& snapshot);
 PrepassNeed prepassNeeds(const SceneEffectSurfaces& cfg);
 
 void emitApplyPass(BlueprintBuilder& builder, const ScenePostEffectDesc& effect, PassId incomingColor);
+/// SSAO generate/blur after ScenePrepass, before ScenePass. Lighting subgraph, not a table row.
+void emitSsaoPreparePasses(BlueprintBuilder& builder, const RenderTopologySnapshot& snapshot);
 
-extern const std::array<ScenePostEffectDesc, static_cast<size_t>(ScenePostEffectId::Count)> kScenePostEffects;
+/// Fog then range rings. Not indexed by ScenePostEffectId (SSAO is not a row).
+constexpr std::size_t kScenePostEffectCount = 2;
+extern const std::array<ScenePostEffectDesc, kScenePostEffectCount> kScenePostEffects;
 
 } // namespace gfx_api

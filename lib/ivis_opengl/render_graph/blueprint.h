@@ -220,9 +220,10 @@ private:
 };
 
 /// Append the standard offscreen scene pass (MSAA or single-sample) to `builder`.
+/// `readSsao` is a lighting input (like cascade depth reads), not a post-effect sample.
 void addScenePassToBuilder(BlueprintBuilder& builder, PassId id, bool sceneMsaa,
-	uint32_t numShadowCascades);
-/// Append the forward transparent pass after opaque post-effects.
+	uint32_t numShadowCascades, bool readSsao);
+/// Append the forward transparent pass after PostOpaque applies.
 void addSceneTransparentPassToBuilder(BlueprintBuilder& builder, PipelineSurfaceId incomingColor,
 	uint32_t numShadowCascades);
 /// Append a swapchain-target pass (MSAA resolve when enabled) with shared depth setup.

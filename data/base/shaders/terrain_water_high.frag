@@ -17,6 +17,7 @@ uniform sampler2D lightmap_tex;
 
 // shadow map
 uniform sampler2DArrayShadow shadowMap;
+uniform sampler2D ssaoTexture;
 
 
 // light colors/intensity:
@@ -54,6 +55,7 @@ out vec4 FragColor;
 
 #include "shadow_mapping.glsl"
 #include "light.glsl"
+#include "ssao_lighting.glsl"
 #include "pointlights.frag"
 
 vec3 blendAddEffectLighting(vec3 a, vec3 b) {
@@ -98,6 +100,7 @@ vec4 main_bumpMapping()
 	specularFactor = (specularFactor + r) * 0.5;
 
 	vec4 ambientColor = vec4(ambientLight.rgb * foam, 0.15);
+	ambientColor.rgb = wzApplySsaoToAmbient(ambientColor.rgb);
 	vec4 diffuseColor = vec4(diffuseLight.rgb * diffuseFactor * waterColor+noise*noise*0.5, 0.35);
 	vec4 specColor = vec4(specularLight.rgb * specularFactor * diffuseFactor, fresnel_alpha);
 

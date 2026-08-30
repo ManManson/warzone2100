@@ -14,6 +14,7 @@ layout(set = 2, binding = 2) uniform sampler2DArray tex_sm;
 layout(set = 2, binding = 3) uniform sampler2D lightmap_tex;
 // depth map
 layout(set = 2, binding = 4) uniform sampler2DArrayShadow shadowMap;
+layout(set = 2, binding = 5) uniform sampler2D ssaoTexture;
 
 layout(location = 1) in vec4 uv1_uv2;
 layout(location = 2) in vec2 uvLightmap;
@@ -29,6 +30,7 @@ layout(location = 0) out vec4 FragColor;
 
 #include "shadow_mapping.glsl"
 #include "light.glsl"
+#include "ssao_lighting.glsl"
 #include "pointlights.glsl"
 
 vec3 blendAddEffectLighting(vec3 a, vec3 b) {
@@ -73,6 +75,7 @@ vec4 main_bumpMapping()
 	specularFactor = (specularFactor + r) * 0.5;
 
 	vec4 ambientColor = vec4(ambientLight.rgb * foam, 0.15);
+	ambientColor.rgb = wzApplySsaoToAmbient(ambientColor.rgb);
 	vec4 diffuseColor = vec4(diffuseLight.rgb * diffuseFactor * waterColor+noise*noise*0.5, 0.35);
 	vec4 specColor = vec4(specularLight.rgb * specularFactor * diffuseFactor, fresnel_alpha);
 

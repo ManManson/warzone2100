@@ -57,8 +57,8 @@ namespace gfx_api
 struct abstract_texture;
 
 /// Independent SSAO/fog/range-ring catalog requests.
-/// When any effect is enabled the scene prepass provides depth for the separated forward transparents, plus effect-specific capabilities via `prepassNeeds(cfg)`.
-/// With all effects off the transparents draw fused in ScenePass and no prepass runs.
+/// A PostOpaque color apply splits transparents into SceneTransparent (prepass depth for that split).
+/// SSAO-only still requests Depth|Normals for generate; with every apply off, transparents fuse in ScenePass.
 struct SceneEffectSurfaces
 {
 	bool ssao = false;
@@ -123,9 +123,7 @@ enum class PipelineSurfaceId : uint8_t
 	SSAOBlurH,
 	/// Blur-resolution dest when blur is coarser than generate (downsample + blurV).
 	SSAOBlurred,
-	/// Scene-sized lit scene with AO applied; feeds fog / SMAA / blit / FSR.
-	SSAOComposedColor,
-	/// Scene-sized lit(+AO) scene with distance fog applied; feeds SMAA/blit/FSR.
+	/// Scene-sized lit scene with distance fog applied; feeds SMAA/blit/FSR.
 	FogColor,
 	/// Packed per-type range-ring union field (RGB = sensor / weapon / min-range).
 	RangeRingSdf,
@@ -357,7 +355,7 @@ struct PipelineSurfaceSyncInputs
 	bool smaa = false;
 	/// Allocated scene-effect catalog request (enable flags + SSAO divisors).
 	SceneEffectSurfaces effects;
-	/// Enabled post-effect prepass capabilities, plus the separated transparents depth need when any effect is enabled (`prepassNeeds(effects)`).
+	/// Enabled scene-effect prepass capabilities, plus extra depth when a PostOpaque apply splits transparents (`prepassNeeds(effects)`).
 	PrepassNeed prepassNeeds = PrepassNeed::None;
 };
 

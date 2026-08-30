@@ -172,7 +172,13 @@ PassGraphTopologyBlueprint buildInGameBlueprint(const RenderTopologySnapshot& sn
 			.viewport(ViewportRule::SceneColorTarget);
 	}
 
-	addScenePassToBuilder(builder, PassId::ScenePass, snapshot.sceneMsaa, snapshot.numShadowCascades);
+	if (snapshot.sceneEffects.ssao)
+	{
+		emitSsaoPreparePasses(builder, snapshot);
+	}
+
+	addScenePassToBuilder(builder, PassId::ScenePass, snapshot.sceneMsaa, snapshot.numShadowCascades,
+		snapshot.sceneEffects.ssao);
 
 	PassId incomingColor = PassId::ScenePass;
 	PipelineSurfaceId incomingColorSurface = PipelineSurfaceId::SceneColor;
@@ -186,16 +192,13 @@ PassGraphTopologyBlueprint buildInGameBlueprint(const RenderTopologySnapshot& sn
 		{
 			effect.emitPreparePasses(builder, snapshot);
 		}
-		if (effect.applyPass != PassId::Count)
-		{
-			emitApplyPass(builder, effect, incomingColor);
-			incomingColor = effect.applyPass;
-			incomingColorSurface = effect.applyOutput;
-		}
+		emitApplyPass(builder, effect, incomingColor);
+		incomingColor = effect.applyPass;
+		incomingColorSurface = effect.applyOutput;
 	}
 
-	// The transparents only need their own pass when a post-effect sits between them and the opaque scene.
-	// With every effect off, we instead fuse them back into ScenePass (see recordScenePass): no prepass, no extra pass roundtrip,
+	// Transparents need their own pass when a PostOpaque apply sits between them and the opaque scene.
+	// With no such apply, fuse them back into ScenePass (see recordScenePass): no extra pass roundtrip,
 	// and scene MSAA covers the transparents again.
 	if (anyScenePostEffectEnabled(snapshot))
 	{

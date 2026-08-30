@@ -24,8 +24,9 @@ layout(std140) uniform globaluniforms {
 	int viewportHeight;
 	float WZ_MIP_LOAD_BIAS;
 	int bucketDimensionUsed;
-	float pad1;
-	float pad2;
+	float ssaoIntensity;
+	float padSsao0;
+	vec4 ssaoUvScaleClamp;
 	// Last because its length follows the grid dimension
 	ivec4 bucketOffsetAndSize[WZ_BUCKET_DIMENSION * WZ_BUCKET_DIMENSION];
 };
@@ -37,6 +38,8 @@ layout(std140) uniform meshuniforms {
 	int hasTangents;
 	int shieldEffect;
 	int fogOutput;
+	int applySsao;
+	int padApplySsao;
 };
 
 // Which transport carries the light arrays: 0 uniform block, 1 buffer texture, 2 storage buffer.

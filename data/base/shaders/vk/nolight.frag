@@ -18,8 +18,13 @@ layout(std140, set = 0, binding = 0) uniform globaluniforms
 	vec4 fogRange;
 	float graphicsCycle;
 	float WZ_MIP_LOAD_BIAS;
+	int viewportWidth;
+	int viewportHeight;
+	vec4 ssaoUvScaleClamp;
+	float ssaoIntensity;
 	float pad0;
 	float pad1;
+	float pad2;
 };
 
 layout(std140, set = 1, binding = 0) uniform meshuniforms
@@ -29,6 +34,8 @@ layout(std140, set = 1, binding = 0) uniform meshuniforms
 	int specularmap;
 	int hasTangents;
 	int fogOutput;
+	int applySsao;
+	int padApplySsao;
 };
 
 layout(std140, set = 2, binding = 0) uniform instanceuniforms

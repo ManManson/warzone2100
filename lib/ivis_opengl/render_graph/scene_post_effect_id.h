@@ -21,6 +21,11 @@
 /** @file scene_post_effect_id.h
  * Ids and capability flags for post-lighting in-game screen-space effects.
  *
+ * ScenePostEffectId is the feature/catalog key (`SceneEffectSurfaces.enabled`,
+ * pipeline-surface `enableEffect`). The table `kScenePostEffects` is only the
+ * fullscreen apply chain (Fog, RangeRings). SSAO is a lighting feature that
+ * owns surfaces but has no apply pass -- it is not a table row.
+ *
  * Kept free of blueprint/topology types so the surface catalog can include it
  * without pulling `BlueprintBuilder`.
  */
@@ -32,12 +37,12 @@
 namespace gfx_api
 {
 
-/// Ordered chain after opaque `ScenePass` and before `SceneTransparent`. Array index matches the id.
+/// Catalog / surface-enable key. SSAO is lighting, not a kScenePostEffects row.
 enum class ScenePostEffectId : uint8_t
 {
-	Ssao,
-	Fog,
-	RangeRings,
+	Ssao,       ///< Lighting subgraph (generate/blur). Not a kScenePostEffects row.
+	Fog,        ///< PostOpaque fullscreen apply.
+	RangeRings, ///< PostOpaque prepare (SDF) + fullscreen apply.
 	Count
 };
 
@@ -71,7 +76,7 @@ enum class ApplyInput : uint8_t
 	IncomingColor,
 	PrepassDepth,
 	PrepassNormals,
-	/// Primary color of `ScenePostEffectDesc::preparedColorPass` (blurred AO, packed SDF).
+	/// Primary color of `ScenePostEffectDesc::preparedColorPass` (packed range-ring SDF).
 	PreparedOutput,
 };
 

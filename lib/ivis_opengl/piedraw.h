@@ -66,5 +66,10 @@ enum class MeshFogMode : uint8_t
 
 void pie_StartMeshes();
 void pie_UpdateLightmap(gfx_api::texture* lightmapTexture, const glm::mat4& modelUVLightmapMatrix);
+/// Forward-lighting SSAO bind for the current scene draw (dummy + intensity 0 when SSAO is off).
+void pie_UpdateSsao(gfx_api::abstract_texture* texture, float intensity, const glm::vec4& uvScaleClamp);
+gfx_api::abstract_texture* pie_GetSsaoTexture();
+float pie_GetSsaoIntensity();
+const glm::vec4& pie_GetSsaoUvScaleClamp();
 void pie_FinalizeMeshes(uint64_t currentGameFrame);
 void pie_DrawAllMeshes(uint64_t currentGameFrame, const glm::mat4 &projectionMatrix, const glm::mat4 &viewMatrix, const Vector3f &cameraPos, const ShadowCascadesInfo& shadowMVPMatrix, gfx_api::abstract_texture* shadowMap, const gfx_api::frame_uniform_block_ref<gfx_api::PointLightsUniforms>& pointLights, MeshDepthPassMode depthPassMode = MeshDepthPassMode::None, MeshDrawParts drawFilter = MeshDrawParts::All, MeshFogMode fogMode = MeshFogMode::Disabled);

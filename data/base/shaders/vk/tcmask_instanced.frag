@@ -14,6 +14,7 @@ layout(set = 3, binding = 2) uniform sampler2D TextureNormal; // normal map
 layout(set = 3, binding = 3) uniform sampler2D TextureSpecular; // specular map
 layout(set = 3, binding = 4) uniform sampler2DArrayShadow shadowMap; // shadow map
 layout(set = 3, binding = 5) uniform sampler2D lightmap_tex;
+layout(set = 3, binding = 6) uniform sampler2D ssaoTexture;
 
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec3 lightDir;
@@ -35,6 +36,7 @@ layout(location = 0) out vec4 FragColor;
 #include "light.glsl"
 #include "tangentspace.glsl"
 #include "distance_fog.glsl"
+#include "ssao_lighting.glsl"
 
 float random(vec2 uv)
 {
@@ -112,7 +114,8 @@ void main()
 		light += diffuse * diffuseFactor * diffuseMap * vanillaFactor;
 	}
 
-	vec4 ambientLight = vec4(blendAddEffectLighting(ambient.rgb, ((lightmap_vec4.rgb * lightmapFactor) / 3.f)), ambient.a) * diffuseMap;
+	vec3 skyAmbient = (applySsao != 0) ? wzApplySsaoToAmbient(ambient.rgb) : ambient.rgb;
+	vec4 ambientLight = vec4(blendAddEffectLighting(skyAmbient, ((lightmap_vec4.rgb * lightmapFactor) / 3.f)), ambient.a) * diffuseMap;
 	// ambient light maxed for classic models to keep results similar to original
 	light += ambientLight * (1.0 + (1.0 - float(specularmap))) * visibility;
 

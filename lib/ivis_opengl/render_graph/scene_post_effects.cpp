@@ -19,7 +19,7 @@
 	Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 */
 /** @file scene_post_effects.cpp
- * Post-effect registry, prepare-pass emitters, and generic apply-pass emission.
+ * PostOpaque apply-chain registry, SSAO lighting-subgraph emitter, and generic apply emission.
  */
 
 #include "scene_post_effects.h"
@@ -27,9 +27,6 @@
 #include "lib/framework/wzapp.h"
 
 namespace gfx_api
-{
-
-namespace
 {
 
 void emitSsaoPreparePasses(BlueprintBuilder& builder, const RenderTopologySnapshot& snapshot)
@@ -78,6 +75,9 @@ void emitSsaoPreparePasses(BlueprintBuilder& builder, const RenderTopologySnapsh
 	}
 }
 
+namespace
+{
+
 void emitRangeRingPreparePasses(BlueprintBuilder& builder, const RenderTopologySnapshot&)
 {
 	static constexpr ClearValue SDF_UNCOVERED = ClearValue::colorClear(1.f, 1.f, 1.f, 1.f);
@@ -99,18 +99,8 @@ void emitRangeRingPreparePasses(BlueprintBuilder& builder, const RenderTopologyS
 		.viewport(ViewportRule::SceneColorTarget);
 }
 
-} // anonymous namespace
-
-bool effectEnabled(const RenderTopologySnapshot& snapshot, ScenePostEffectId id)
-{
-	return snapshot.sceneEffects.enabled(id);
-}
-
-namespace
-{
-
 template <typename Enabled>
-PrepassNeed unionPrepassNeeds(Enabled&& enabled)
+PrepassNeed unionTablePrepassNeeds(Enabled&& enabled)
 {
 	PrepassNeed needs = PrepassNeed::None;
 	for (const ScenePostEffectDesc& effect : kScenePostEffects)
@@ -124,7 +114,7 @@ PrepassNeed unionPrepassNeeds(Enabled&& enabled)
 }
 
 template <typename Enabled>
-bool anyEffectEnabled(Enabled&& enabled)
+bool anyTableRowEnabled(Enabled&& enabled)
 {
 	for (const ScenePostEffectDesc& effect : kScenePostEffects)
 	{
@@ -138,24 +128,34 @@ bool anyEffectEnabled(Enabled&& enabled)
 
 } // anonymous namespace
 
+bool effectEnabled(const RenderTopologySnapshot& snapshot, ScenePostEffectId id)
+{
+	return snapshot.sceneEffects.enabled(id);
+}
+
 bool anyScenePostEffectEnabled(const RenderTopologySnapshot& snapshot)
 {
-	return anyEffectEnabled([&](ScenePostEffectId id) { return effectEnabled(snapshot, id); });
+	return anyTableRowEnabled([&](ScenePostEffectId id) { return effectEnabled(snapshot, id); });
 }
 
 bool anyScenePostEffectEnabled(const SceneEffectSurfaces& cfg)
 {
-	return anyEffectEnabled([&](ScenePostEffectId id) { return cfg.enabled(id); });
+	return anyTableRowEnabled([&](ScenePostEffectId id) { return cfg.enabled(id); });
 }
 
 PrepassNeed prepassNeeds(const RenderTopologySnapshot& snapshot)
 {
-	PrepassNeed needs = unionPrepassNeeds([&](ScenePostEffectId id) { return effectEnabled(snapshot, id); });
+	PrepassNeed needs = unionTablePrepassNeeds([&](ScenePostEffectId id) { return effectEnabled(snapshot, id); });
+	if (snapshot.sceneEffects.ssao)
+	{
+		// Lighting subgraph samples prepass depth+normals. Not implied by the apply table.
+		needs = needs | PrepassNeed::Depth | PrepassNeed::Normals;
+	}
 	if (anyScenePostEffectEnabled(snapshot))
 	{
-		// A post-effect sits between opaque ScenePass and the transparents, so the blueprint separates them into SceneTransparent,
-		// which depth-tests forward transparents against the single-sample prepass depth.
-		// (With no effect enabled, the passes fuse - transparents draw in ScenePass - and no prepass is required at all.)
+		// A scene post-effect apply sits between opaque ScenePass and the transparents, so the blueprint
+		// separates them into SceneTransparent, which depth-tests forward transparents against
+		// the single-sample prepass depth.
 		needs = needs | PrepassNeed::Depth;
 	}
 	return needs;
@@ -164,7 +164,11 @@ PrepassNeed prepassNeeds(const RenderTopologySnapshot& snapshot)
 PrepassNeed prepassNeeds(const SceneEffectSurfaces& cfg)
 {
 	// Keep surface allocation in lockstep with the in-game blueprint requirement above.
-	PrepassNeed needs = unionPrepassNeeds([&](ScenePostEffectId id) { return cfg.enabled(id); });
+	PrepassNeed needs = unionTablePrepassNeeds([&](ScenePostEffectId id) { return cfg.enabled(id); });
+	if (cfg.ssao)
+	{
+		needs = needs | PrepassNeed::Depth | PrepassNeed::Normals;
+	}
 	if (anyScenePostEffectEnabled(cfg))
 	{
 		needs = needs | PrepassNeed::Depth;
@@ -204,18 +208,7 @@ void emitApplyPass(BlueprintBuilder& builder, const ScenePostEffectDesc& effect,
 	}
 }
 
-const std::array<ScenePostEffectDesc, static_cast<size_t>(ScenePostEffectId::Count)> kScenePostEffects = {{
-	{
-		.id = ScenePostEffectId::Ssao,
-		.prepassNeed = PrepassNeed::Depth | PrepassNeed::Normals,
-		.emitPreparePasses = emitSsaoPreparePasses,
-		.applyPass = PassId::SSAOCompose,
-		.applyDebugName = "SSAOCompose",
-		.applyOutput = PipelineSurfaceId::SSAOComposedColor,
-		.applyInputs = { ApplyInput::IncomingColor, ApplyInput::PreparedOutput, ApplyInput::PrepassNormals },
-		.applyInputCount = 3,
-		.preparedColorPass = PassId::SSAOBlurV,
-	},
+const std::array<ScenePostEffectDesc, kScenePostEffectCount> kScenePostEffects = {{
 	{
 		.id = ScenePostEffectId::Fog,
 		.prepassNeed = PrepassNeed::Depth,

@@ -935,7 +935,8 @@ static const std::vector<std::tuple<std::string, GLint>> terrainCombinedSamplers
 	{"lightmap_tex", 0},
 	{"groundTex", 1}, {"groundNormal", 2}, {"groundSpecular", 3}, {"groundHeight", 4},
 	{"decalTex", 5}, {"decalNormal", 6}, {"decalSpecular", 7}, {"decalHeight", 8},
-	{"shadowMap", 9}
+	{"shadowMap", 9},
+	{"ssaoTexture", 10}
 };
 
 static const std::vector<std::tuple<std::string, GLint>> terrainCombinedTessSamplers = {
@@ -943,16 +944,17 @@ static const std::vector<std::tuple<std::string, GLint>> terrainCombinedTessSamp
 	{"groundTex", 1}, {"groundNormal", 2}, {"groundSpecular", 3}, {"groundHeight", 4},
 	{"decalTex", 5}, {"decalNormal", 6}, {"decalSpecular", 7}, {"decalHeight", 8},
 	{"shadowMap", 9},
-	{"terrainBakedHeight", 10}, {"terrainBakedOffset", 11}, {"terrainBakedNormal", 12}
+	{"terrainBakedHeight", 10}, {"terrainBakedOffset", 11}, {"terrainBakedNormal", 12},
+	{"ssaoTexture", 15}
 };
 
 static const std::map<SHADER_MODE, program_data> shader_to_file_table =
 {
 	std::make_pair(SHADER_COMPONENT, program_data{ .friendly_name = "Component program", .vertex_file = "shaders/tcmask.vert", .fragment_file = "shaders/tcmask.frag",
-		.uniform_names = {},
+		.uniform_names = {}, .additional_samplers = { {"ssaoTexture", 4} },
 		.uniform_block_names = { "globaluniforms", "meshuniforms", "instanceuniforms" } }),
 	std::make_pair(SHADER_COMPONENT_INSTANCED, program_data{ .friendly_name = "Component program", .vertex_file = "shaders/tcmask_instanced.vert", .fragment_file = "shaders/tcmask_instanced.frag",
-		.uniform_names = {}, .additional_samplers = { {"shadowMap", 4}, {"lightmap_tex", 5} },
+		.uniform_names = {}, .additional_samplers = { {"shadowMap", 4}, {"lightmap_tex", 5}, {"ssaoTexture", 6} },
 		.uniform_block_names = { "globaluniforms", "meshuniforms", "pointlights" } }),
 	std::make_pair(SHADER_COMPONENT_DEPTH_INSTANCED, program_data{ .friendly_name = "Component program", .vertex_file = "shaders/tcmask_depth_instanced.vert", .fragment_file = "shaders/tcmask_depth_instanced.frag",
 		.uniform_names = {},
@@ -1024,7 +1026,7 @@ static const std::map<SHADER_MODE, program_data> shader_to_file_table =
 		.uniform_names = {},
 		.uniform_block_names = { "cbuffer" } }),
 	std::make_pair(SHADER_WATER_HIGH, program_data{ .friendly_name = "high water program", .vertex_file = "shaders/terrain_water_high.vert", .fragment_file = "shaders/terrain_water_high.frag",
-		.uniform_names = {}, .additional_samplers = { {"tex", 0}, {"tex_nm", 1}, {"tex_sm", 2}, {"lightmap_tex", 3}, {"shadowMap", 4} },
+		.uniform_names = {}, .additional_samplers = { {"tex", 0}, {"tex_nm", 1}, {"tex_sm", 2}, {"lightmap_tex", 3}, {"shadowMap", 4}, {"ssaoTexture", 5} },
 		.uniform_block_names = { "cbuffer", "pointlights" } }),
 	std::make_pair(SHADER_WATER_CLASSIC, program_data{ .friendly_name = "classic water program", .vertex_file = "shaders/terrain_water_classic.vert", .fragment_file = "shaders/terrain_water_classic.frag",
 		.uniform_names = {}, .additional_samplers = { {"lightmap_tex", 0}, {"tex2", 1} },
@@ -1092,10 +1094,6 @@ static const std::map<SHADER_MODE, program_data> shader_to_file_table =
 	std::make_pair(SHADER_SSAO_DOWNSAMPLE, program_data{ .friendly_name = "SSAO downsample program", .vertex_file = "shaders/postprocess_fullscreen.vert", .fragment_file = "shaders/ssao_downsample.frag",
 		.uniform_names = {},
 		.additional_samplers = { {"occlusionTexture", 0} },
-		.uniform_block_names = { "cbuffer" } }),
-	std::make_pair(SHADER_SCENE_COMPOSE_SSAO, program_data{ .friendly_name = "Scene compose SSAO program", .vertex_file = "shaders/postprocess_fullscreen.vert", .fragment_file = "shaders/scene_compose_ssao.frag",
-		.uniform_names = {},
-		.additional_samplers = { {"sceneTexture", 0}, {"ssaoTexture", 1}, {"prepassNormals", 2} },
 		.uniform_block_names = { "cbuffer" } }),
 	std::make_pair(SHADER_SCENE_FOG, program_data{ .friendly_name = "Scene fog program", .vertex_file = "shaders/postprocess_fullscreen.vert", .fragment_file = "shaders/scene_fog.frag",
 		.uniform_names = {},

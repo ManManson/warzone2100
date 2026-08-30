@@ -45,6 +45,7 @@ uniform sampler2DArray decalHeight;
 
 // shadow map
 uniform sampler2DArrayShadow shadowMap;
+uniform sampler2D ssaoTexture;
 
 
 // sun light colors/intensity:
@@ -74,6 +75,7 @@ out vec4 FragColor;
 
 #include "shadow_mapping.glsl"
 #include "light.glsl"
+#include "ssao_lighting.glsl"
 
 vec3 blendAddEffectLighting(vec3 a, vec3 b) {
 	return min(a + b, vec3(1.0));
@@ -88,7 +90,9 @@ vec4 main_classic() {
 	float visibility = getShadowVisibility(posModelSpace, posViewSpace, diffuseFactor, 0.001f);
 
 	vec4 lightmap_vec4 = texture(lightmap_tex, uvLightmap, 0.f);
-	vec4 light = (visibility*diffuseLight*0.75*diffuseFactor + ambientLight*0.25) * lightmap_vec4.a; // ... * tile brightness / ambient occlusion (stored in lightmap.a);
+	vec4 amb = ambientLight * 0.25;
+	amb.rgb = wzApplySsaoToAmbient(amb.rgb);
+	vec4 light = (visibility*diffuseLight*0.75*diffuseFactor + amb) * lightmap_vec4.a; // ... * tile brightness / ambient occlusion (stored in lightmap.a);
 	light.rgb = blendAddEffectLighting(light.rgb, (lightmap_vec4.rgb / 1.5f)); // additive color (from environmental point lights / effects)
 	light.a = 1.f;
 

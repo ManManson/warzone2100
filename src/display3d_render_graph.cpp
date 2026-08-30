@@ -84,21 +84,53 @@ static Vector3f toVector3f(const glm::vec3& v)
 	return Vector3f(v.x, v.y, v.z);
 }
 
-/// Scene draw pass reads are exclusively ordered ShadowCascade Depth outputs; all share one array texture.
-static gfx_api::abstract_texture* shadowMapFromCascadeReads(const gfx_api::RenderPassContext& ctx)
+/// ScenePass reads: cascade depths (sharing one array texture), then optional SSAO.
+struct SceneDrawReads
 {
+	gfx_api::abstract_texture* shadowMap = nullptr;
+	gfx_api::abstract_texture* ssao = nullptr;
+};
+
+static SceneDrawReads parseSceneDrawReads(const gfx_api::RenderPassContext& ctx)
+{
+	SceneDrawReads reads;
 	if (ctx.readCount() == 0)
 	{
-		return nullptr;
+		return reads;
 	}
-	gfx_api::abstract_texture* shadowMap = ctx.getRead(0);
-	for (size_t i = 0; i < ctx.readCount(); ++i)
+	size_t i = 0;
+	if (ctx.resolvedRead(0).isDepth)
 	{
-		const auto& read = ctx.resolvedRead(i);
-		ASSERT(read.isDepth, "Scene draw read %zu must be Depth (cascade)", i);
-		ASSERT(read.texture == shadowMap, "Scene draw cascade reads must share ShadowMap texture");
+		reads.shadowMap = ctx.getRead(0);
+		for (; i < ctx.readCount(); ++i)
+		{
+			const auto& read = ctx.resolvedRead(i);
+			if (!read.isDepth)
+			{
+				break;
+			}
+			ASSERT(read.texture == reads.shadowMap, "Scene draw cascade reads must share ShadowMap texture");
+		}
 	}
-	return shadowMap;
+	if (i < ctx.readCount())
+	{
+		const auto& ssaoRead = ctx.resolvedRead(i);
+		ASSERT(!ssaoRead.isDepth, "Scene draw SSAO read must be color");
+		ASSERT(i + 1 == ctx.readCount(), "Scene draw has extra reads after SSAO");
+		reads.ssao = ssaoRead.texture;
+	}
+	return reads;
+}
+
+static void applySsaoLightingBind(const gfx_api::RenderPassContext& passCtx, gfx_api::abstract_texture* ssaoRead)
+{
+	const ssao::LightingBind bind = ssao::lightingBind(passCtx, ssaoRead);
+	pie_UpdateSsao(bind.texture, bind.intensity, bind.uvScaleClamp);
+}
+
+static void resetSsaoLightingBind()
+{
+	pie_UpdateSsao(ssao::unoccludedTexture(), 0.f, glm::vec4(1.f, 1.f, 1.f, 1.f));
 }
 
 static void recordScenePass(const gfx_api::RenderPassContext& passCtx)
@@ -111,11 +143,12 @@ static void recordScenePass(const gfx_api::RenderPassContext& passCtx)
 	const auto& fc = pie_GetInGame3DFrameContext();
 	const Vector3f cameraPos = toVector3f(fc.cameraPos);
 	const Vector3f sunPos = toVector3f(-getTheSun());
-	gfx_api::abstract_texture* shadowMap = shadowMapFromCascadeReads(passCtx);
+	const SceneDrawReads reads = parseSceneDrawReads(passCtx);
+	applySsaoLightingBind(passCtx, reads.ssao);
 
 	wzPerfBegin(PERF_TERRAIN, "3D scene - terrain");
 	pie_SetFogStatus(true);
-	drawTerrain(fc.perspectiveViewMatrix, fc.viewMatrix, cameraPos, sunPos, fc.shadowCascadesInfo, shadowMap, fc.pointLights);
+	drawTerrain(fc.perspectiveViewMatrix, fc.viewMatrix, cameraPos, sunPos, fc.shadowCascadesInfo, reads.shadowMap, fc.pointLights);
 	wzPerfEnd(PERF_TERRAIN);
 
 	wzPerfBegin(PERF_SKYBOX, "3D scene - skybox");
@@ -124,10 +157,10 @@ static void recordScenePass(const gfx_api::RenderPassContext& passCtx)
 
 	wzPerfBegin(PERF_WATER, "3D scene - water");
 	pie_SetFogStatus(true);
-	drawWater(fc.perspectiveViewMatrix, fc.viewMatrix, cameraPos, sunPos, fc.shadowCascadesInfo, shadowMap, fc.pointLights);
+	drawWater(fc.perspectiveViewMatrix, fc.viewMatrix, cameraPos, sunPos, fc.shadowCascadesInfo, reads.shadowMap, fc.pointLights);
 	wzPerfEnd(PERF_WATER);
 
-	// When no post-effect is enabled, the blueprint emits no SceneTransparent pass and the transparents fuse back into this pass
+	// When no PostOpaque apply is enabled, the blueprint emits no SceneTransparent pass and the transparents fuse back into this pass
 	// (pre-separation behavior: no prepass cost, one pass roundtrip, and scene MSAA covers the transparents).
 	// Key off the executing blueprint, so record and blueprint cannot disagree.
 	const bool fusedTransparents =
@@ -139,7 +172,7 @@ static void recordScenePass(const gfx_api::RenderPassContext& passCtx)
 		// Opaque meshes keep per-mesh fog disabled either way (fogOutput is Disabled outside the transparent buckets),
 		// so ForwardDistance in the fused case only fogs the transparent buckets, from fragment distance.
 		pie_DrawAllMeshes(fc.currentGameFrame, fc.perspectiveMatrix, fc.viewMatrix, cameraPos,
-			fc.shadowCascadesInfo, shadowMap, fc.pointLights, MeshDepthPassMode::None,
+			fc.shadowCascadesInfo, reads.shadowMap, fc.pointLights, MeshDepthPassMode::None,
 			fusedTransparents ? MeshDrawParts::All : MeshDrawParts::Opaque,
 			fusedTransparents ? MeshFogMode::ForwardDistance : MeshFogMode::Disabled);
 	}
@@ -151,6 +184,7 @@ static void recordScenePass(const gfx_api::RenderPassContext& passCtx)
 	}
 
 	display3d_locateMouse();
+	resetSsaoLightingBind();
 }
 
 static void recordSceneTransparent(const gfx_api::RenderPassContext& passCtx)
@@ -162,7 +196,7 @@ static void recordSceneTransparent(const gfx_api::RenderPassContext& passCtx)
 
 	const auto& fc = pie_GetInGame3DFrameContext();
 	const Vector3f cameraPos = toVector3f(fc.cameraPos);
-	gfx_api::abstract_texture* shadowMap = shadowMapFromCascadeReads(passCtx);
+	gfx_api::abstract_texture* shadowMap = parseSceneDrawReads(passCtx).shadowMap;
 
 	{
 		WZ_PROFILE_SCOPE(pie_DrawTransparentMeshes);
@@ -281,7 +315,6 @@ void registerInGame3DRecordFuncs(gfx_api::RecordFuncTable& table)
 	table.set(gfx_api::PassId::SSAODownsample, ssao::recordDownsample);
 	table.set(gfx_api::PassId::SSAOBlurH, ssao::recordBlurH);
 	table.set(gfx_api::PassId::SSAOBlurV, ssao::recordBlurV);
-	table.set(gfx_api::PassId::SSAOCompose, ssao::recordCompose);
 	table.set(gfx_api::PassId::FogApply, fog_pass::recordApply);
 	table.set(gfx_api::PassId::RangeRingSdfSensor, range_rings::recordSdfSensor);
 	table.set(gfx_api::PassId::RangeRingSdfWeapon, range_rings::recordSdfWeapon);

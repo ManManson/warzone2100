@@ -94,7 +94,7 @@ struct Tuning
 	float rangeScale;
 	/// Sigma of the blur's depth falloff, in normalized depth units
 	float blurDepthSigma;
-	/// Strength of the occlusion multiply applied by the compose
+	/// Strength of the occlusion multiply applied to forward ambient
 	float intensity;
 };
 
@@ -113,6 +113,7 @@ Tuning s_tuning = DEFAULT_TUNING;
 constexpr int NOISE_TEXTURE_SIZE = 4;
 
 gfx_api::texture* s_noiseTexture = nullptr;
+gfx_api::texture* s_unoccludedTexture = nullptr;
 glm::vec4 s_kernel[gfx_api::SSAO_KERNEL_SIZE] = {};
 
 /// Deterministic 32-bit hash -> [0, 1). No rand().
@@ -165,6 +166,22 @@ bool initNoiseTexture()
 
 	s_noiseTexture = gfx_api::context::get().createTextureForCompatibleImageUploads(1, noiseImage, "ssao_noise");
 	return s_noiseTexture != nullptr && s_noiseTexture->upload(0, noiseImage);
+}
+
+bool initUnoccludedTexture()
+{
+	iV_Image white;
+	if (!white.allocate(1, 1, 4, false))
+	{
+		return false;
+	}
+	unsigned char* pixels = white.bmp_w();
+	pixels[0] = 255;
+	pixels[1] = 255;
+	pixels[2] = 255;
+	pixels[3] = 255;
+	s_unoccludedTexture = gfx_api::context::get().createTextureForCompatibleImageUploads(1, white, "ssao_unoccluded");
+	return s_unoccludedTexture != nullptr && s_unoccludedTexture->upload(0, white);
 }
 
 void drawSSAOGenerate(
@@ -250,12 +267,47 @@ void init()
 	{
 		debug(LOG_ERROR, "Failed to initialize SSAO noise texture");
 	}
+	if (s_unoccludedTexture == nullptr && !initUnoccludedTexture())
+	{
+		debug(LOG_ERROR, "Failed to initialize SSAO dummy texture");
+	}
 }
 
 void shutdown()
 {
 	delete s_noiseTexture;
 	s_noiseTexture = nullptr;
+	delete s_unoccludedTexture;
+	s_unoccludedTexture = nullptr;
+}
+
+gfx_api::abstract_texture* unoccludedTexture()
+{
+	return s_unoccludedTexture;
+}
+
+LightingBind lightingBind(const gfx_api::RenderPassContext& passCtx, gfx_api::abstract_texture* ssaoRead)
+{
+	LightingBind bind;
+	bind.texture = s_unoccludedTexture;
+	bind.intensity = 0.f;
+	bind.uvScaleClamp = glm::vec4(1.f, 1.f, 1.f, 1.f);
+	if (ssaoRead == nullptr)
+	{
+		return bind;
+	}
+	bind.texture = ssaoRead;
+	bind.intensity = s_tuning.intensity;
+	if (passCtx.readCount() > 0)
+	{
+		const size_t ssaoIndex = passCtx.readCount() - 1;
+		const auto& read = passCtx.resolvedRead(ssaoIndex);
+		if (!read.isDepth && read.texture == ssaoRead)
+		{
+			display3d_fillPassReadUvScaleClamp(passCtx, ssaoIndex, bind.uvScaleClamp);
+		}
+	}
+	return bind;
 }
 
 void recordGenerate(const gfx_api::RenderPassContext& passCtx)
@@ -299,25 +351,6 @@ void recordBlurH(const gfx_api::RenderPassContext& passCtx)
 void recordBlurV(const gfx_api::RenderPassContext& passCtx)
 {
 	recordBlur(passCtx, BlurAxis::Vertical);
-}
-
-void recordCompose(const gfx_api::RenderPassContext& passCtx)
-{
-	ASSERT(passCtx.readCount() == 3, "SSAO compose: 0 scene, 1 AO, 2 normals");
-	gfx_api::abstract_texture* scene = passCtx.getRead(0);
-	gfx_api::abstract_texture* ao = passCtx.getRead(1);
-	gfx_api::abstract_texture* prepassNormals = passCtx.getRead(2);
-	if (scene == nullptr || ao == nullptr || prepassNormals == nullptr
-		|| !pie_IsInGame3DFrameContextReady())
-	{
-		return;
-	}
-
-	gfx_api::constant_buffer_type<SHADER_SCENE_COMPOSE_SSAO> constants {};
-	constants.ssaoIntensity = s_tuning.intensity;
-	display3d_fillPassReadUvScaleClamp(passCtx, 0, constants.sceneUvScaleClamp);
-	display3d_fillPassReadUvScaleClamp(passCtx, 1, constants.aoUvScaleClamp);
-	display3d_drawFullscreenTriangle<gfx_api::SceneComposeSSAOPSO>(constants, scene, ao, prepassNormals);
 }
 
 } // namespace ssao

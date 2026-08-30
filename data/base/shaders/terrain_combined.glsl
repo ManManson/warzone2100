@@ -23,7 +23,8 @@ layout(std140) uniform cbuffer {
 	float tessMaxLevel;
 	float WZ_MIP_LOAD_BIAS;
 	int bucketDimensionUsed;
-	float pad1;
+	float ssaoIntensity;
+	vec4 ssaoUvScaleClamp;
 	// Last because its length follows the grid dimension
 	ivec4 bucketOffsetAndSize[WZ_BUCKET_DIMENSION * WZ_BUCKET_DIMENSION];
 };

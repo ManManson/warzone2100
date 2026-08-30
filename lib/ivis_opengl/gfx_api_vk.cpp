@@ -1322,7 +1322,6 @@ static const std::map<SHADER_MODE, shader_infos> spv_files
 	std::make_pair(SHADER_SSAO_GENERATE, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/ssao_generate.frag.spv" }),
 	std::make_pair(SHADER_SSAO_BLUR, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/ssao_blur.frag.spv" }),
 	std::make_pair(SHADER_SSAO_DOWNSAMPLE, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/ssao_downsample.frag.spv" }),
-	std::make_pair(SHADER_SCENE_COMPOSE_SSAO, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/scene_compose_ssao.frag.spv" }),
 	std::make_pair(SHADER_SCENE_FOG, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/scene_fog.frag.spv" }),
 	std::make_pair(SHADER_RANGE_RING_SDF, shader_infos{ "shaders/vk/range_ring_sdf.vert.spv", "shaders/vk/range_ring_sdf.frag.spv" }),
 	std::make_pair(SHADER_RANGE_RING_COMPOSITE, shader_infos{ "shaders/vk/postprocess_fullscreen.vert.spv", "shaders/vk/range_ring_composite.frag.spv" }),
@@ -1837,7 +1836,7 @@ VkPSO::VkPSO(vk::Device _dev,
 
 		textures_layout_desc.emplace_back(
 			vk::DescriptorSetLayoutBinding()
-				.setBinding(static_cast<uint32_t>(texture.id))
+				.setBinding(static_cast<uint32_t>(texture.vkBinding))
 				.setDescriptorCount(1)
 				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 				.setPImmutableSamplers(&samplers.back())
@@ -1852,8 +1851,8 @@ VkPSO::VkPSO(vk::Device _dev,
 	{
 		for (const auto& texture : texture_desc)
 		{
-			ASSERT(texture.id != lightDataStorageBinding && texture.id != lightIndexStorageBinding,
-				"Texture id %zu collides with a light data binding", texture.id);
+			ASSERT(texture.vkBinding != lightDataStorageBinding && texture.vkBinding != lightIndexStorageBinding,
+				"Texture vkBinding %zu collides with a light data binding", texture.vkBinding);
 		}
 		for (const uint32_t binding : {lightDataStorageBinding, lightIndexStorageBinding})
 		{
@@ -5946,7 +5945,7 @@ void VkRoot::bind_textures(const std::vector<gfx_api::texture_input>& attribute_
 				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 				.setDstSet(set[0])
 				.setPImageInfo(&image_descriptor[i])
-				.setDstBinding(i)
+				.setDstBinding(static_cast<uint32_t>(attribute_descriptions[i].vkBinding))
 		);
 		i++;
 	}

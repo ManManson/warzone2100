@@ -18,8 +18,13 @@ layout(std140) uniform globaluniforms {
 	vec4 fogRange;
 	float graphicsCycle;
 	float WZ_MIP_LOAD_BIAS;
+	int viewportWidth;
+	int viewportHeight;
+	vec4 ssaoUvScaleClamp;
+	float ssaoIntensity;
 	float pad0;
 	float pad1;
+	float pad2;
 };
 
 layout(std140) uniform meshuniforms {
@@ -28,6 +33,8 @@ layout(std140) uniform meshuniforms {
 	int specularmap;
 	int hasTangents;
 	int fogOutput;
+	int applySsao;
+	int padApplySsao;
 };
 
 layout(std140) uniform instanceuniforms {
@@ -46,6 +53,7 @@ uniform sampler2D Texture; // diffuse map
 uniform sampler2D TextureTcmask; // tcmask
 uniform sampler2D TextureNormal; // normal map
 uniform sampler2D TextureSpecular; // specular map
+uniform sampler2D ssaoTexture;
 
 
 
@@ -79,6 +87,7 @@ out vec4 FragColor;
 
 #include "tangentspace.glsl"
 #include "distance_fog.glsl"
+#include "ssao_lighting.glsl"
 
 void main()
 {
@@ -126,7 +135,8 @@ void main()
 		light += diffuse * lambertTerm * diffuseMap * vanillaFactor;
 	}
 	// ambient light maxed for classic models to keep results similar to original
-	light += ambient * diffuseMap * (1.0 + (1.0 - float(specularmap)));
+	vec3 skyAmbient = (applySsao != 0) ? wzApplySsaoToAmbient(ambient.rgb) : ambient.rgb;
+	light += vec4(skyAmbient, ambient.a) * diffuseMap * (1.0 + (1.0 - float(specularmap)));
 
 	vec4 fragColour;
 	if (tcmask != 0)

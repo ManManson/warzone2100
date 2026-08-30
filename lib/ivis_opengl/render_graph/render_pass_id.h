@@ -49,7 +49,6 @@ enum class PassId : uint16_t
 	SSAODownsample,
 	SSAOBlurH,
 	SSAOBlurV,
-	SSAOCompose,
 	FogApply,
 	RangeRingSdfSensor,
 	RangeRingSdfWeapon,

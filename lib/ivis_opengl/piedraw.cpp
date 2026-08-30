@@ -23,6 +23,7 @@
 
 #include <unordered_map>
 #include <string.h>
+#include <type_traits>
 
 #include "lib/ivis_opengl/piedraw.h"
 #include "lib/framework/frame.h"
@@ -313,12 +314,13 @@ void pie_Draw3DButton(const iIMDShape *shape, PIELIGHT teamcolour, const glm::ma
 		glm::vec4(getDefaultSunPosition(), 0.f),
 		sceneColor, ambient, diffuse, specular,
 		glm::vec4(0.f), glm::vec4(0.f),
-		0.f, gfx_api::context::get().getMipLodBias()
+		0.f, gfx_api::context::get().getMipLodBias(),
+		1, 1, pie_GetSsaoUvScaleClamp(), pie_GetSsaoIntensity()
 	};
 
 	gfx_api::Draw3DShapePerMeshUniforms meshUniforms {
 		tcmask ? 1 : 0, normalmap != nullptr, specularmap != nullptr, shape->buffers[VBO_TANGENT] != nullptr,
-		static_cast<int>(gfx_api::ForwardFogOutput::Disabled)
+		static_cast<int>(gfx_api::ForwardFogOutput::Disabled), 0
 	};
 
 	gfx_api::Draw3DShapePerInstanceUniforms instanceUniforms {
@@ -332,7 +334,7 @@ void pie_Draw3DButton(const iIMDShape *shape, PIELIGHT teamcolour, const glm::ma
 
 	gfx_api::Draw3DShapeOpaque::get().set_uniforms(globalUniforms, meshUniforms, instanceUniforms);
 
-	gfx_api::Draw3DShapeOpaque::get().bind_textures(&pie_Texture(textures.texpage), tcmask, normalmap, specularmap);
+	gfx_api::Draw3DShapeOpaque::get().bind_textures(&pie_Texture(textures.texpage), tcmask, normalmap, specularmap, pie_GetSsaoTexture());
 	gfx_api::Draw3DShapeOpaque::get().bind_vertex_buffers(shape->buffers[VBO_VERTEX], shape->buffers[VBO_NORMAL], shape->buffers[VBO_TEXCOORD], pTangentBuffer);
 	gfx_api::context::get().bind_index_buffer(*shape->buffers[VBO_INDEX], gfx_api::index_type::u16);
 	gfx_api::Draw3DShapeOpaque::get().draw_elements(shape->polys.size() * 3, 0);
@@ -435,10 +437,11 @@ static void draw3dShapeTemplated(const templatedState &lastState, ShaderOnce& gl
 	auto* tcmask = textures.tcmaskpage != iV_TEX_INVALID ? &pie_Texture(textures.tcmaskpage) : nullptr;
 	auto* normalmap = textures.normalpage != iV_TEX_INVALID ? &pie_Texture(textures.normalpage) : nullptr;
 	auto* specularmap = textures.specularpage != iV_TEX_INVALID ? &pie_Texture(textures.specularpage) : nullptr;
+	const int applySsao = (shader == SHADER_COMPONENT && (pieFlag & (pie_ADDITIVE | pie_TRANSLUCENT | pie_PREMULTIPLIED)) == 0) ? 1 : 0;
 
 	gfx_api::Draw3DShapePerMeshUniforms meshUniforms {
 		tcmask ? 1 : 0, normalmap != nullptr, specularmap != nullptr, shape->buffers[VBO_TANGENT] != nullptr,
-		static_cast<int>(forwardFogOutputForFlags(pieFlag))
+		static_cast<int>(forwardFogOutputForFlags(pieFlag)), applySsao
 	};
 
 	gfx_api::Draw3DShapePerInstanceUniforms instanceUniforms {
@@ -461,7 +464,7 @@ static void draw3dShapeTemplated(const templatedState &lastState, ShaderOnce& gl
 		{
 			AdditivePSO::get().set_uniforms_at(1, meshUniforms);
 			AdditivePSO::get().bind_vertex_buffers(shape->buffers[VBO_VERTEX], shape->buffers[VBO_NORMAL], shape->buffers[VBO_TEXCOORD], pTangentBuffer);
-			AdditivePSO::get().bind_textures(&pie_Texture(textures.texpage), tcmask, normalmap, specularmap);
+			AdditivePSO::get().bind_textures(&pie_Texture(textures.texpage), tcmask, normalmap, specularmap, pie_GetSsaoTexture());
 			gfx_api::context::get().bind_index_buffer(*shape->buffers[VBO_INDEX], gfx_api::index_type::u16);
 		}
 		AdditivePSO::get().set_uniforms_at(2, instanceUniforms);
@@ -480,7 +483,7 @@ static void draw3dShapeTemplated(const templatedState &lastState, ShaderOnce& gl
 			{
 				AlphaPSO::get().set_uniforms_at(1, meshUniforms);
 				AlphaPSO::get().bind_vertex_buffers(shape->buffers[VBO_VERTEX], shape->buffers[VBO_NORMAL], shape->buffers[VBO_TEXCOORD], pTangentBuffer);
-				AlphaPSO::get().bind_textures(&pie_Texture(textures.texpage), tcmask, normalmap, specularmap);
+				AlphaPSO::get().bind_textures(&pie_Texture(textures.texpage), tcmask, normalmap, specularmap, pie_GetSsaoTexture());
 				gfx_api::context::get().bind_index_buffer(*shape->buffers[VBO_INDEX], gfx_api::index_type::u16);
 			}
 			AlphaPSO::get().set_uniforms_at(2, instanceUniforms);
@@ -497,7 +500,7 @@ static void draw3dShapeTemplated(const templatedState &lastState, ShaderOnce& gl
 			{
 				AlphaNoDepthWRTPSO::get().set_uniforms_at(1, meshUniforms);
 				AlphaNoDepthWRTPSO::get().bind_vertex_buffers(shape->buffers[VBO_VERTEX], shape->buffers[VBO_NORMAL], shape->buffers[VBO_TEXCOORD], pTangentBuffer);
-				AlphaNoDepthWRTPSO::get().bind_textures(&pie_Texture(textures.texpage), tcmask, normalmap, specularmap);
+				AlphaNoDepthWRTPSO::get().bind_textures(&pie_Texture(textures.texpage), tcmask, normalmap, specularmap, pie_GetSsaoTexture());
 				gfx_api::context::get().bind_index_buffer(*shape->buffers[VBO_INDEX], gfx_api::index_type::u16);
 			}
 			AlphaNoDepthWRTPSO::get().set_uniforms_at(2, instanceUniforms);
@@ -515,7 +518,7 @@ static void draw3dShapeTemplated(const templatedState &lastState, ShaderOnce& gl
 		{
 			PremultipliedPSO::get().set_uniforms_at(1, meshUniforms);
 			PremultipliedPSO::get().bind_vertex_buffers(shape->buffers[VBO_VERTEX], shape->buffers[VBO_NORMAL], shape->buffers[VBO_TEXCOORD], pTangentBuffer);
-			PremultipliedPSO::get().bind_textures(&pie_Texture(textures.texpage), tcmask, normalmap, specularmap);
+			PremultipliedPSO::get().bind_textures(&pie_Texture(textures.texpage), tcmask, normalmap, specularmap, pie_GetSsaoTexture());
 			gfx_api::context::get().bind_index_buffer(*shape->buffers[VBO_INDEX], gfx_api::index_type::u16);
 		}
 		PremultipliedPSO::get().set_uniforms_at(2, instanceUniforms);
@@ -532,7 +535,7 @@ static void draw3dShapeTemplated(const templatedState &lastState, ShaderOnce& gl
 		{
 			OpaquePSO::get().set_uniforms_at(1, meshUniforms);
 			OpaquePSO::get().bind_vertex_buffers(shape->buffers[VBO_VERTEX], shape->buffers[VBO_NORMAL], shape->buffers[VBO_TEXCOORD], pTangentBuffer);
-			OpaquePSO::get().bind_textures(&pie_Texture(textures.texpage), tcmask, normalmap, specularmap);
+			OpaquePSO::get().bind_textures(&pie_Texture(textures.texpage), tcmask, normalmap, specularmap, pie_GetSsaoTexture());
 			gfx_api::context::get().bind_index_buffer(*shape->buffers[VBO_INDEX], gfx_api::index_type::u16);
 		}
 		OpaquePSO::get().set_uniforms_at(2, instanceUniforms);
@@ -1537,6 +1540,32 @@ void pie_UpdateLightmap(gfx_api::texture* lightmapTexture, const glm::mat4& mode
 	instancedMeshRenderer.setLightmap(lightmapTexture, modelUVLightmapMatrix);
 }
 
+static gfx_api::abstract_texture* s_ssaoTexture = nullptr;
+static float s_ssaoIntensity = 0.f;
+static glm::vec4 s_ssaoUvScaleClamp {1.f, 1.f, 1.f, 1.f};
+
+void pie_UpdateSsao(gfx_api::abstract_texture* texture, float intensity, const glm::vec4& uvScaleClamp)
+{
+	s_ssaoTexture = texture;
+	s_ssaoIntensity = intensity;
+	s_ssaoUvScaleClamp = uvScaleClamp;
+}
+
+gfx_api::abstract_texture* pie_GetSsaoTexture()
+{
+	return s_ssaoTexture;
+}
+
+float pie_GetSsaoIntensity()
+{
+	return s_ssaoIntensity;
+}
+
+const glm::vec4& pie_GetSsaoUvScaleClamp()
+{
+	return s_ssaoUvScaleClamp;
+}
+
 void pie_FinalizeMeshes(uint64_t currentGameFrame)
 {
 	instancedMeshRenderer.FinalizeInstances();
@@ -1674,18 +1703,19 @@ bool InstancedMeshRenderer::DrawAll(uint64_t currentGameFrame, const glm::mat4& 
 	const bool forwardFogEnabled = fogMode == MeshFogMode::ForwardDistance && pie_GetFogEnabled();
 	const glm::vec4 fogColor = pal_PIELIGHTtoVec4(pie_GetFogColour());
 	const glm::vec4 fogRange(renderState.fogBegin, renderState.fogEnd, forwardFogEnabled ? 1.f : 0.f, 0.f);
+	const auto dimension = gfx_api::context::get().getSceneRenderTargetDimensions();
 
 	if (useInstancedRendering)
 	{
 
-		auto dimension = gfx_api::context::get().getSceneRenderTargetDimensions();
 		gfx_api::Draw3DShapeInstancedGlobalUniforms globalUniforms {
 			projectionMatrix, viewMatrix, modelUVLightmapMatrix, {shadowCascades.shadowMVPMatrix[0], shadowCascades.shadowMVPMatrix[1], shadowCascades.shadowMVPMatrix[2]},
 			glm::vec4(cameraPos, 0.f), glm::vec4(currentSunPosition, 0.f),
 			sceneColor, ambient, diffuse, specular, fogColor, fogRange,
 			{shadowCascades.shadowCascadeSplit[0], shadowCascades.shadowCascadeSplit[1], shadowCascades.shadowCascadeSplit[2], pie_getPerspectiveZFar()}, shadowCascades.shadowMapSize,
 			pie_GetShaderTime(), static_cast<int>(dimension.first), static_cast<int>(dimension.second), gfx_api::context::get().getSceneMipLodBias(),
-			static_cast<int>(getCurrentLightingManager().getPointLightBuckets().bucketDimensionUsed), 0.f, 0.f,
+			static_cast<int>(getCurrentLightingManager().getPointLightBuckets().bucketDimensionUsed), pie_GetSsaoIntensity(), 0.f,
+			pie_GetSsaoUvScaleClamp(),
 			getCurrentLightingManager().getPointLightBuckets().bucketOffsetAndSize
 		};
 		Draw3DShapes_Instanced(currentGameFrame, perFrameUniformsShaderOnce, globalUniforms, pointLights, shadowMap, drawParts, depthPassMode);
@@ -1696,7 +1726,8 @@ bool InstancedMeshRenderer::DrawAll(uint64_t currentGameFrame, const glm::mat4& 
 			projectionMatrix, viewMatrix, shadowCascades.shadowMVPMatrix[0],
 			glm::vec4(cameraPos, 0.f),
 			glm::vec4(currentSunPosition, 0.f), sceneColor, ambient, diffuse, specular, fogColor, fogRange,
-			pie_GetShaderTime(), gfx_api::context::get().getSceneMipLodBias()
+			pie_GetShaderTime(), gfx_api::context::get().getSceneMipLodBias(),
+			static_cast<int>(dimension.first), static_cast<int>(dimension.second), pie_GetSsaoUvScaleClamp(), pie_GetSsaoIntensity()
 		};
 		Draw3DShapes_Old(currentGameFrame, perFrameUniformsShaderOnce, globalUniforms, drawParts);
 	}
@@ -1711,10 +1742,12 @@ static void drawInstanced3dShapeTemplated_Inner(ShaderOnce& globalsOnce, const g
 	auto* tcmask = textures.tcmaskpage != iV_TEX_INVALID ? &pie_Texture(textures.tcmaskpage) : nullptr;
 	auto* normalmap = textures.normalpage != iV_TEX_INVALID ? &pie_Texture(textures.normalpage) : nullptr;
 	auto* specularmap = textures.specularpage != iV_TEX_INVALID ? &pie_Texture(textures.specularpage) : nullptr;
+	const int applySsao = (shader == SHADER_COMPONENT_INSTANCED &&
+		std::is_same<Draw3DInstancedPSO, gfx_api::Draw3DShapeOpaque_Instanced>::value) ? 1 : 0;
 
 	gfx_api::Draw3DShapeInstancedPerMeshUniforms meshUniforms {
 		tcmask ? 1 : 0, normalmap != nullptr, specularmap != nullptr, shape->buffers[VBO_TANGENT] != nullptr,
-		shieldEffect ? 1 : 0, static_cast<int>(fogOutput)
+		shieldEffect ? 1 : 0, static_cast<int>(fogOutput), applySsao
 	};
 
 	gfx_api::buffer* pTangentBuffer = (shape->buffers[VBO_TANGENT] != nullptr) ? shape->buffers[VBO_TANGENT] : getZeroedVertexBuffer(shape->vertexCount * 4 * sizeof(gfx_api::gfxFloat));
@@ -1733,7 +1766,7 @@ static void drawInstanced3dShapeTemplated_Inner(ShaderOnce& globalsOnce, const g
 		std::make_tuple(shape->buffers[VBO_TEXCOORD], 0),
 		std::make_tuple(pTangentBuffer, 0),
 		std::make_tuple(instanceDataBuffer, instanceBufferOffset) });
-	Draw3DInstancedPSO::get().bind_textures(&pie_Texture(textures.texpage), tcmask, normalmap, specularmap, shadowMap, lightmapTexture);
+	Draw3DInstancedPSO::get().bind_textures(&pie_Texture(textures.texpage), tcmask, normalmap, specularmap, shadowMap, lightmapTexture, pie_GetSsaoTexture());
 
 	Draw3DInstancedPSO::get().draw_elements_instanced(shape->polys.size() * 3, 0, instance_count);
 //	Draw3DInstancedPSO::get().unbind_vertex_buffers(shape->buffers[VBO_VERTEX], shape->buffers[VBO_NORMAL], shape->buffers[VBO_TEXCOORD]);

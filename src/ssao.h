@@ -44,6 +44,17 @@ struct SsaoSettings
 SsaoSettings settingsFor(SSAO_MODE mode);
 SsaoSettings activeSettings();
 
+struct LightingBind {
+	gfx_api::abstract_texture* texture = nullptr;
+	float intensity = 0.f;
+	glm::vec4 uvScaleClamp {1.f, 1.f, 1.f, 1.f};
+};
+
+/// Dummy 1x1 white (unoccluded) used when SSAO is off or a shader must bind a texture it will not sample.
+gfx_api::abstract_texture* unoccludedTexture();
+/// ScenePass bind: blurred AO + intensity when `ssaoRead` is non-null, else dummy + intensity 0.
+LightingBind lightingBind(const gfx_api::RenderPassContext& passCtx, gfx_api::abstract_texture* ssaoRead);
+
 void init();
 void shutdown();
 
@@ -51,6 +62,5 @@ void recordGenerate(const gfx_api::RenderPassContext& passCtx);
 void recordDownsample(const gfx_api::RenderPassContext& passCtx);
 void recordBlurH(const gfx_api::RenderPassContext& passCtx);
 void recordBlurV(const gfx_api::RenderPassContext& passCtx);
-void recordCompose(const gfx_api::RenderPassContext& passCtx);
 
 } // namespace ssao

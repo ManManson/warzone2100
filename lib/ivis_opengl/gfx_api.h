@@ -314,9 +314,13 @@ namespace gfx_api
 		const pixel_format_target target;
 		const border_color border;
 		const shader_stage stage;
+		/// Vulkan descriptor binding. Defaults to `id` (the GL texture unit). Tessellated terrain
+		/// SSAO needs these to differ: GL unit 15 vs VK binding 13.
+		const std::size_t vkBinding;
 
-		constexpr texture_input(std::size_t _id, sampler_type _sampler, pixel_format_target _target, border_color _border, shader_stage _stage = shader_stage::fragment)
+		constexpr texture_input(std::size_t _id, sampler_type _sampler, pixel_format_target _target, border_color _border, shader_stage _stage = shader_stage::fragment, std::size_t _vkBinding = static_cast<std::size_t>(-1))
 		: id(_id), sampler(_sampler), target(_target), border(_border), stage(_stage)
+		, vkBinding(_vkBinding == static_cast<std::size_t>(-1) ? _id : _vkBinding)
 		{}
 	};
 
@@ -817,18 +821,22 @@ namespace gfx_api
 		}
 	};
 
-	template<std::size_t texture_unit, sampler_type sampler, pixel_format_target target = pixel_format_target::texture_2d, border_color border = border_color::none, shader_stage stage = shader_stage::fragment>
+	template<std::size_t texture_unit, sampler_type sampler, pixel_format_target target = pixel_format_target::texture_2d, border_color border = border_color::none, shader_stage stage = shader_stage::fragment, std::size_t vk_binding = texture_unit>
 	struct texture_description
 	{
 		static texture_input get_desc()
 		{
-			return texture_input{ texture_unit, sampler, target, border, stage };
+			return texture_input{ texture_unit, sampler, target, border, stage, vk_binding };
 		}
 	};
 
 	/// A texture sampled by the tessellation evaluation stage
 	template<std::size_t texture_unit, sampler_type sampler, pixel_format_target target = pixel_format_target::texture_2d, border_color border = border_color::none>
 	using tess_texture_description = texture_description<texture_unit, sampler, target, border, shader_stage::tessellation_evaluation>;
+
+	/// Forward-lighting SSAO sample. GL unit and VK binding can differ (tess: GL 15, VK 13).
+	template<std::size_t gl_unit, std::size_t vk_binding = gl_unit>
+	using ssao_lighting_texture = texture_description<gl_unit, sampler_type::bilinear, pixel_format_target::texture_2d, border_color::none, shader_stage::fragment, vk_binding>;
 
 	template<REND_MODE render_mode, DEPTH_MODE depth_mode, uint8_t output_mask, polygon_offset offset, stencil_mode stencil, cull_mode cull>
 	struct rasterizer_state
@@ -1061,8 +1069,13 @@ namespace gfx_api
 		glm::vec4 fogRange; // x = begin, y = end, z = forward fog enabled, w = padding
 		float timeState; // graphicsCycle
 		float mipLoadBias;
+		int viewportWidth = 1;
+		int viewportHeight = 1;
+		glm::vec4 ssaoUvScaleClamp {1.f, 1.f, 1.f, 1.f};
+		float ssaoIntensity = 0.f;
 		float pad0 = 0.f;
 		float pad1 = 0.f;
+		float pad2 = 0.f;
 	};
 
 	// Only change per mesh
@@ -1073,6 +1086,8 @@ namespace gfx_api
 		int specularMap;
 		int hasTangents;
 		int fogOutput;
+		int applySsao = 0;
+		int pad0 = 0;
 	};
 
 	// Change per instance of mesh
@@ -1105,7 +1120,8 @@ namespace gfx_api
 	texture_description<0, sampler_type::anisotropic>, // diffuse
 	texture_description<1, sampler_type::bilinear>, // team color mask
 	texture_description<2, sampler_type::anisotropic>, // normal map
-	texture_description<3, sampler_type::anisotropic> // specular map
+	texture_description<3, sampler_type::anisotropic>, // specular map
+	ssao_lighting_texture<4> // SSAO (dummy + intensity 0 when off)
 	>, shader>;
 
 	using Draw3DShapeOpaque = Draw3DShape<REND_OPAQUE, SHADER_COMPONENT, DEPTH_CMP_LEQ_WRT_ON>;
@@ -1191,12 +1207,15 @@ namespace gfx_api
 		int viewportheight;
 		float mipLoadBias;
 		int bucketDimensionUsed;
-		float pad1 = 0.f;
-		float pad2 = 0.f;
+		float ssaoIntensity = 0.f;
+		float padSsao0 = 0.f;
+		glm::vec4 ssaoUvScaleClamp {1.f, 1.f, 1.f, 1.f};
 		// The bucket table is last because its length follows the grid dimension, which may become variable.
 		// (Anything placed after it would shift whenever that changed.)
 		std::array<glm::ivec4, max_bucket_dimension * max_bucket_dimension> bucketOffsetAndSize;
 	};
+	static_assert(offsetof(Draw3DShapeInstancedGlobalUniforms, ssaoUvScaleClamp) % 16 == 0,
+		"ssaoUvScaleClamp must be 16-byte aligned for std140");
 
 	// Only change per mesh
 	struct Draw3DShapeInstancedPerMeshUniforms
@@ -1207,6 +1226,8 @@ namespace gfx_api
 		int hasTangents;
 		int shieldEffect;
 		int fogOutput;
+		int applySsao = 0;
+		int pad0 = 0;
 	};
 
 	// interleaved vertex data
@@ -1254,7 +1275,8 @@ namespace gfx_api
 	texture_description<2, sampler_type::anisotropic>, // normal map
 	texture_description<3, sampler_type::anisotropic>, // specular map
 	texture_description<4, sampler_type::bilinear_border, pixel_format_target::depth_map, border_color::opaque_white>,  // depth / shadow map
-	texture_description<5, sampler_type::bilinear> // lightmap
+	texture_description<5, sampler_type::bilinear>, // lightmap
+	ssao_lighting_texture<6> // SSAO (dummy + intensity 0 when off)
 	>, shader>;
 
 	using Draw3DShapeOpaque_Instanced = Draw3DShapeInstanced<REND_OPAQUE, SHADER_COMPONENT_INSTANCED, DEPTH_CMP_LEQ_WRT_ON>;
@@ -1506,11 +1528,14 @@ namespace gfx_api
 		float tessMaxLevel; // hardware-tessellated terrain only
 		float mipLoadBias;
 		int bucketDimensionUsed;
-		float pad1 = 0.f;
+		float ssaoIntensity = 0.f;
+		glm::vec4 ssaoUvScaleClamp {1.f, 1.f, 1.f, 1.f};
 		// The bucket table is last because its length follows the grid dimension, which may become variable.
 		// (Anything placed after it would shift whenever that changed.)
 		std::array<glm::ivec4, max_bucket_dimension * max_bucket_dimension> bucketOffsetAndSize;
 	};
+	static_assert(offsetof(TerrainCombinedUniforms, ssaoUvScaleClamp) % 16 == 0,
+		"ssaoUvScaleClamp must be 16-byte aligned for std140");
 
 	template<REND_MODE render_mode, SHADER_MODE shader>
 	using TerrainCombinedTemplate = typename gfx_api::pipeline_state_helper<rasterizer_state<render_mode, DEPTH_CMP_LEQ_WRT_OFF, 255, polygon_offset::disabled, stencil_mode::stencil_disabled, cull_mode::back>, primitive_type::triangles, index_type::u32,
@@ -1535,7 +1560,8 @@ namespace gfx_api
 	texture_description<6, sampler_type::anisotropic, pixel_format_target::texture_2d_array>, // decal normal
 	texture_description<7, sampler_type::anisotropic, pixel_format_target::texture_2d_array>, // decal specular
 	texture_description<8, sampler_type::anisotropic, pixel_format_target::texture_2d_array>,  // decal height
-	texture_description<9, sampler_type::bilinear_border, pixel_format_target::depth_map, border_color::opaque_white>  // depth / shadow map
+	texture_description<9, sampler_type::bilinear_border, pixel_format_target::depth_map, border_color::opaque_white>,  // depth / shadow map
+	ssao_lighting_texture<10, 13> // SSAO: GL unit 10, VK binding 13 (shared SPIR-V with tess)
 	>, shader>;
 
 	using TerrainCombined_Classic = TerrainCombinedTemplate<REND_ALPHA, SHADER_TERRAIN_COMBINED_CLASSIC>;
@@ -1575,7 +1601,8 @@ namespace gfx_api
 	texture_description<9, sampler_type::bilinear_border, pixel_format_target::depth_map, border_color::opaque_white>,  // depth / shadow map
 	tess_texture_description<10, sampler_type::bilinear>, // baked terrain height
 	tess_texture_description<11, sampler_type::bilinear>, // baked terrain outline offset
-	tess_texture_description<12, sampler_type::bilinear>  // baked terrain normal
+	tess_texture_description<12, sampler_type::bilinear>,  // baked terrain normal
+	ssao_lighting_texture<15, 13> // SSAO: GL unit 15 (TES 10-12, lights 13-14), VK binding 13
 	>, shader>;
 
 	using TerrainCombinedTess_Medium = TerrainCombinedTessTemplate<SHADER_TERRAIN_COMBINED_MEDIUM_TESS>;
@@ -1690,11 +1717,14 @@ namespace gfx_api
 		int viewportWidth;
 		int viewportHeight;
 		int bucketDimensionUsed;
-		float pad1 = 0.f;
+		float ssaoIntensity = 0.f;
+		glm::vec4 ssaoUvScaleClamp {1.f, 1.f, 1.f, 1.f};
 		// The bucket table is last because its length follows the grid dimension, which may become variable.
 		// (Anything placed after it would shift whenever that changed.)
 		std::array<glm::ivec4, max_bucket_dimension * max_bucket_dimension> bucketOffsetAndSize;
 	};
+	static_assert(offsetof(constant_buffer_type<SHADER_WATER_HIGH>, ssaoUvScaleClamp) % 16 == 0,
+		"ssaoUvScaleClamp must be 16-byte aligned for std140");
 
 	using WaterHighPSO = typename gfx_api::pipeline_state_helper<rasterizer_state<REND_ALPHA, DEPTH_CMP_LEQ_WRT_OFF, 255, polygon_offset::disabled, stencil_mode::stencil_disabled, cull_mode::back>, primitive_type::triangles, index_type::u32,
 	std::tuple<constant_buffer_type<SHADER_WATER_HIGH>, PointLightsUniforms>,
@@ -1705,7 +1735,8 @@ namespace gfx_api
 		texture_description<1, sampler_type::anisotropic_repeat, pixel_format_target::texture_2d_array>, // normal maps
 		texture_description<2, sampler_type::anisotropic_repeat, pixel_format_target::texture_2d_array>, // specular maps
 		texture_description<3, sampler_type::bilinear>, // lightmap
-		texture_description<4, sampler_type::bilinear_border, pixel_format_target::depth_map, border_color::opaque_white>  // depth / shadow map
+		texture_description<4, sampler_type::bilinear_border, pixel_format_target::depth_map, border_color::opaque_white>,  // depth / shadow map
+		ssao_lighting_texture<5> // SSAO
 	>, SHADER_WATER_HIGH>;
 
 	template<>
@@ -2148,30 +2179,6 @@ namespace gfx_api
 	std::tuple<
 		texture_description<0, sampler_type::bilinear, pixel_format_target::texture_2d> // occlusion
 	>, SHADER_SSAO_DOWNSAMPLE>;
-
-	template<>
-	struct constant_buffer_type<SHADER_SCENE_COMPOSE_SSAO>
-	{
-		float ssaoIntensity;
-		float padding0;
-		float padding1;
-		float padding2;
-		glm::vec4 sceneUvScaleClamp;
-		glm::vec4 aoUvScaleClamp;
-	};
-
-	using SceneComposeSSAOPSO = typename gfx_api::pipeline_state_helper<rasterizer_state<REND_OPAQUE, DEPTH_CMP_ALWAYS_WRT_OFF, 255, polygon_offset::disabled, stencil_mode::stencil_disabled, cull_mode::none>, primitive_type::triangles, index_type::u16,
-	std::tuple<constant_buffer_type<SHADER_SCENE_COMPOSE_SSAO>>,
-	std::tuple<
-		vertex_buffer_description<2 * sizeof(gfxFloat), gfx_api::vertex_attribute_input_rate::vertex,
-			vertex_attribute_description<position, gfx_api::vertex_attribute_type::float2, 0>
-		>
-	>,
-	std::tuple<
-		texture_description<0, sampler_type::bilinear, pixel_format_target::texture_2d>, // scene
-		texture_description<1, sampler_type::bilinear, pixel_format_target::texture_2d>, // ao
-		texture_description<2, sampler_type::bilinear, pixel_format_target::texture_2d>  // prepassNormals
-	>, SHADER_SCENE_COMPOSE_SSAO>;
 
 	template<>
 	struct constant_buffer_type<SHADER_SCENE_FOG>

@@ -2029,7 +2029,8 @@ static void drawTerrainCombinedmpl(const glm::mat4 &ModelViewProjection, const g
 		lightmap_texture,
 		groundTexArr, groundNormalArr, groundSpecularArr, groundHeightArr,
 		decalTexArr, decalNormalArr, decalSpecularArr, decalHeightArr,
-		shadowMap);
+		shadowMap,
+		pie_GetSsaoTexture());
 	PSO::get().bind_vertex_buffers(terrainDecalVBO);
 	gfx_api::context::get().bind_index_buffer(*terrainDecalIndexVBO, gfx_api::index_type::u32);
 	glm::mat4 groundScale = glm::mat4(0);
@@ -2044,7 +2045,8 @@ static void drawTerrainCombinedmpl(const glm::mat4 &ModelViewProjection, const g
 		pie_GetLighting0(LIGHT_EMISSIVE), pie_GetLighting0(LIGHT_AMBIENT), pie_GetLighting0(LIGHT_DIFFUSE), pie_GetLighting0(LIGHT_SPECULAR),
 		{shadowCascades.shadowCascadeSplit[0], shadowCascades.shadowCascadeSplit[1], shadowCascades.shadowCascadeSplit[2], pie_getPerspectiveZFar()}, shadowCascades.shadowMapSize,
 		terrainShaderQuality, static_cast<int>(dimension.first), static_cast<int>(dimension.second), 0.f, gfx_api::context::get().getSceneMipLodBias(),
-		static_cast<int>(getCurrentLightingManager().getPointLightBuckets().bucketDimensionUsed), 0.f,
+		static_cast<int>(getCurrentLightingManager().getPointLightBuckets().bucketDimensionUsed), pie_GetSsaoIntensity(),
+		pie_GetSsaoUvScaleClamp(),
 		getCurrentLightingManager().getPointLightBuckets().bucketOffsetAndSize
 	};
 	PSO::get().template set_uniforms_at<0>(uniforms, gfx_api::globals_block_active_size<gfx_api::TerrainCombinedUniforms>());
@@ -2080,7 +2082,8 @@ static void drawTerrainCombinedTessImpl(const glm::mat4 &ModelViewProjection, co
 		groundTexArr, groundNormalArr, groundSpecularArr, groundHeightArr,
 		decalTexArr, decalNormalArr, decalSpecularArr, decalHeightArr,
 		shadowMap,
-		terrainBake::heightTexture(), terrainBake::offsetTexture(), terrainBake::normalTexture());
+		terrainBake::heightTexture(), terrainBake::offsetTexture(), terrainBake::normalTexture(),
+		pie_GetSsaoTexture());
 	PSO::get().bind_vertex_buffers(terrainDecalVBO);
 	gfx_api::context::get().bind_index_buffer(*terrainPatchIndexVBO, gfx_api::index_type::u32);
 	glm::mat4 groundScale = glm::mat4(0);
@@ -2095,7 +2098,8 @@ static void drawTerrainCombinedTessImpl(const glm::mat4 &ModelViewProjection, co
 		pie_GetLighting0(LIGHT_EMISSIVE), pie_GetLighting0(LIGHT_AMBIENT), pie_GetLighting0(LIGHT_DIFFUSE), pie_GetLighting0(LIGHT_SPECULAR),
 		{shadowCascades.shadowCascadeSplit[0], shadowCascades.shadowCascadeSplit[1], shadowCascades.shadowCascadeSplit[2], pie_getPerspectiveZFar()}, shadowCascades.shadowMapSize,
 		terrainShaderQuality, static_cast<int>(dimension.first), static_cast<int>(dimension.second), terrainTessMaxLevel(), gfx_api::context::get().getSceneMipLodBias(),
-		static_cast<int>(getCurrentLightingManager().getPointLightBuckets().bucketDimensionUsed), 0.f,
+		static_cast<int>(getCurrentLightingManager().getPointLightBuckets().bucketDimensionUsed), pie_GetSsaoIntensity(),
+		pie_GetSsaoUvScaleClamp(),
 		getCurrentLightingManager().getPointLightBuckets().bucketOffsetAndSize
 	};
 	PSO::get().template set_uniforms_at<0>(uniforms, gfx_api::globals_block_active_size<gfx_api::TerrainCombinedUniforms>());
@@ -2437,7 +2441,8 @@ void drawWaterHighImpl(const glm::mat4 &ModelViewProjection, const glm::mat4& vi
 		waterTexturesHigh.tex_nm,
 		waterTexturesHigh.tex_sm,
 		lightmap_texture,
-		shadowMap);
+		shadowMap,
+		pie_GetSsaoTexture());
 	PSO::get().bind_vertex_buffers(waterVBO);
 	auto dimension = gfx_api::context::get().getSceneRenderTargetDimensions();
 	gfx_api::constant_buffer_type<SHADER_WATER_HIGH> uniforms = {
@@ -2447,7 +2452,8 @@ void drawWaterHighImpl(const glm::mat4 &ModelViewProjection, const glm::mat4& vi
 		{shadowCascades.shadowCascadeSplit[0], shadowCascades.shadowCascadeSplit[1], shadowCascades.shadowCascadeSplit[2], pie_getPerspectiveZFar()}, shadowCascades.shadowMapSize,
 		waterOffset*10, gfx_api::context::get().getSceneMipLodBias(), 0.f,
 		static_cast<int>(dimension.first), static_cast<int>(dimension.second),
-		static_cast<int>(getCurrentLightingManager().getPointLightBuckets().bucketDimensionUsed), 0.f,
+		static_cast<int>(getCurrentLightingManager().getPointLightBuckets().bucketDimensionUsed), pie_GetSsaoIntensity(),
+		pie_GetSsaoUvScaleClamp(),
 		getCurrentLightingManager().getPointLightBuckets().bucketOffsetAndSize
 	};
 	PSO::get().template set_uniforms_at<0>(uniforms, gfx_api::globals_block_active_size<gfx_api::constant_buffer_type<SHADER_WATER_HIGH>>());

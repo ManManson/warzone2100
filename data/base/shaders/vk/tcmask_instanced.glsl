@@ -23,8 +23,9 @@ layout(std140, set = 0, binding = 0) uniform globaluniforms
 	int viewportHeight;
 	float WZ_MIP_LOAD_BIAS;
 	int bucketDimensionUsed;
-	float pad1;
-	float pad2;
+	float ssaoIntensity;
+	float padSsao0;
+	vec4 ssaoUvScaleClamp;
 	// Last because its length follows the grid dimension
 	ivec4 bucketOffsetAndSize[WZ_BUCKET_DIMENSION * WZ_BUCKET_DIMENSION];
 };
@@ -37,6 +38,8 @@ layout(std140, set = 1, binding = 0) uniform meshuniforms
 	int hasTangents;
 	int shieldEffect;
 	int fogOutput;
+	int applySsao;
+	int padApplySsao;
 };
 
 // Light data shares the texture set rather than taking one of its own, because the instanced
