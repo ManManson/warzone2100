@@ -144,10 +144,15 @@ const uint32_t minRequired_DescriptorSetUniformBuffersDynamic = 1;
 const uint32_t minRequired_BoundDescriptorSets = 4;
 
 // Light data storage buffers share the texture set rather than taking one of their own, because
-// the instanced mesh pipeline already uses the four sets Vulkan guarantees. These must match the
-// binding numbers in vk/pointlights.glsl.
-constexpr uint32_t lightDataStorageBinding = 14;
-constexpr uint32_t lightIndexStorageBinding = 15;
+// minRequired_BoundDescriptorSets == 4 and the instanced mesh pipeline already uses those four
+// sets. Binding index is not descriptor count: two SSBOs at 16/17 are still two descriptors.
+// They used to be 14/15, which stole binding 15 -- the only free GL texture unit tess SSAO can
+// use (TES occupies 10-12, GL light texel buffers occupy 13-14). Sitting above the 0-15
+// image-unit range lets tess SSAO be unit/binding 15 on both backends.
+// Must match data/base/shaders/vk/pointlights.glsl. Texture ids on a pipeline that attaches
+// these buffers must not be 16 or 17.
+constexpr uint32_t lightDataStorageBinding = 16;
+constexpr uint32_t lightIndexStorageBinding = 17;
 const uint32_t minRequired_Viewports = 1;
 const uint32_t minRequired_ColorAttachments = 1;
 
@@ -1836,7 +1841,7 @@ VkPSO::VkPSO(vk::Device _dev,
 
 		textures_layout_desc.emplace_back(
 			vk::DescriptorSetLayoutBinding()
-				.setBinding(static_cast<uint32_t>(texture.vkBinding))
+				.setBinding(static_cast<uint32_t>(texture.id))
 				.setDescriptorCount(1)
 				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 				.setPImmutableSamplers(&samplers.back())
@@ -1851,8 +1856,8 @@ VkPSO::VkPSO(vk::Device _dev,
 	{
 		for (const auto& texture : texture_desc)
 		{
-			ASSERT(texture.vkBinding != lightDataStorageBinding && texture.vkBinding != lightIndexStorageBinding,
-				"Texture vkBinding %zu collides with a light data binding", texture.vkBinding);
+			ASSERT(texture.id != lightDataStorageBinding && texture.id != lightIndexStorageBinding,
+				"Texture id %zu collides with a light data binding", texture.id);
 		}
 		for (const uint32_t binding : {lightDataStorageBinding, lightIndexStorageBinding})
 		{
@@ -5945,7 +5950,8 @@ void VkRoot::bind_textures(const std::vector<gfx_api::texture_input>& attribute_
 				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 				.setDstSet(set[0])
 				.setPImageInfo(&image_descriptor[i])
-				.setDstBinding(static_cast<uint32_t>(attribute_descriptions[i].vkBinding))
+				// Must use id, not sequential i: CPU terrain is bindings 0-9 then 15.
+				.setDstBinding(static_cast<uint32_t>(attribute_descriptions[i].id))
 		);
 		i++;
 	}

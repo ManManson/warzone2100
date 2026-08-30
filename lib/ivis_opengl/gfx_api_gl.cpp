@@ -911,7 +911,11 @@ struct program_data
 	std::vector<std::string> uniform_block_names = {};
 };
 
-// Terrain claims units 0 to 12, so the light data samplers sit above that and still inside the required 16 minimum.
+// Terrain tess packing of the 16 guaranteed image units (0-15):
+// 0-9 terrain + shadow, 10-12 TES baked maps, 13-14 light texel buffers, 15 SSAO.
+// Light texel units 13-14 are reserved even when the program uses SSBOs so additional_samplers
+// cannot collide. CPU terrain has no TES, but still binds SSAO at 15 so desc.id matches the
+// shared Vulkan SPIR-V binding (holes 10-12 unused on CPU).
 constexpr GLint lightDataTextureUnit = 13;
 constexpr GLint lightIndexTextureUnit = 14;
 // 16 per stage is the minimum every target guarantees
@@ -936,7 +940,7 @@ static const std::vector<std::tuple<std::string, GLint>> terrainCombinedSamplers
 	{"groundTex", 1}, {"groundNormal", 2}, {"groundSpecular", 3}, {"groundHeight", 4},
 	{"decalTex", 5}, {"decalNormal", 6}, {"decalSpecular", 7}, {"decalHeight", 8},
 	{"shadowMap", 9},
-	{"ssaoTexture", 10}
+	{"ssaoTexture", 15}
 };
 
 static const std::vector<std::tuple<std::string, GLint>> terrainCombinedTessSamplers = {

@@ -112,10 +112,11 @@ int wzLightIndex(int entryInLightList)
 	return texelFetch(lightIndexBuffer, entryInLightList).r;
 }
 #elif WZ_LIGHT_TRANSPORT == 2
-// std430 packs both of these exactly as the buffer texture path lays them out
-// Bindings sit above the texture ids in the same set, and must match the values in gfx_api_vk.cpp
-layout(std430, set = WZ_LIGHT_DATA_SET, binding = 14) readonly buffer lightData { vec4 lights[]; };
-layout(std430, set = WZ_LIGHT_DATA_SET, binding = 15) readonly buffer lightIndexData { int lightIndices[]; };
+// std430 packs both of these exactly as the buffer texture path lays them out.
+// Must match lightDataStorageBinding / lightIndexStorageBinding in gfx_api_vk.cpp.
+// Bindings sit above the 0-15 image-unit range so tess SSAO can be 15 on both backends.
+layout(std430, set = WZ_LIGHT_DATA_SET, binding = 16) readonly buffer lightData { vec4 lights[]; };
+layout(std430, set = WZ_LIGHT_DATA_SET, binding = 17) readonly buffer lightIndexData { int lightIndices[]; };
 
 vec4 wzLightPosition(int lightIndex)
 {

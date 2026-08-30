@@ -309,18 +309,17 @@ namespace gfx_api
 
 	struct texture_input
 	{
+		/// GL texture unit and Vulkan descriptor binding. They must be the same number.
+		/// Sparse ids are legal (CPU terrain SSAO is 15 after 0-9). If a sampler cannot
+		/// share one number, fix the packing rather than adding a backend field here.
 		const std::size_t id;
 		const sampler_type sampler;
 		const pixel_format_target target;
 		const border_color border;
 		const shader_stage stage;
-		/// Vulkan descriptor binding. Defaults to `id` (the GL texture unit). Tessellated terrain
-		/// SSAO needs these to differ: GL unit 15 vs VK binding 13.
-		const std::size_t vkBinding;
 
-		constexpr texture_input(std::size_t _id, sampler_type _sampler, pixel_format_target _target, border_color _border, shader_stage _stage = shader_stage::fragment, std::size_t _vkBinding = static_cast<std::size_t>(-1))
+		constexpr texture_input(std::size_t _id, sampler_type _sampler, pixel_format_target _target, border_color _border, shader_stage _stage = shader_stage::fragment)
 		: id(_id), sampler(_sampler), target(_target), border(_border), stage(_stage)
-		, vkBinding(_vkBinding == static_cast<std::size_t>(-1) ? _id : _vkBinding)
 		{}
 	};
 
@@ -350,10 +349,15 @@ namespace gfx_api
 		, texture_desc(texture_desc)
 		, attribute_descriptions(attribute_descriptions)
 		{
-			// Vulkan binds these by position and OpenGL by declared unit, which agree only while ids run 0, 1, 2 in order
+			// `id` is both the GL texture unit and the Vulkan descriptor binding.
+			// They need not equal the tuple index: CPU terrain is 0-9 then 15 (holes 10-14).
 			for (size_t i = 0; i < texture_desc.size(); ++i)
 			{
-				ASSERT(texture_desc[i].id == i, "Texture %zu declares unit %zu", i, texture_desc[i].id);
+				for (size_t j = i + 1; j < texture_desc.size(); ++j)
+				{
+					ASSERT(texture_desc[i].id != texture_desc[j].id,
+						"Duplicate texture unit %zu at tuple indices %zu and %zu", texture_desc[i].id, i, j);
+				}
 			}
 		}
 	};
@@ -821,22 +825,19 @@ namespace gfx_api
 		}
 	};
 
-	template<std::size_t texture_unit, sampler_type sampler, pixel_format_target target = pixel_format_target::texture_2d, border_color border = border_color::none, shader_stage stage = shader_stage::fragment, std::size_t vk_binding = texture_unit>
+	/// `texture_unit` is both the GL texture unit and the Vulkan descriptor binding.
+	template<std::size_t texture_unit, sampler_type sampler, pixel_format_target target = pixel_format_target::texture_2d, border_color border = border_color::none, shader_stage stage = shader_stage::fragment>
 	struct texture_description
 	{
 		static texture_input get_desc()
 		{
-			return texture_input{ texture_unit, sampler, target, border, stage, vk_binding };
+			return texture_input{ texture_unit, sampler, target, border, stage };
 		}
 	};
 
 	/// A texture sampled by the tessellation evaluation stage
 	template<std::size_t texture_unit, sampler_type sampler, pixel_format_target target = pixel_format_target::texture_2d, border_color border = border_color::none>
 	using tess_texture_description = texture_description<texture_unit, sampler, target, border, shader_stage::tessellation_evaluation>;
-
-	/// Forward-lighting SSAO sample. GL unit and VK binding can differ (tess: GL 15, VK 13).
-	template<std::size_t gl_unit, std::size_t vk_binding = gl_unit>
-	using ssao_lighting_texture = texture_description<gl_unit, sampler_type::bilinear, pixel_format_target::texture_2d, border_color::none, shader_stage::fragment, vk_binding>;
 
 	template<REND_MODE render_mode, DEPTH_MODE depth_mode, uint8_t output_mask, polygon_offset offset, stencil_mode stencil, cull_mode cull>
 	struct rasterizer_state
@@ -1121,7 +1122,7 @@ namespace gfx_api
 	texture_description<1, sampler_type::bilinear>, // team color mask
 	texture_description<2, sampler_type::anisotropic>, // normal map
 	texture_description<3, sampler_type::anisotropic>, // specular map
-	ssao_lighting_texture<4> // SSAO (dummy + intensity 0 when off)
+	texture_description<4, sampler_type::bilinear> // SSAO (dummy + intensity 0 when off)
 	>, shader>;
 
 	using Draw3DShapeOpaque = Draw3DShape<REND_OPAQUE, SHADER_COMPONENT, DEPTH_CMP_LEQ_WRT_ON>;
@@ -1276,7 +1277,7 @@ namespace gfx_api
 	texture_description<3, sampler_type::anisotropic>, // specular map
 	texture_description<4, sampler_type::bilinear_border, pixel_format_target::depth_map, border_color::opaque_white>,  // depth / shadow map
 	texture_description<5, sampler_type::bilinear>, // lightmap
-	ssao_lighting_texture<6> // SSAO (dummy + intensity 0 when off)
+	texture_description<6, sampler_type::bilinear> // SSAO (dummy + intensity 0 when off)
 	>, shader>;
 
 	using Draw3DShapeOpaque_Instanced = Draw3DShapeInstanced<REND_OPAQUE, SHADER_COMPONENT_INSTANCED, DEPTH_CMP_LEQ_WRT_ON>;
@@ -1561,7 +1562,9 @@ namespace gfx_api
 	texture_description<7, sampler_type::anisotropic, pixel_format_target::texture_2d_array>, // decal specular
 	texture_description<8, sampler_type::anisotropic, pixel_format_target::texture_2d_array>,  // decal height
 	texture_description<9, sampler_type::bilinear_border, pixel_format_target::depth_map, border_color::opaque_white>,  // depth / shadow map
-	ssao_lighting_texture<10, 13> // SSAO: GL unit 10, VK binding 13 (shared SPIR-V with tess)
+	// Holes 10-14 on CPU VK are intentional: tess needs unit/binding 15 (only free GL unit
+	// after TES 10-12 and light texel units 13-14); both share one SPIR-V at binding 15.
+	texture_description<15, sampler_type::bilinear> // SSAO
 	>, shader>;
 
 	using TerrainCombined_Classic = TerrainCombinedTemplate<REND_ALPHA, SHADER_TERRAIN_COMBINED_CLASSIC>;
@@ -1602,7 +1605,9 @@ namespace gfx_api
 	tess_texture_description<10, sampler_type::bilinear>, // baked terrain height
 	tess_texture_description<11, sampler_type::bilinear>, // baked terrain outline offset
 	tess_texture_description<12, sampler_type::bilinear>,  // baked terrain normal
-	ssao_lighting_texture<15, 13> // SSAO: GL unit 15 (TES 10-12, lights 13-14), VK binding 13
+	// GL 15 is the only free unit (TES 10-12, light texel buffers 13-14). VK 15 is free
+	// once light SSBOs live at 16/17, so GL unit and VK binding stay the same number.
+	texture_description<15, sampler_type::bilinear> // SSAO
 	>, shader>;
 
 	using TerrainCombinedTess_Medium = TerrainCombinedTessTemplate<SHADER_TERRAIN_COMBINED_MEDIUM_TESS>;
@@ -1736,7 +1741,7 @@ namespace gfx_api
 		texture_description<2, sampler_type::anisotropic_repeat, pixel_format_target::texture_2d_array>, // specular maps
 		texture_description<3, sampler_type::bilinear>, // lightmap
 		texture_description<4, sampler_type::bilinear_border, pixel_format_target::depth_map, border_color::opaque_white>,  // depth / shadow map
-		ssao_lighting_texture<5> // SSAO
+		texture_description<5, sampler_type::bilinear> // SSAO
 	>, SHADER_WATER_HIGH>;
 
 	template<>

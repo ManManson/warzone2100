@@ -22,7 +22,7 @@ layout(set = 2, binding = 8) uniform sampler2DArray decalHeight;
 
 // depth map
 layout(set = 2, binding = 9) uniform sampler2DArrayShadow shadowMap;
-layout(set = 2, binding = 13) uniform sampler2D ssaoTexture;
+layout(set = 2, binding = 15) uniform sampler2D ssaoTexture; // CPU and tess share this SPIR-V; matches texture_description<15>
 
 layout(location = 0) in FragData frag;
 layout(location = 10) flat in FragFlatData fragf;
