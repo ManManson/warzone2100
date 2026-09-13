@@ -27,6 +27,7 @@
 #include "lib/framework/frame.h"
 #include "lib/framework/pool_allocator.h"
 #include "lib/netplay/byteorder_funcs_wrapper.h"
+#include <functional>
 #include <vector>
 #include <list>
 
@@ -293,6 +294,10 @@ public:
 		return pendingGameTimeUpdateMessages;
 	}
 
+	void setRetainConsumedMessages(bool retain);
+	void rewindReadCursorToStart();
+	void forEachStoredMessage(const std::function<void(const NetMessage&)>& fn) const;
+
 private:
 	void popOldMessages();                                             ///< Pops any messages that are no longer needed.
 
@@ -331,6 +336,7 @@ private:
 	std::vector<uint8_t>          incompleteReceivedMessageData;       ///< Data from network which has not yet formed an entire message.
 	size_t                        pendingGameTimeUpdateMessages;       ///< Pending GAME_GAME_TIME messages added to this queue
 	bool						  bCurrentMessageWasDecrypted;
+	bool                          retainConsumedMessages = false;
 };
 
 /// A NetQueuePair is used for talking to a socket. We insert NetMessages in the send NetQueue, which converts the messages into a stream of bytes for the

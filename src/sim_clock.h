@@ -104,6 +104,8 @@ constexpr ClockPolicyRow clockPolicyFor(SimClockMode mode)
 	return CLOCK_POLICIES[1]; // Realtime fallback
 }
 
+constexpr uint32_t CATCH_UP_FRAME_BUDGET_MS = 12;
+
 class SimClock
 {
 public:

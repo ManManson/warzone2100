@@ -19,12 +19,22 @@
 
 #include "replay_session.h"
 
+#include "replay_archive.h"
+
+#include "lib/framework/frame.h"
 #include "lib/framework/string_ext.h"
+#include "lib/gamelib/gtime.h"
 #include "lib/netplay/nettypes.h"
+#include "lib/netplay/sync_debug.h"
+#include "gamestate_serialize.h"
 #include "loop.h"
 #include "sim_clock.h"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
+#include <exception>
+#include <utility>
 #include <variant>
 
 ReplaySession& ReplaySession::instance()
@@ -32,6 +42,8 @@ ReplaySession& ReplaySession::instance()
 	static ReplaySession session;
 	return session;
 }
+
+ReplaySession::~ReplaySession() = default;
 
 bool ReplaySession::active()
 {
@@ -42,6 +54,9 @@ void ReplaySession::attachAfterReplayLoad(uint32_t durationMs)
 {
 	attached_ = true;
 	durationMs_ = durationMs;
+	archive_ = ReplayMessageArchive::buildFromLoadedQueues();
+	capturedInitialState_ = false;
+	initialStateJson_.clear();
 	syncClockModeFromPlayback();
 }
 
@@ -49,6 +64,10 @@ void ReplaySession::shutdown()
 {
 	attached_ = false;
 	durationMs_ = 0;
+	resumePaused_ = false;
+	capturedInitialState_ = false;
+	initialStateJson_.clear();
+	archive_.reset();
 	SimClock::instance().reset();
 }
 
@@ -72,6 +91,21 @@ uint32_t ReplaySession::timelineDurationMs() const
 	return std::max(durationMs_, playheadMs());
 }
 
+bool ReplaySession::isBusy() const
+{
+	return SimClock::instance().isCatchingUp();
+}
+
+optional<ReplayBusyStatus> ReplaySession::busy() const
+{
+	auto& clock = SimClock::instance();
+	if (!clock.isCatchingUp())
+	{
+		return nullopt;
+	}
+	return ReplayBusyStatus{clock.catchUpOrigin(), clock.catchUpTarget()};
+}
+
 void ReplaySession::syncClockModeFromPlayback()
 {
 	if (gameTimeIsStopped())
@@ -82,8 +116,143 @@ void ReplaySession::syncClockModeFromPlayback()
 	SimClock::instance().setMode(getMaxFastForwardTicks() > 0 ? SimClockMode::FastForward : SimClockMode::Realtime);
 }
 
+void ReplaySession::onGameLoopBegin()
+{
+	captureInitialStateIfNeeded();
+}
+
+void ReplaySession::onGameLoopAfterTicks(bool tickExhausted)
+{
+	auto& clock = SimClock::instance();
+	if (!clock.isCatchingUp())
+	{
+		return;
+	}
+	if (gameTime >= clock.catchUpTarget() || tickExhausted)
+	{
+		finishCatchUp();
+	}
+}
+
+void ReplaySession::cancelBusy()
+{
+	if (!SimClock::instance().isCatchingUp())
+	{
+		return;
+	}
+	resumePaused_ = true;
+	finishCatchUp();
+}
+
+void ReplaySession::applyResumeIntent()
+{
+	if (resumePaused_)
+	{
+		if (!gameTimeIsStopped())
+		{
+			gameTimeStop();
+		}
+		setAudioPause(true);
+		setConsolePause(true);
+		SimClock::instance().setMode(SimClockMode::Paused);
+		return;
+	}
+	setAudioPause(false);
+	setConsolePause(false);
+	if (gameTimeIsStopped())
+	{
+		gameTimeStart();
+	}
+	syncClockModeFromPlayback();
+}
+
+void ReplaySession::finishCatchUp()
+{
+	SimClock::instance().cancelCatchUp();
+	applyResumeIntent();
+	graphicsTime = gameTime;
+	gameTimeRebaseRealTimeBase();
+}
+
+void ReplaySession::captureInitialStateIfNeeded()
+{
+	if (capturedInitialState_)
+	{
+		return;
+	}
+	capturedInitialState_ = true;
+	try
+	{
+		initialStateJson_ = gamestate::serializeGameState(gamestate::ScriptScope::AllInstances);
+	}
+	catch (const std::exception& e)
+	{
+		debug(LOG_ERROR, "Replay: failed to capture t=0 GameState: %s", e.what());
+		initialStateJson_.clear();
+	}
+}
+
+void ReplaySession::restoreInitialWorld()
+{
+	if (initialStateJson_.empty())
+	{
+		setGameTime(2);
+		return;
+	}
+	try
+	{
+		nlohmann::ordered_json j = gamestate::parseJsonBounded(
+			initialStateJson_.data(), initialStateJson_.data() + initialStateJson_.size());
+		j.erase("presentation");
+		gamestate::gameStateFromJson(j, gamestate::ScriptScope::AllInstances);
+		resetSyncDebug();
+		applyResumeSyncDebugCrc();
+		setSyncCheckFloorTime(gameTime);
+	}
+	catch (const std::exception& e)
+	{
+		debug(LOG_ERROR, "Replay: failed to restore t=0 GameState: %s", e.what());
+		setGameTime(2);
+	}
+}
+
+void ReplaySession::seekTo(uint32_t timeMs)
+{
+	auto& clock = SimClock::instance();
+	const uint32_t T = quantizeReplaySeekMs(timeMs, timelineDurationMs());
+	if (T == playheadMs() && !clock.isCatchingUp())
+	{
+		return;
+	}
+
+	if (!clock.isCatchingUp())
+	{
+		resumePaused_ = isPaused();
+	}
+
+	const bool needRewind = T < playheadMs();
+	if (gameTimeIsStopped())
+	{
+		gameTimeStart();
+	}
+	clock.catchUpTo(T);
+	if (needRewind)
+	{
+		restoreInitialWorld();
+		if (archive_)
+		{
+			archive_->rewindToGameTime(0);
+		}
+	}
+}
+
 void ReplaySession::handle(CmdPlay)
 {
+	resumePaused_ = false;
+	if (SimClock::instance().isCatchingUp())
+	{
+		return;
+	}
 	setAudioPause(false);
 	setConsolePause(false);
 	if (gameTimeIsStopped())
@@ -95,6 +264,11 @@ void ReplaySession::handle(CmdPlay)
 
 void ReplaySession::handle(CmdPause)
 {
+	resumePaused_ = true;
+	if (SimClock::instance().isCatchingUp())
+	{
+		return;
+	}
 	if (!gameTimeIsStopped())
 	{
 		gameTimeStop();
@@ -104,19 +278,29 @@ void ReplaySession::handle(CmdPause)
 	SimClock::instance().setMode(SimClockMode::Paused);
 }
 
-void ReplaySession::handle(CmdSeekAbsolute)
+void ReplaySession::handle(CmdSeekAbsolute cmd)
 {
-	// Seek is wired in a later milestone.
+	seekTo(cmd.timeMs);
 }
 
-void ReplaySession::handle(CmdSeekRelative)
+void ReplaySession::handle(CmdSeekRelative cmd)
 {
-	// Seek is wired in a later milestone.
+	uint32_t target = playheadMs();
+	if (cmd.deltaMs < 0)
+	{
+		const uint32_t back = static_cast<uint32_t>(-cmd.deltaMs);
+		target = (playheadMs() < back) ? 0 : playheadMs() - back;
+	}
+	else
+	{
+		target += static_cast<uint32_t>(cmd.deltaMs);
+	}
+	seekTo(target);
 }
 
 void ReplaySession::handle(CmdSeekToStart)
 {
-	// Seek is wired in a later milestone.
+	seekTo(0);
 }
 
 void ReplaySession::handle(CmdCycleRate cmd)
@@ -136,13 +320,19 @@ void ReplaySession::handle(CmdCycleRate cmd)
 		newFastForward = 1;
 	}
 	setMaxFastForwardTicks(newFastForward, true);
-	syncClockModeFromPlayback();
+	if (!SimClock::instance().isCatchingUp())
+	{
+		syncClockModeFromPlayback();
+	}
 }
 
 void ReplaySession::handle(CmdSetRate cmd)
 {
 	setMaxFastForwardTicks(cmd.rate.ticksPerFrame, true);
-	syncClockModeFromPlayback();
+	if (!SimClock::instance().isCatchingUp())
+	{
+		syncClockModeFromPlayback();
+	}
 }
 
 std::string formatReplayTime(uint32_t timeMs, bool useHours)

@@ -18,6 +18,7 @@
 */
 
 #include "replay_controller.h"
+#include "replay_busy_overlay.h"
 #include "replay_timeline.h"
 
 #include "../hci.h"
@@ -275,6 +276,9 @@ bool createReplayControllerOverlay()
 	bar->setCalcLayout([](WIDGET* psWidget) {
 		psWidget->setGeometry(0, screenHeight - psWidget->height(), screenWidth, psWidget->height());
 	});
+
+	// Attach after the bar so the modal sits above it and blocks transport clicks while seeking.
+	replayOverlayScreen->psForm->attach(ReplayBusyOverlay::make());
 
 	widgRegisterOverlayScreenOnTopOfScreen(replayOverlayScreen, psWScreen);
 	return true;

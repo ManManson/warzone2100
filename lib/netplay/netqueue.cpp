@@ -355,8 +355,40 @@ void NetQueue::popMessage()
 	popOldMessages();
 }
 
+void NetQueue::setRetainConsumedMessages(bool retain)
+{
+	retainConsumedMessages = retain;
+}
+
+void NetQueue::rewindReadCursorToStart()
+{
+	messagePos = messages.end();
+	bCurrentMessageWasDecrypted = false;
+	pendingGameTimeUpdateMessages = 0;
+	for (const auto& message : messages)
+	{
+		if (message.type() == GAME_GAME_TIME)
+		{
+			++pendingGameTimeUpdateMessages;
+		}
+	}
+}
+
+void NetQueue::forEachStoredMessage(const std::function<void(const NetMessage&)>& fn) const
+{
+	for (List::const_iterator i = messages.end(); i != messages.begin(); )
+	{
+		--i;
+		fn(*i);
+	}
+}
+
 void NetQueue::popOldMessages()
 {
+	if (retainConsumedMessages)
+	{
+		return;
+	}
 	if (!canGetMessagesForNet)
 	{
 		dataPos = messages.begin();

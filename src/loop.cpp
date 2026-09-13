@@ -44,6 +44,7 @@
 
 #include "loop.h"
 #include "sim_clock.h"
+#include "replay_session.h"
 #include "gamestate_serialize.h"
 #include "movebench.h"
 #include "pathbench.h"
@@ -170,7 +171,10 @@ static GAMECODE renderLoop()
 		handleInGameHostQuit();
 	}
 
-	audio_Update();
+	if (SimClock::instance().presentation() == PresentationKind::Full)
+	{
+		audio_Update();
+	}
 
 	wzShowMouse(!isGamepadActiveInput());
 
@@ -216,12 +220,15 @@ static GAMECODE renderLoop()
 				multiPlayerLoop();
 			}
 
-			for (unsigned i = 0; i < MAX_PLAYERS; i++)
+			if (SimClock::instance().presentation() == PresentationKind::Full)
 			{
-				for (DROID *psCurr : gameWorld.objects.droids[i])
+				for (unsigned i = 0; i < MAX_PLAYERS; i++)
 				{
-					// Don't copy the next pointer - if droids somehow get destroyed in the graphics rendering loop, who cares if we crash.
-					calcDroidIllumination(psCurr);
+					for (DROID *psCurr : gameWorld.objects.droids[i])
+					{
+						// Don't copy the next pointer - if droids somehow get destroyed in the graphics rendering loop, who cares if we crash.
+						calcDroidIllumination(psCurr);
+					}
 				}
 			}
 		}
@@ -334,7 +341,7 @@ static GAMECODE renderLoop()
 	}
 	if (!loop_GetVideoStatus() && !quitting && !headlessGameMode())
 	{
-		if (!gameUpdatePaused())
+		if (!inGameWorldDrawFrozen())
 		{
 			processInput();
 
@@ -674,7 +681,8 @@ static size_t numFastForwardTicks = 0;
 
 bool inGameWorldDrawFrozen()
 {
-	return gameUpdatePaused();
+	return gameUpdatePaused()
+		|| SimClock::instance().presentation() == PresentationKind::OverlayOnly;
 }
 
 TickResult simulateOneGameTick(TickAdvanceKind kind)
@@ -754,16 +762,26 @@ GAMECODE gameLoop()
 	numRegularUpdatesTicks = 0;
 	numFastForwardTicks = 0;
 	gameTimeUpdateBegin();
+	if (ReplaySession::active())
+	{
+		ReplaySession::instance().onGameLoopBegin();
+	}
 	size_t ticksSoFar = 0;
+	bool tickExhausted = false;
 	const uint32_t frameStart = wzGetTicks();
 	auto& clock = SimClock::instance();
 	while (clock.shouldTickThisFrame(ticksSoFar, wzGetTicks() - frameStart))
 	{
 		if (!simulateOneGameTick(clock.tickKind()).didUpdate)
 		{
+			tickExhausted = true;
 			break;
 		}
 		++ticksSoFar;
+	}
+	if (ReplaySession::active())
+	{
+		ReplaySession::instance().onGameLoopAfterTicks(tickExhausted);
 	}
 	numForcedUpdatesLastCall = numFastForwardTicks;
 

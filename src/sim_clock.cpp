@@ -20,6 +20,7 @@
 #include "sim_clock.h"
 
 #include "lib/framework/frame.h"
+#include "lib/gamelib/gtime.h"
 
 SimClock& SimClock::instance()
 {
@@ -32,17 +33,15 @@ void SimClock::setMode(SimClockMode mode)
 	mode_ = mode;
 }
 
-void SimClock::catchUpTo(uint32_t)
+void SimClock::catchUpTo(uint32_t targetGameTime)
 {
-	ASSERT(false, "Catch-up is not wired yet.");
+	catchUpOrigin_ = gameTime;
+	catchUpTarget_ = targetGameTime;
+	mode_ = SimClockMode::CatchUp;
 }
 
 void SimClock::cancelCatchUp()
 {
-	if (mode_ == SimClockMode::CatchUp)
-	{
-		mode_ = SimClockMode::Realtime;
-	}
 	catchUpTarget_ = 0;
 	catchUpOrigin_ = 0;
 }
@@ -60,7 +59,7 @@ void SimClock::reset()
 	manualTicksRemaining_ = 0;
 }
 
-bool SimClock::shouldTickThisFrame(size_t, uint32_t) const
+bool SimClock::shouldTickThisFrame(size_t, uint32_t frameElapsedMs) const
 {
 	switch (mode_)
 	{
@@ -72,8 +71,9 @@ bool SimClock::shouldTickThisFrame(size_t, uint32_t) const
 			// and spectator fast-forward both rely on extra WallClock iterations.
 			return true;
 		case SimClockMode::CatchUp:
+			return gameTime < catchUpTarget_ && frameElapsedMs < CATCH_UP_FRAME_BUDGET_MS;
 		case SimClockMode::Manual:
-			ASSERT(false, "Catch-up / manual clock modes are not wired yet.");
+			ASSERT(false, "Manual clock mode is not wired yet.");
 			return false;
 	}
 	return false;

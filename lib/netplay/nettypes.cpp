@@ -65,6 +65,7 @@ static NetQueue *broadcastQueue = nullptr;
 static std::array<std::unique_ptr<SessionKeys>, MAX_CONNECTED_PLAYERS> netSessionKeys;
 
 static bool bIsReplay = false;
+static bool retainConsumedGameQueueMessages = false;
 
 static size_t numInvalidMessageReads = 0;
 
@@ -173,6 +174,61 @@ size_t NETgameQueueRestorePending(unsigned player, const std::vector<std::vector
 	return restored;
 }
 
+void NETsetGameQueueRetainConsumedMessages(bool retain)
+{
+	retainConsumedGameQueueMessages = retain;
+	for (unsigned player = 0; player < MAX_GAMEQUEUE_SLOTS; ++player)
+	{
+		if (gameQueues[player] != nullptr)
+		{
+			gameQueues[player]->setRetainConsumedMessages(retain);
+		}
+	}
+}
+
+void NETgameQueueRewindReadCursorToStart(unsigned player)
+{
+	ASSERT_OR_RETURN(, player < MAX_GAMEQUEUE_SLOTS, "Invalid game queue slot %u", player);
+	if (gameQueues[player] != nullptr)
+	{
+		gameQueues[player]->rewindReadCursorToStart();
+	}
+}
+
+void NETgameQueueForEachMessage(unsigned player, const std::function<void(const NetMessage&)>& fn)
+{
+	ASSERT_OR_RETURN(, player < MAX_GAMEQUEUE_SLOTS, "Invalid game queue slot %u", player);
+	if (gameQueues[player] != nullptr)
+	{
+		gameQueues[player]->forEachStoredMessage(fn);
+	}
+}
+
+bool NETgameQueueHaveMessage(unsigned player)
+{
+	ASSERT_OR_RETURN(false, player < MAX_GAMEQUEUE_SLOTS, "Invalid game queue slot %u", player);
+	return gameQueues[player] != nullptr && gameQueues[player]->haveMessage();
+}
+
+const NetMessage *NETgameQueueGetMessage(unsigned player)
+{
+	ASSERT_OR_RETURN(nullptr, player < MAX_GAMEQUEUE_SLOTS, "Invalid game queue slot %u", player);
+	if (gameQueues[player] == nullptr || !gameQueues[player]->haveMessage())
+	{
+		return nullptr;
+	}
+	return &gameQueues[player]->getMessage();
+}
+
+void NETgameQueuePopMessage(unsigned player)
+{
+	ASSERT_OR_RETURN(, player < MAX_GAMEQUEUE_SLOTS, "Invalid game queue slot %u", player);
+	if (gameQueues[player] != nullptr && gameQueues[player]->haveMessage())
+	{
+		gameQueues[player]->popMessage();
+	}
+}
+
 bool NETgameIsBehindPlayersByAtLeast(size_t numGameTimeUpdates /*= 2*/)
 {
 	// if we should be waited on, then there's no reason we should be behind other players
@@ -267,6 +323,7 @@ void NETinitQueue(NETQUEUE queue)
 	{
 		delete gameQueues[queue.index];
 		gameQueues[queue.index] = new NetQueue;
+		gameQueues[queue.index]->setRetainConsumedMessages(retainConsumedGameQueueMessages);
 		return;
 	}
 	else
@@ -293,6 +350,7 @@ void NETdeleteQueue(void)
 	delete broadcastQueue;
 	broadcastQueue = nullptr;
 
+	retainConsumedGameQueueMessages = false;
 	bIsReplay = false;
 
 	if (numInvalidMessageReads != 0)
@@ -634,6 +692,7 @@ bool NETloadReplay(std::string const &filename, ReplayOptionsHandler& optionsHan
 	{
 		return false;
 	}
+	NETsetGameQueueRetainConsumedMessages(true);
 	std::unique_ptr<NetMessage> newMessage;
 	uint8_t player;
 	bool gotReplayEnded = false;
@@ -681,6 +740,7 @@ void NETshutdownReplay()
 		gameQueues[MAX_CONNECTED_PLAYERS] = nullptr;
 	}
 
+	NETsetGameQueueRetainConsumedMessages(false);
 	bIsReplay = false;
 }
 

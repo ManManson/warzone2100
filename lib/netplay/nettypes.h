@@ -29,6 +29,7 @@
 #include "lib/netplay/netqueue.h"
 #include "lib/framework/wzstring.h"
 
+#include <functional>
 #include <type_traits>
 
 #include <nonstd/optional.hpp>
@@ -66,6 +67,13 @@ std::vector<std::vector<uint8_t>> NETgameQueueCapturePending(unsigned player);
 /// queue, in the given order. Must be called while the queue is empty (before the first post-load tick).
 /// Returns the number restored; 0 if the queue slot is not allocated (caller should treat as "not restored").
 size_t NETgameQueueRestorePending(unsigned player, const std::vector<std::vector<uint8_t>> &rawMessages);
+
+void NETsetGameQueueRetainConsumedMessages(bool retain);
+void NETgameQueueRewindReadCursorToStart(unsigned player);
+void NETgameQueueForEachMessage(unsigned player, const std::function<void(const NetMessage&)>& fn);
+bool NETgameQueueHaveMessage(unsigned player);
+const NetMessage *NETgameQueueGetMessage(unsigned player);
+void NETgameQueuePopMessage(unsigned player);
 
 void NETinsertRawData(NETQUEUE queue, uint8_t *data, size_t dataLen);  ///< Dump raw data from sockets and raw data sent via host here.
 void NETinsertMessageFromNet(NETQUEUE queue, NetMessage&& message);     ///< Dump whole NetMessages into the queue.

@@ -23,11 +23,14 @@
 
 #include "lib/gamelib/gtime.h"
 
+#include <memory>
 #include <nonstd/optional.hpp>
 #include <string>
 
 using nonstd::optional;
 using nonstd::nullopt;
+
+class IReplayMessageArchive;
 
 struct ReplayBusyStatus
 {
@@ -41,18 +44,23 @@ public:
 	static ReplaySession& instance();
 	static bool active();
 
+	~ReplaySession();
+
 	void attachAfterReplayLoad(uint32_t durationMs);
 	void shutdown();
 
 	void dispatch(ReplayCommand cmd);
+	void onGameLoopBegin();
+	void onGameLoopAfterTicks(bool tickExhausted);
+	void cancelBusy();
 
 	uint32_t durationMs() const { return durationMs_; }
 	uint32_t timelineDurationMs() const;
 	uint32_t playheadMs() const { return gameTime; }
 	bool isPaused() const;
 	size_t fastForwardTicks() const;
-	bool isBusy() const { return false; }
-	optional<ReplayBusyStatus> busy() const { return nullopt; }
+	bool isBusy() const;
+	optional<ReplayBusyStatus> busy() const;
 
 private:
 	ReplaySession() = default;
@@ -66,9 +74,18 @@ private:
 	void handle(CmdSetRate);
 
 	void syncClockModeFromPlayback();
+	void seekTo(uint32_t timeMs);
+	void captureInitialStateIfNeeded();
+	void restoreInitialWorld();
+	void applyResumeIntent();
+	void finishCatchUp();
 
 	bool attached_ = false;
 	uint32_t durationMs_ = 0;
+	bool resumePaused_ = false;
+	bool capturedInitialState_ = false;
+	std::string initialStateJson_;
+	std::unique_ptr<IReplayMessageArchive> archive_;
 };
 
 std::string formatReplayTime(uint32_t timeMs, bool useHours);

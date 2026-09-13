@@ -143,7 +143,7 @@ public:
 
 	bool inGameWorldFrozen() const override
 	{
-		return gameUpdatePaused();
+		return inGameWorldDrawFrozen();
 	}
 };
 
