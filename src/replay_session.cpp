@@ -20,6 +20,7 @@
 #include "replay_session.h"
 
 #include "replay_archive.h"
+#include "replay_keyframes.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/string_ext.h"
@@ -34,7 +35,6 @@
 
 #include <algorithm>
 #include <exception>
-#include <utility>
 #include <variant>
 
 ReplaySession& ReplaySession::instance()
@@ -55,8 +55,8 @@ void ReplaySession::attachAfterReplayLoad(uint32_t durationMs)
 	attached_ = true;
 	durationMs_ = durationMs;
 	archive_ = ReplayMessageArchive::buildFromLoadedQueues();
+	keyframes_ = ReplayKeyframeStore::make();
 	capturedInitialState_ = false;
-	initialStateJson_.clear();
 	syncClockModeFromPlayback();
 }
 
@@ -66,8 +66,8 @@ void ReplaySession::shutdown()
 	durationMs_ = 0;
 	resumePaused_ = false;
 	capturedInitialState_ = false;
-	initialStateJson_.clear();
 	archive_.reset();
+	keyframes_.reset();
 	SimClock::instance().reset();
 }
 
@@ -123,6 +123,7 @@ void ReplaySession::onGameLoopBegin()
 
 void ReplaySession::onGameLoopAfterTicks(bool tickExhausted)
 {
+	maybePlantKeyframe();
 	auto& clock = SimClock::instance();
 	if (!clock.isCatchingUp())
 	{
@@ -176,33 +177,70 @@ void ReplaySession::finishCatchUp()
 
 void ReplaySession::captureInitialStateIfNeeded()
 {
-	if (capturedInitialState_)
+	if (capturedInitialState_ || !keyframes_)
 	{
 		return;
 	}
 	capturedInitialState_ = true;
 	try
 	{
-		initialStateJson_ = gamestate::serializeGameState(gamestate::ScriptScope::AllInstances);
+		nlohmann::ordered_json j = gamestate::gameStateToJson(gamestate::ScriptScope::AllInstances);
+		j.erase("presentation");
+		keyframes_->put(0, j.dump());
 	}
 	catch (const std::exception& e)
 	{
 		debug(LOG_ERROR, "Replay: failed to capture t=0 GameState: %s", e.what());
-		initialStateJson_.clear();
 	}
 }
 
-void ReplaySession::restoreInitialWorld()
+void ReplaySession::maybePlantKeyframe()
 {
-	if (initialStateJson_.empty())
+	if (!keyframes_ || !capturedInitialState_)
+	{
+		return;
+	}
+	const uint32_t slot = (gameTime / REPLAY_KEYFRAME_INTERVAL_MS) * REPLAY_KEYFRAME_INTERVAL_MS;
+	if (slot == 0 || keyframes_->blobAt(slot) != nullptr)
+	{
+		return;
+	}
+	try
+	{
+		nlohmann::ordered_json j = gamestate::gameStateToJson(gamestate::ScriptScope::AllInstances);
+		j.erase("presentation");
+		keyframes_->put(slot, j.dump());
+	}
+	catch (const std::exception& e)
+	{
+		debug(LOG_ERROR, "Replay: failed to plant keyframe at %u: %s", slot, e.what());
+	}
+}
+
+optional<uint32_t> ReplaySession::latestKeyframeForSeek(uint32_t timeMs) const
+{
+	if (!keyframes_)
+	{
+		return nullopt;
+	}
+	if (auto exact = keyframes_->latestAtOrBefore(timeMs))
+	{
+		return exact;
+	}
+	return nullopt;
+}
+
+void ReplaySession::restoreFromKeyframe(uint32_t keyframeTime)
+{
+	const std::string* blob = keyframes_ ? keyframes_->blobAt(keyframeTime) : nullptr;
+	if (blob == nullptr)
 	{
 		setGameTime(2);
 		return;
 	}
 	try
 	{
-		nlohmann::ordered_json j = gamestate::parseJsonBounded(
-			initialStateJson_.data(), initialStateJson_.data() + initialStateJson_.size());
+		nlohmann::ordered_json j = gamestate::parseJsonBounded(blob->data(), blob->data() + blob->size());
 		j.erase("presentation");
 		gamestate::gameStateFromJson(j, gamestate::ScriptScope::AllInstances);
 		resetSyncDebug();
@@ -211,7 +249,7 @@ void ReplaySession::restoreInitialWorld()
 	}
 	catch (const std::exception& e)
 	{
-		debug(LOG_ERROR, "Replay: failed to restore t=0 GameState: %s", e.what());
+		debug(LOG_ERROR, "Replay: failed to restore keyframe at %u: %s", keyframeTime, e.what());
 		setGameTime(2);
 	}
 }
@@ -230,18 +268,21 @@ void ReplaySession::seekTo(uint32_t timeMs)
 		resumePaused_ = isPaused();
 	}
 
-	const bool needRewind = T < playheadMs();
+	const optional<uint32_t> keyframe = latestKeyframeForSeek(T);
+	const bool cheaperKeyframe = keyframe.has_value() && *keyframe > playheadMs();
+	const bool needRestore = T < playheadMs() || cheaperKeyframe;
 	if (gameTimeIsStopped())
 	{
 		gameTimeStart();
 	}
 	clock.catchUpTo(T);
-	if (needRewind)
+	if (needRestore)
 	{
-		restoreInitialWorld();
+		const uint32_t restoreTime = keyframe.value_or(0);
+		restoreFromKeyframe(restoreTime);
 		if (archive_)
 		{
-			archive_->rewindToGameTime(0);
+			archive_->rewindToGameTime(restoreTime);
 		}
 	}
 }

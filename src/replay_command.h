@@ -27,10 +27,12 @@
 
 constexpr uint32_t REPLAY_UI_QUANTUM_MS = GAME_TICKS_PER_SEC;
 constexpr uint32_t REPLAY_SKIP_STEP_MS = 15 * GAME_TICKS_PER_SEC;
+constexpr uint32_t REPLAY_KEYFRAME_INTERVAL_MS = 60 * GAME_TICKS_PER_SEC;
 constexpr size_t WZ_MAX_REPLAY_FASTFORWARD_TICKS = 3;
 
 static_assert(REPLAY_UI_QUANTUM_MS % GAME_TICKS_PER_UPDATE == 0);
 static_assert(REPLAY_SKIP_STEP_MS % GAME_TICKS_PER_UPDATE == 0);
+static_assert(REPLAY_KEYFRAME_INTERVAL_MS % GAME_TICKS_PER_UPDATE == 0);
 
 constexpr uint32_t quantizeReplaySeekMs(uint32_t timeMs, uint32_t durationMs)
 {

@@ -30,6 +30,7 @@
 using nonstd::optional;
 using nonstd::nullopt;
 
+class IReplayKeyframeStore;
 class IReplayMessageArchive;
 
 struct ReplayBusyStatus
@@ -76,7 +77,9 @@ private:
 	void syncClockModeFromPlayback();
 	void seekTo(uint32_t timeMs);
 	void captureInitialStateIfNeeded();
-	void restoreInitialWorld();
+	void maybePlantKeyframe();
+	optional<uint32_t> latestKeyframeForSeek(uint32_t timeMs) const;
+	void restoreFromKeyframe(uint32_t keyframeTime);
 	void applyResumeIntent();
 	void finishCatchUp();
 
@@ -84,8 +87,8 @@ private:
 	uint32_t durationMs_ = 0;
 	bool resumePaused_ = false;
 	bool capturedInitialState_ = false;
-	std::string initialStateJson_;
 	std::unique_ptr<IReplayMessageArchive> archive_;
+	std::unique_ptr<IReplayKeyframeStore> keyframes_;
 };
 
 std::string formatReplayTime(uint32_t timeMs, bool useHours);
