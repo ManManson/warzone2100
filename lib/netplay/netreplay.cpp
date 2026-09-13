@@ -49,6 +49,7 @@
 
 static PHYSFS_file *replaySaveHandle = nullptr;
 static PHYSFS_file *replayLoadHandle = nullptr;
+static uint32_t lastLoadedGameTimeElapsed = 0;
 
 static const uint32_t magicReplayNumber = 0x575A7270;  // "WZrp"
 static const uint32_t currentReplayFormatVer = 3;
@@ -316,6 +317,7 @@ bool NETreplayLoadStart(std::string const &filename, ReplayOptionsHandler& optio
 		return false;
 	};
 
+	lastLoadedGameTimeElapsed = 0;
 	replayLoadHandle = PHYSFS_openRead(filename.c_str());
 	if (replayLoadHandle == nullptr)
 	{
@@ -481,4 +483,100 @@ bool NETreplayLoadStop()
 	replayLoadHandle = nullptr;
 
 	return true;
+}
+
+bool NETreplayReadEndInfo(PHYSFS_file *f, uint32_t& outGameTimeElapsed)
+{
+	outGameTimeElapsed = 0;
+	if (f == nullptr)
+	{
+		return false;
+	}
+
+	const PHYSFS_sint64 savedPos = PHYSFS_tell(f);
+	const PHYSFS_sint64 fileLen = PHYSFS_fileLength(f);
+	auto restorePos = [f, savedPos]() {
+		if (savedPos >= 0)
+		{
+			PHYSFS_seek(f, static_cast<PHYSFS_uint64>(savedPos));
+		}
+	};
+
+	if (fileLen < 8) // also rejects PHYSFS_fileLength() == -1
+	{
+		restorePos();
+		return false;
+	}
+
+	if (PHYSFS_seek(f, static_cast<PHYSFS_uint64>(fileLen - 4)) == 0)
+	{
+		restorePos();
+		return false;
+	}
+
+	uint32_t trailingSize = 0;
+	if (PHYSFS_readUBE32(f, &trailingSize) == 0)
+	{
+		restorePos();
+		return false;
+	}
+
+	constexpr uint32_t MAX_END_INFO_BYTES = 64 * 1024;
+	if (trailingSize == 0 || trailingSize > MAX_END_INFO_BYTES || fileLen < static_cast<PHYSFS_sint64>(8 + trailingSize))
+	{
+		restorePos();
+		return false;
+	}
+
+	const PHYSFS_sint64 jsonPos = fileLen - 4 - static_cast<PHYSFS_sint64>(trailingSize);
+	const PHYSFS_sint64 leadingSizePos = jsonPos - 4;
+	if (leadingSizePos < 0 || PHYSFS_seek(f, static_cast<PHYSFS_uint64>(leadingSizePos)) == 0)
+	{
+		restorePos();
+		return false;
+	}
+
+	uint32_t leadingSize = 0;
+	if (PHYSFS_readUBE32(f, &leadingSize) == 0 || leadingSize != trailingSize)
+	{
+		restorePos();
+		return false;
+	}
+
+	std::string data;
+	data.resize(trailingSize);
+	if (WZ_PHYSFS_readBytes(f, data.data(), data.size()) != data.size())
+	{
+		restorePos();
+		return false;
+	}
+
+	try
+	{
+		const nlohmann::json endOfGameInfo = nlohmann::json::parse(data);
+		outGameTimeElapsed = endOfGameInfo.at("gameTimeElapsed").get<uint32_t>();
+		restorePos();
+		return true;
+	}
+	catch (const std::exception&)
+	{
+		restorePos();
+		return false;
+	}
+}
+
+bool NETreplayReadLoadedEndInfo(uint32_t& outGameTimeElapsed)
+{
+	lastLoadedGameTimeElapsed = 0;
+	const bool ok = NETreplayReadEndInfo(replayLoadHandle, outGameTimeElapsed);
+	if (ok)
+	{
+		lastLoadedGameTimeElapsed = outGameTimeElapsed;
+	}
+	return ok;
+}
+
+uint32_t NETreplayLastLoadedGameTimeElapsed()
+{
+	return lastLoadedGameTimeElapsed;
 }

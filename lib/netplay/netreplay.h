@@ -21,6 +21,7 @@
 #define _NETREPLAY_H
 
 #include "lib/framework/frame.h"
+#include "lib/framework/physfs_ext.h"
 
 #include "netplay.h"
 
@@ -32,5 +33,10 @@ void NETreplaySaveNetMessage(NetMessage const *message, uint8_t player);
 bool NETreplayLoadStart(std::string const &filename, ReplayOptionsHandler& optionsHandler, uint32_t& output_replayFormatVer);
 bool NETreplayLoadNetMessage(std::unique_ptr<NetMessage> &message, uint8_t &player);
 bool NETreplayLoadStop();
+
+// Footer is `uint32 size | json | uint32 size`. JSON key gameTimeElapsed is gameTime (ms).
+bool NETreplayReadEndInfo(PHYSFS_file *f, uint32_t& outGameTimeElapsed);
+bool NETreplayReadLoadedEndInfo(uint32_t& outGameTimeElapsed);
+uint32_t NETreplayLastLoadedGameTimeElapsed();
 
 #endif // _NETREPLAY_H

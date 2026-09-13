@@ -24,6 +24,7 @@
 #include "loop.h"
 #include "sim_clock.h"
 
+#include <algorithm>
 #include <variant>
 
 ReplaySession& ReplaySession::instance()
@@ -64,6 +65,11 @@ bool ReplaySession::isPaused() const
 size_t ReplaySession::fastForwardTicks() const
 {
 	return getMaxFastForwardTicks();
+}
+
+uint32_t ReplaySession::timelineDurationMs() const
+{
+	return std::max(durationMs_, playheadMs());
 }
 
 void ReplaySession::syncClockModeFromPlayback()
@@ -154,10 +160,11 @@ std::string formatReplayTime(uint32_t timeMs, bool useHours)
 
 std::string formatReplayClockLabel(uint32_t playheadMs, uint32_t durationMs)
 {
-	const bool useHours = durationMs >= 3600u * GAME_TICKS_PER_SEC;
-	if (durationMs == 0)
+	const uint32_t totalMs = std::max(durationMs, playheadMs);
+	if (totalMs == 0)
 	{
-		return astringf("%s / --:--", formatReplayTime(playheadMs, false).c_str());
+		return "--:-- / --:--";
 	}
-	return astringf("%s / %s", formatReplayTime(playheadMs, useHours).c_str(), formatReplayTime(durationMs, useHours).c_str());
+	const bool useHours = totalMs >= 3600u * GAME_TICKS_PER_SEC;
+	return astringf("%s / %s", formatReplayTime(playheadMs, useHours).c_str(), formatReplayTime(totalMs, useHours).c_str());
 }

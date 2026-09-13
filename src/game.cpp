@@ -44,6 +44,7 @@
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/ivis_opengl/textdraw.h"
 #include "lib/netplay/netplay.h"
+#include "lib/netplay/netreplay.h"
 #include "lib/sound/audio.h"
 #include "lib/sound/audio_id.h"
 #include "modding.h"
@@ -2365,7 +2366,7 @@ LoadingTask<> loadGameInit(ResourceLoadingController& controller, const GameLoad
 		{
 			co_return load_fail();
 		}
-		ReplaySession::instance().attachAfterReplayLoad(0);
+		ReplaySession::instance().attachAfterReplayLoad(NETreplayLastLoadedGameTimeElapsed());
 
 		bMultiPlayer = true;
 		bMultiMessages = true;
