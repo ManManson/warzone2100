@@ -25,11 +25,22 @@
 #define __INCLUDED_SRC_LOOP_H__
 
 #include "lib/framework/frame.h"
+#include "lib/gamelib/gtime.h"
 #include "levels.h"
+#include "sim_clock.h"
 
 #include <nonstd/optional.hpp>
 using nonstd::optional;
 using nonstd::nullopt;
+
+struct TickResult
+{
+	bool didUpdate = false;
+	GameTimeUpdateResult timeResult = GameTimeUpdateResult::NO_UPDATE;
+};
+
+TickResult simulateOneGameTick(TickAdvanceKind kind);
+bool inGameWorldDrawFrozen();
 
 enum GAMECODE
 {

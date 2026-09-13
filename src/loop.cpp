@@ -43,6 +43,7 @@
 #include "lib/netplay/netplay.h"
 
 #include "loop.h"
+#include "sim_clock.h"
 #include "gamestate_serialize.h"
 #include "movebench.h"
 #include "pathbench.h"
@@ -666,66 +667,103 @@ void wz_emscripten_did_finish_render(unsigned int browserRenderDelta)
 }
 #endif
 
-/* The main game loop */
-GAMECODE gameLoop()
+static size_t numForcedUpdatesLastCall = 0;
+static bool previousUpdateWasRender = false;
+static size_t numRegularUpdatesTicks = 0;
+static size_t numFastForwardTicks = 0;
+
+bool inGameWorldDrawFrozen()
 {
-	WZ_PROFILE_SCOPE(gameLoop);
-	static uint32_t lastFlushTime = 0;
+	return gameUpdatePaused();
+}
 
-	static size_t numForcedUpdatesLastCall = 0;
-	static bool previousUpdateWasRender = false;
+TickResult simulateOneGameTick(TickAdvanceKind kind)
+{
+	// Receive NET_BLAH messages.
+	// Receive GAME_BLAH messages, and if it's time, process exactly as many GAME_BLAH messages as required to be able to tick the gameTime.
+	executeFnAndProcessScriptQueuedRemovals([]() { recvMessage(); });
 
-	size_t numRegularUpdatesTicks = 0;
-	size_t numFastForwardTicks = 0;
-	gameTimeUpdateBegin();
-	while (true)
+	bool forceTryGameTickUpdate = false;
+	if (kind == TickAdvanceKind::Forced)
 	{
-		// Receive NET_BLAH messages.
-		// Receive GAME_BLAH messages, and if it's time, process exactly as many GAME_BLAH messages as required to be able to tick the gameTime.
-		executeFnAndProcessScriptQueuedRemovals([]() { recvMessage(); });
-
-		bool selectedPlayerIsSpectator = bMultiPlayer && NetPlay.players[selectedPlayer].isSpectator;
-		bool multiplayerHostDisconnected = bMultiPlayer && !NetPlay.isHostAlive && NetPlay.bComms && !NetPlay.isHost; // do not fast-forward after the host has disconnected
-		bool canFastForwardGameTime =
+		if (!checkPlayerGameTime(NET_ALL_PLAYERS))
+		{
+			return {};
+		}
+		forceTryGameTickUpdate = true;
+	}
+	else
+	{
+		const bool selectedPlayerIsSpectator = bMultiPlayer && NetPlay.players[selectedPlayer].isSpectator;
+		const bool multiplayerHostDisconnected = bMultiPlayer && !NetPlay.isHostAlive && NetPlay.bComms && !NetPlay.isHost; // do not fast-forward after the host has disconnected
+		const bool canFastForwardGameTime =
 			selectedPlayerIsSpectator			// current player must be a spectator
 			&& !NetPlay.isHost					// AND NOT THE HOST (!)
 			&& !multiplayerHostDisconnected		// and the multiplayer host must not be disconnected ("host quit")
 			&& numFastForwardTicks < maxFastForwardTicks // and the number of forced updates this call of gameLoop must not exceed the max allowed
 			&& checkPlayerGameTime(NET_ALL_PLAYERS);	// and there must be a new game tick available to process from all players
 
-		bool forceTryGameTickUpdate = canFastForwardGameTime && ((!fastForwardTicksFixedToNormalTickRate && numForcedUpdatesLastCall > 0) || numRegularUpdatesTicks > 0) && NETgameIsBehindPlayersByAtLeast(4);
+		forceTryGameTickUpdate = canFastForwardGameTime && ((!fastForwardTicksFixedToNormalTickRate && numForcedUpdatesLastCall > 0) || numRegularUpdatesTicks > 0) && NETgameIsBehindPlayersByAtLeast(4);
+	}
 
-		// Update gameTime and graphicsTime, and corresponding deltas. Note that gameTime and graphicsTime pause, if we aren't getting our GAME_GAME_TIME messages.
-		auto timeUpdateResult = gameTimeUpdate(renderBudget > 0 || previousUpdateWasRender, forceTryGameTickUpdate);
+	const bool mayUpdate = (kind == TickAdvanceKind::Forced) || renderBudget > 0 || previousUpdateWasRender;
 
-		if (timeUpdateResult == GameTimeUpdateResult::GAME_TIME_UPDATED_FORCED)
-		{
-			numFastForwardTicks++;
-			// FUTURE TODO: Could trigger the display of a UI icon here (if (numFastForwardTicks == maxFastForwardTicks)?) to indicate that the game is fast-forwarding substantially
-		}
-		else if (timeUpdateResult == GameTimeUpdateResult::GAME_TIME_UPDATED)
-		{
-			numRegularUpdatesTicks++;
-		}
+	// Update gameTime and graphicsTime, and corresponding deltas. Note that gameTime and graphicsTime pause, if we aren't getting our GAME_GAME_TIME messages.
+	auto timeUpdateResult = gameTimeUpdate(mayUpdate, forceTryGameTickUpdate);
 
-		if (deltaGameTime == 0)
-		{
-			break;  // Not doing a game state update.
-		}
+	if (timeUpdateResult == GameTimeUpdateResult::GAME_TIME_UPDATED_FORCED)
+	{
+		numFastForwardTicks++;
+		// FUTURE TODO: Could trigger the display of a UI icon here (if (numFastForwardTicks == maxFastForwardTicks)?) to indicate that the game is fast-forwarding substantially
+	}
+	else if (timeUpdateResult == GameTimeUpdateResult::GAME_TIME_UPDATED)
+	{
+		numRegularUpdatesTicks++;
+	}
 
-		ASSERT(!paused && !gameUpdatePaused(), "Nonsensical pause values.");
+	if (deltaGameTime == 0)
+	{
+		return {false, timeUpdateResult};  // Not doing a game state update.
+	}
 
-		unsigned before = wzGetTicks();
-		syncDebug("Begin game state update, gameTime = %d", gameTime);
-		gameStateUpdate();
-		syncDebug("End game state update, gameTime = %d", gameTime);
-		unsigned after = wzGetTicks();
+	ASSERT(!paused && !gameUpdatePaused(), "Nonsensical pause values.");
 
+	unsigned before = wzGetTicks();
+	syncDebug("Begin game state update, gameTime = %d", gameTime);
+	gameStateUpdate();
+	syncDebug("End game state update, gameTime = %d", gameTime);
+	unsigned after = wzGetTicks();
+
+	if (kind == TickAdvanceKind::WallClock)
+	{
 		renderBudget -= (after - before) * renderFraction.n;
 		renderBudget = std::max(renderBudget, (-updateFraction * 500).floor());
 		previousUpdateWasRender = false;
+	}
 
-		ASSERT(deltaGraphicsTime == 0, "Shouldn't update graphics and game state at once.");
+	ASSERT(deltaGraphicsTime == 0, "Shouldn't update graphics and game state at once.");
+	return {true, timeUpdateResult};
+}
+
+/* The main game loop */
+GAMECODE gameLoop()
+{
+	WZ_PROFILE_SCOPE(gameLoop);
+	static uint32_t lastFlushTime = 0;
+
+	numRegularUpdatesTicks = 0;
+	numFastForwardTicks = 0;
+	gameTimeUpdateBegin();
+	size_t ticksSoFar = 0;
+	const uint32_t frameStart = wzGetTicks();
+	auto& clock = SimClock::instance();
+	while (clock.shouldTickThisFrame(ticksSoFar, wzGetTicks() - frameStart))
+	{
+		if (!simulateOneGameTick(clock.tickKind()).didUpdate)
+		{
+			break;
+		}
+		++ticksSoFar;
 	}
 	numForcedUpdatesLastCall = numFastForwardTicks;
 

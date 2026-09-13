@@ -66,6 +66,7 @@
 #include "text.h"
 #include "message.h"
 #include "hci.h"
+#include "replay_session.h"
 #include "display.h"
 #include "display3d.h"
 #include "map.h"
@@ -2364,6 +2365,7 @@ LoadingTask<> loadGameInit(ResourceLoadingController& controller, const GameLoad
 		{
 			co_return load_fail();
 		}
+		ReplaySession::instance().attachAfterReplayLoad(0);
 
 		bMultiPlayer = true;
 		bMultiMessages = true;

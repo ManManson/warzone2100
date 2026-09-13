@@ -101,6 +101,7 @@
 #include "screens/gamepadlayoutscreen.h"
 #include "input/gamepadcursor.h"
 #include "qtscript.h"
+#include "replay_session.h"
 #include "research.h"
 #include "seqdisp.h"
 #include "warzoneconfig.h"
@@ -1086,6 +1087,7 @@ static void stopGameLoop(bool onWzShutdown)
 	WZGameReplayOptionsHandler replayOptions;
 	NETreplaySaveStop(replayOptions);
 	NETshutdownReplay();
+	ReplaySession::instance().shutdown();
 
 	if (gameLoopStatus != GAMECODE_NEWLEVEL)
 	{
