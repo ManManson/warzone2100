@@ -127,8 +127,11 @@ private:
 	void layoutContent();
 
 	std::shared_ptr<ReplayTimelineWidget> timeline;
+	std::shared_ptr<W_REPLAY_CONTROL_BUTTON> startButton;
+	std::shared_ptr<W_REPLAY_CONTROL_BUTTON> skipBackButton;
 	std::shared_ptr<W_REPLAY_CONTROL_BUTTON> pauseButton;
 	std::shared_ptr<W_REPLAY_CONTROL_BUTTON> playButton;
+	std::shared_ptr<W_REPLAY_CONTROL_BUTTON> skipForwardButton;
 	std::shared_ptr<W_REPLAY_CONTROL_BUTTON> fastForwardButton;
 	std::shared_ptr<W_LABEL> timeLabel;
 	UDWORD lastUpdateTime = 0;
@@ -151,6 +154,20 @@ std::shared_ptr<ReplayTransportBar> ReplayTransportBar::make()
 	result->timeline = ReplayTimelineWidget::make();
 	result->attach(result->timeline);
 
+	result->startButton = result->makeReplayActionButton("images/replay/skip_start.png");
+	result->startButton->setTip(_("Rewind to start"));
+	result->attach(result->startButton);
+	result->startButton->addOnClickHandler([](W_BUTTON&) {
+		ReplaySession::instance().dispatch(CmdSeekToStart{});
+	});
+
+	result->skipBackButton = result->makeReplayActionButton("images/replay/skip_backward.png");
+	result->skipBackButton->setTip(_("Back 15 seconds"));
+	result->attach(result->skipBackButton);
+	result->skipBackButton->addOnClickHandler([](W_BUTTON&) {
+		ReplaySession::instance().dispatch(CmdSeekRelative{-static_cast<int32_t>(REPLAY_SKIP_STEP_MS)});
+	});
+
 	result->pauseButton = result->makeReplayActionButton("images/replay/pause.png");
 	result->pauseButton->setTip(_("Pause"));
 	result->attach(result->pauseButton);
@@ -163,6 +180,13 @@ std::shared_ptr<ReplayTransportBar> ReplayTransportBar::make()
 	result->attach(result->playButton);
 	result->playButton->addOnClickHandler([](W_BUTTON&) {
 		ReplaySession::instance().dispatch(CmdPlay{});
+	});
+
+	result->skipForwardButton = result->makeReplayActionButton("images/replay/skip_forward.png");
+	result->skipForwardButton->setTip(_("Forward 15 seconds"));
+	result->attach(result->skipForwardButton);
+	result->skipForwardButton->addOnClickHandler([](W_BUTTON&) {
+		ReplaySession::instance().dispatch(CmdSeekRelative{+static_cast<int32_t>(REPLAY_SKIP_STEP_MS)});
 	});
 
 	result->fastForwardButton = result->makeReplayActionButton("images/replay/fast_forward.png");
@@ -233,7 +257,14 @@ void ReplayTransportBar::refreshButtonStates()
 		fastForwardButton->outline = W_REPLAY_CONTROL_BUTTON::OutlineState::None;
 	}
 
-	timeLabel->setString(WzString::fromUtf8(formatReplayClockLabel(session.playheadMs(), session.timelineDurationMs())));
+	const uint32_t playhead = session.playheadMs();
+	const uint32_t duration = session.timelineDurationMs();
+	const bool atStart = playhead < REPLAY_UI_QUANTUM_MS;
+	startButton->setState(atStart ? WBUT_DISABLE : 0);
+	skipBackButton->setState(atStart ? WBUT_DISABLE : 0);
+	skipForwardButton->setState((playhead + REPLAY_SKIP_STEP_MS >= duration) ? WBUT_DISABLE : 0);
+
+	timeLabel->setString(WzString::fromUtf8(formatReplayClockLabel(playhead, duration)));
 	lastUpdateTime = realTime;
 	layoutContent();
 }
@@ -245,11 +276,17 @@ void ReplayTransportBar::layoutContent()
 	timeline->setGeometry(contentX, REPLAY_TRANSPORT_PADDING, contentW, REPLAY_TIMELINE_HEIGHT);
 	const int buttonsY = REPLAY_TRANSPORT_PADDING + REPLAY_TIMELINE_HEIGHT + REPLAY_TIMELINE_SPACING;
 
-	pauseButton->setGeometry(contentX, buttonsY, pauseButton->width(), pauseButton->height());
-	playButton->setGeometry(pauseButton->x() + pauseButton->width() + REPLAY_ACTION_BUTTONS_SPACING,
-		buttonsY, playButton->width(), playButton->height());
-	fastForwardButton->setGeometry(playButton->x() + playButton->width() + REPLAY_ACTION_BUTTONS_SPACING,
-		buttonsY, fastForwardButton->width(), fastForwardButton->height());
+	auto placeAfter = [buttonsY](const std::shared_ptr<W_REPLAY_CONTROL_BUTTON>& button,
+		const std::shared_ptr<W_REPLAY_CONTROL_BUTTON>& previous, int fallbackX) {
+		const int x = previous ? previous->x() + previous->width() + REPLAY_ACTION_BUTTONS_SPACING : fallbackX;
+		button->setGeometry(x, buttonsY, button->width(), button->height());
+	};
+	startButton->setGeometry(contentX, buttonsY, startButton->width(), startButton->height());
+	placeAfter(skipBackButton, startButton, contentX);
+	placeAfter(pauseButton, skipBackButton, contentX);
+	placeAfter(playButton, pauseButton, contentX);
+	placeAfter(skipForwardButton, playButton, contentX);
+	placeAfter(fastForwardButton, skipForwardButton, contentX);
 
 	const int labelHeight = iV_GetTextLineSize(font_regular);
 	const int labelY = buttonsY + (REPLAY_ACTION_BUTTONS_HEIGHT - labelHeight) / 2;

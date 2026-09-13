@@ -114,6 +114,9 @@ data/base/images/notifications/user_questionmark.png
 data/base/images/replay/fast_forward.png
 data/base/images/replay/pause.png
 data/base/images/replay/play.png
+data/base/images/replay/skip_backward.png
+data/base/images/replay/skip_forward.png
+data/base/images/replay/skip_start.png
 	- CC BY 4.0 - Font Awesome Free by @fontawesome (https://fontawesome.com/license/free)
 data/mp/multiplay/maps/2c-DustyMaze/*
 data/mp/multiplay/maps/4c-DustyMaze-2v2/*
