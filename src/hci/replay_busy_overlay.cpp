@@ -18,11 +18,16 @@
 */
 
 #include "replay_busy_overlay.h"
+#include "replay_controller.h"
 
 #include "../replay_session.h"
+#include "../sim_clock.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/i18n.h"
+#include "lib/framework/string_ext.h"
+#include "lib/gamelib/gtime.h"
+#include "lib/ivis_opengl/pieblitfunc.h"
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/ivis_opengl/textdraw.h"
 
@@ -41,7 +46,7 @@ std::shared_ptr<ReplayBusyOverlay> ReplayBusyOverlay::make()
 	overlay->setCalcLayout(LAMBDA_CALCLAYOUT_SIMPLE({
 		psWidget->setGeometry(0, 0, screenWidth, screenHeight);
 	}));
-	overlay->backgroundColor = pal_RGBA(0, 0, 0, 160);
+	overlay->backgroundColor = pal_RGBA(0, 0, 0, 0);
 	overlay->setTransparentToMouse(true);
 	overlay->swallowsInput = false;
 	overlay->onCancelPressed = []() {
@@ -52,15 +57,26 @@ std::shared_ptr<ReplayBusyOverlay> ReplayBusyOverlay::make()
 
 void ReplayBusyOverlay::display(int xOffset, int yOffset)
 {
-	if (!ReplaySession::instance().isBusy())
+	if (!SimClock::instance().isCatchingUp())
 	{
 		return;
 	}
 
-	W_FULLSCREENOVERLAY_CLICKFORM::display(xOffset, yOffset);
+	if (!pie_BlitSwapchainFreeze())
+	{
+		pie_UniTransBoxFill(xOffset, yOffset, xOffset + width(), yOffset + height(), pal_RGBA(0, 0, 0, 255));
+	}
+	pie_UniTransBoxFill(xOffset, yOffset, xOffset + width(), yOffset + height(), pal_RGBA(0, 0, 0, 120));
 
-	const char *text = _("Loading...");
-	const int textW = iV_GetTextWidth(text, font_large);
+	const char *base = _("Loading");
+	static const char *suffix[] = { "", ".", "..", "..." };
+	const unsigned phase = (realTime / GAME_TICKS_PER_SEC) % 4;
+	char text[256];
+	ssprintf(text, "%s%s", base, suffix[phase]);
+
+	char measure[256];
+	ssprintf(measure, "%s%s", base, suffix[3]);
+	const int textW = iV_GetTextWidth(measure, font_large);
 	const int textH = iV_GetTextLineSize(font_large);
 	iV_SetTextColour(WZCOL_TEXT_BRIGHT);
 	iV_DrawText(text,
@@ -71,6 +87,7 @@ void ReplayBusyOverlay::display(int xOffset, int yOffset)
 
 void ReplayBusyOverlay::run(W_CONTEXT *psContext)
 {
+	syncReplayTransportBarVisibility();
 	const bool busy = ReplaySession::instance().isBusy();
 	setTransparentToMouse(!busy);
 	swallowsInput = busy;

@@ -22,4 +22,5 @@
 bool createReplayControllerOverlay();
 void destroyReplayControllerOverlay();
 void replayOverlayScreenSizeDidChange();
+void syncReplayTransportBarVisibility();
 int replayTransportReservedBottom();

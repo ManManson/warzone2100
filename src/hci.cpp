@@ -47,6 +47,7 @@
 #include "lib/widget/bar.h"
 #include "lib/widget/button.h"
 #include "lib/widget/editbox.h"
+#include "lib/widget/widget.h"
 #include "screens/helpscreen.h"
 #include "cheat.h"
 #include "console.h"
@@ -63,6 +64,7 @@
 #include "loadsave.h"
 #include "loop.h"
 #include "order.h"
+#include "sim_clock.h"
 #include "mission.h"
 #include "multimenu.h"
 #include "multiplay.h"
@@ -1640,7 +1642,7 @@ void intDisplayWidgets()
 	}
 
 	bool desiredRadarVisibility = false;
-	if (!gameUpdatePaused())
+	if (!inGameWorldDrawFrozen())
 	{
 		desiredRadarVisibility = radarVisible();
 
@@ -1654,6 +1656,12 @@ void intDisplayWidgets()
 	if (radarWidget && (desiredRadarVisibility != radarWidget->visible()))
 	{
 		(desiredRadarVisibility) ? radarWidget->show() : radarWidget->hide();
+	}
+
+	if (SimClock::instance().presentation() == PresentationKind::OverlayOnly)
+	{
+		widgDisplayOverlayScreens();
+		return;
 	}
 
 	widgDisplayScreen(psWScreen);

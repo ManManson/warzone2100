@@ -3933,6 +3933,7 @@ void VkRoot::handleWindowSizeChange(unsigned int oldWidth, unsigned int oldHeigh
 	(void)oldHeight;
 	(void)newWidth;
 	(void)newHeight;
+	releaseSwapchainFreeze();
 	_screenFrameCoordinator.markDrawableSizeDirty();
 	// Do not recreate swapchain here (causes validation issues on some screens).
 	// finishScreenFrame() detects the mismatch and recreates safely.
@@ -4150,6 +4151,7 @@ void VkRoot::destroySwapchainAndSwapchainSpecificStuff(bool doDestroySwapchain)
 	finalizeActiveRecording();
 	waitForAllIdle();
 	_screenshotReadback.shutdown(vkDynLoader);
+	releaseSwapchainFreeze();
 	destroyDynamicRenderPasses();
 	flushDeferredFramebufferDeletes();
 
@@ -6937,6 +6939,15 @@ void VkRoot::sealDrawCommandBufferForPresent()
 
 	writeGpuTimingEndIfOpen(drawCmdBuffer);
 
+	if (_swapchainFreezeRequested && swapchainColor
+		&& _frameLayoutTracker.swapchainTouchedThisFrame()
+		&& currentSwapchainIndex < swapchainImages.size())
+	{
+		recordSwapchainFreezeCopy(drawCmdBuffer, swapchainColor, swapchainImages[currentSwapchainIndex]);
+		_swapchainFreezeRequested = false;
+		_swapchainFreezeCopiedThisFrame = true;
+	}
+
 	if (_screenshotReadback.hasAwaitingRecord() && swapchainColor
 		&& _frameLayoutTracker.swapchainTouchedThisFrame())
 	{
@@ -6996,6 +7007,12 @@ bool VkRoot::canRecordSwapchainDraws() const
 void VkRoot::finishScreenFrame()
 {
 	_screenFrameCoordinator.finishFrame();
+	if (_swapchainFreezeCopiedThisFrame)
+	{
+		// OverlayOnly samples the freeze next frame; wait so the blit is visible to that submit.
+		waitForAllIdle();
+		_swapchainFreezeCopiedThisFrame = false;
+	}
 }
 
 bool VkRoot::buildPassLayoutKey(gfx_api::vk::PassLayoutKey& out, const gfx_api::RenderPassDesc& pass,
@@ -7701,6 +7718,127 @@ bool VkRoot::getScreenshot(std::function<void (std::unique_ptr<iV_Image>)> callb
 		currentSwapchainIndex,
 		static_cast<uint32_t>(buffering_mechanism::get_current_frame_num()),
 		vkDynLoader);
+}
+
+bool VkRoot::requestSwapchainFreezeCapture()
+{
+	if (!dev || swapchainSize.width <= 1 || swapchainSize.height <= 1)
+	{
+		return false;
+	}
+	_swapchainFreezeRequested = true;
+	return true;
+}
+
+gfx_api::texture* VkRoot::swapchainFreezeTexture()
+{
+	return _swapchainFreezeTexture;
+}
+
+void VkRoot::releaseSwapchainFreeze()
+{
+	_swapchainFreezeRequested = false;
+	_swapchainFreezeCopiedThisFrame = false;
+	if (_swapchainFreezeTexture)
+	{
+		delete _swapchainFreezeTexture;
+		_swapchainFreezeTexture = nullptr;
+	}
+}
+
+bool VkRoot::ensureSwapchainFreezeTexture(uint32_t width, uint32_t height)
+{
+	if (_swapchainFreezeTexture
+		&& _swapchainFreezeTexture->tex_width == width
+		&& _swapchainFreezeTexture->tex_height == height)
+	{
+		return true;
+	}
+	if (_swapchainFreezeTexture)
+	{
+		delete _swapchainFreezeTexture;
+		_swapchainFreezeTexture = nullptr;
+	}
+	try
+	{
+		_swapchainFreezeTexture = new VkTexture(*this, 1, width, height,
+			gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8, "<swapchain_freeze>");
+	}
+	catch (const std::exception& e)
+	{
+		debug(LOG_ERROR, "Failed to allocate swapchain freeze texture: %s", e.what());
+		_swapchainFreezeTexture = nullptr;
+		return false;
+	}
+	return _swapchainFreezeTexture != nullptr;
+}
+
+void VkRoot::recordSwapchainFreezeCopy(vk::CommandBuffer drawCmd, gfx_api::abstract_texture* swapchainColor, vk::Image swapchainImage)
+{
+	const uint32_t width = swapchainSize.width;
+	const uint32_t height = swapchainSize.height;
+	if (width == 0 || height == 0 || !ensureSwapchainFreezeTexture(width, height))
+	{
+		return;
+	}
+
+	vk::ImageLayout oldLayout = getImageLayout(swapchainColor);
+	if (oldLayout == vk::ImageLayout::eUndefined || oldLayout == vk::ImageLayout::ePresentSrcKHR)
+	{
+		oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+	}
+
+	transitionImageLayout(drawCmd, swapchainColor,
+		oldLayout, vk::ImageLayout::eTransferSrcOptimal,
+		vk::PipelineStageFlagBits::eColorAttachmentOutput,
+		vk::PipelineStageFlagBits::eTransfer,
+		vk::AccessFlagBits::eColorAttachmentWrite,
+		vk::AccessFlagBits::eTransferRead);
+
+	vk::ImageLayout freezeOld = getImageLayout(_swapchainFreezeTexture);
+	vk::AccessFlags freezeSrcAccess = (freezeOld == vk::ImageLayout::eShaderReadOnlyOptimal)
+		? vk::AccessFlags(vk::AccessFlagBits::eShaderRead)
+		: vk::AccessFlags{};
+	vk::PipelineStageFlags freezeSrcStage = (freezeOld == vk::ImageLayout::eShaderReadOnlyOptimal)
+		? vk::PipelineStageFlags(vk::PipelineStageFlagBits::eFragmentShader)
+		: vk::PipelineStageFlags(vk::PipelineStageFlagBits::eTopOfPipe);
+
+	transitionImageLayout(drawCmd, _swapchainFreezeTexture,
+		freezeOld, vk::ImageLayout::eTransferDstOptimal,
+		freezeSrcStage,
+		vk::PipelineStageFlagBits::eTransfer,
+		freezeSrcAccess,
+		vk::AccessFlagBits::eTransferWrite);
+
+	vk::ImageBlit blit{};
+	blit.srcSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
+	blit.srcSubresource.mipLevel = 0;
+	blit.srcSubresource.baseArrayLayer = 0;
+	blit.srcSubresource.layerCount = 1;
+	blit.dstSubresource = blit.srcSubresource;
+	blit.srcOffsets[0] = vk::Offset3D(0, 0, 0);
+	blit.srcOffsets[1] = vk::Offset3D(static_cast<int32_t>(width), static_cast<int32_t>(height), 1);
+	// Flip Y so the freeze texture matches CPU-uploaded UI orientation (v=0 at the top).
+	blit.dstOffsets[0] = vk::Offset3D(0, static_cast<int32_t>(height), 0);
+	blit.dstOffsets[1] = vk::Offset3D(static_cast<int32_t>(width), 0, 1);
+
+	drawCmd.blitImage(swapchainImage, vk::ImageLayout::eTransferSrcOptimal,
+		_swapchainFreezeTexture->object, vk::ImageLayout::eTransferDstOptimal,
+		1, &blit, vk::Filter::eNearest, vkDynLoader);
+
+	transitionImageLayout(drawCmd, _swapchainFreezeTexture,
+		vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+		vk::PipelineStageFlagBits::eTransfer,
+		vk::PipelineStageFlagBits::eFragmentShader,
+		vk::AccessFlagBits::eTransferWrite,
+		vk::AccessFlagBits::eShaderRead);
+
+	transitionImageLayout(drawCmd, swapchainColor,
+		vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eColorAttachmentOptimal,
+		vk::PipelineStageFlagBits::eTransfer,
+		vk::PipelineStageFlagBits::eColorAttachmentOutput,
+		vk::AccessFlagBits::eTransferRead,
+		vk::AccessFlagBits::eColorAttachmentWrite);
 }
 
 const size_t& VkRoot::current_FrameNum() const

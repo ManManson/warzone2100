@@ -393,6 +393,9 @@ WidgetTriggers const &widgRunScreen(const std::shared_ptr<W_SCREEN> &psScreen);
  */
 void widgDisplayScreen(const std::shared_ptr<W_SCREEN> &psScreen);
 
+/** Display overlay screens only (no main `psScreen` form). */
+void widgDisplayOverlayScreens();
+
 
 /** Set the current audio callback function and audio id's. */
 void WidgSetAudio(WIDGET_AUDIOCALLBACK Callback, SWORD HilightID, SWORD ClickedID, SWORD ErrorID);

@@ -3472,6 +3472,29 @@ bool gl_context::getScreenshot(std::function<void (std::unique_ptr<iV_Image>)> c
 	return true;
 }
 
+bool gl_context::requestSwapchainFreezeCapture()
+{
+	const auto dims = getDrawableDimensions();
+	if (dims.first == 0 || dims.second == 0)
+	{
+		return false;
+	}
+	_swapchainFreezeRequested = true;
+	return true;
+}
+
+gfx_api::texture* gl_context::swapchainFreezeTexture()
+{
+	return _swapchainFreezeTexture;
+}
+
+void gl_context::releaseSwapchainFreeze()
+{
+	_swapchainFreezeRequested = false;
+	delete _swapchainFreezeTexture;
+	_swapchainFreezeTexture = nullptr;
+}
+
 // MARK: khr_callback
 
 #if defined(WZ_GL_KHR_DEBUG_SUPPORTED)
@@ -4594,6 +4617,49 @@ void gl_context::finishScreenFrame()
 		gpuTimingFrameOpen = false;
 	}
 #endif
+
+	if (_swapchainFreezeRequested)
+	{
+		_swapchainFreezeRequested = false;
+		const auto dims = getDrawableDimensions();
+		if (dims.first > 0 && dims.second > 0)
+		{
+			if (!_swapchainFreezeTexture
+				|| _swapchainFreezeTexture->get_dimensions().width != dims.first
+				|| _swapchainFreezeTexture->get_dimensions().height != dims.second)
+			{
+				delete _swapchainFreezeTexture;
+				_swapchainFreezeTexture = create_texture(1, dims.first, dims.second,
+					gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8, "<swapchain_freeze>");
+			}
+			if (auto* glTex = dynamic_cast<gl_texture*>(_swapchainFreezeTexture))
+			{
+				GLint prevDrawFBO = 0;
+				GLint prevReadFBO = 0;
+				glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevDrawFBO);
+				glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevReadFBO);
+
+				GLuint captureFBO = 0;
+				glGenFramebuffers(1, &captureFBO);
+				glBindFramebuffer(GL_DRAW_FRAMEBUFFER, captureFBO);
+				glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+					static_cast<GLuint>(glTex->id()), 0);
+				glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+				glBlitFramebuffer(0, 0, static_cast<GLint>(dims.first), static_cast<GLint>(dims.second),
+					0, 0, static_cast<GLint>(dims.first), static_cast<GLint>(dims.second),
+					GL_COLOR_BUFFER_BIT, GL_NEAREST);
+				glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(glTex->id()));
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+				glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(prevDrawFBO));
+				glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(prevReadFBO));
+				glDeleteFramebuffers(1, &captureFBO);
+				glFinish();
+			}
+		}
+	}
 
 	if (frameHasDrawCommands)
 	{
@@ -6132,6 +6198,7 @@ bool gl_context::initCheckBorderClampSupport()
 
 void gl_context::handleWindowSizeChange(unsigned int oldWidth, unsigned int oldHeight, unsigned int newWidth, unsigned int newHeight)
 {
+	releaseSwapchainFreeze();
 	markScreenGeometryDirty();
 
 	// Update the viewport to use the new *drawable* size (which may be greater than the new window size
@@ -6281,6 +6348,7 @@ bool gl_context::shouldDraw()
 
 void gl_context::shutdown()
 {
+	releaseSwapchainFreeze();
 	for (auto& allocator : uniformBlockAllocators)
 	{
 		allocator.destroy();

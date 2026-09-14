@@ -194,6 +194,8 @@ static GAMECODE renderLoop()
 			sendQueuedDroidInfo();
 		}
 
+		const bool overlayOnly = SimClock::instance().presentation() == PresentationKind::OverlayOnly;
+
 		//don't process the object lists if paused or about to quit to the front end
 		if (!gameUpdatePaused() && intRetVal != INT_QUIT)
 		{
@@ -209,9 +211,12 @@ static GAMECODE renderLoop()
 			checkFactoryFlags();
 #endif
 
-			//handles callbacks for positioning of DP's
-			process3DBuilding();
-			processDeliveryRepos();
+			if (!overlayOnly)
+			{
+				//handles callbacks for positioning of DP's
+				process3DBuilding();
+				processDeliveryRepos();
+			}
 
 			//ajl. get the incoming netgame messages and process them.
 			// FIXME Previous comment is deprecated. multiPlayerLoop does some other weird stuff, but not that anymore.
@@ -238,7 +243,7 @@ static GAMECODE renderLoop()
 			/* Process all the console messages */
 			updateConsoleMessages();
 		}
-		if (!scrollPaused() && dragBox3D.status != DRAG_DRAGGING && intMode != INT_INGAMEOP)
+		if (!overlayOnly && !scrollPaused() && dragBox3D.status != DRAG_DRAGGING && intMode != INT_INGAMEOP)
 		{
 			displayRenderLoop();
 		}
@@ -248,7 +253,8 @@ static GAMECODE renderLoop()
 		// Using software cursors (when on) for these menus due to a bug in SDL's SDL_ShowCursor()
 		wzSetCursor(CURSOR_DEFAULT);
 
-		if (!scrollPaused() && dragBox3D.status != DRAG_DRAGGING)
+		if (!scrollPaused() && dragBox3D.status != DRAG_DRAGGING
+		    && SimClock::instance().presentation() != PresentationKind::OverlayOnly)
 		{
 			displayRenderLoop();
 		}
@@ -798,6 +804,10 @@ GAMECODE gameLoop()
 		before = wzGetTicks();
 		renderReturn = renderLoop();
 		pie_ScreenFrameRenderEnd(); // must happen here for proper renderBudget calculation
+		if (ReplaySession::active())
+		{
+			ReplaySession::instance().commitPendingSeek();
+		}
 		after = wzGetTicks();
 	});
 

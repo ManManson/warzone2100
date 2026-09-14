@@ -698,6 +698,11 @@ namespace gfx_api
 		virtual std::map<std::string, std::string> getBackendGameInfo() = 0;
 		virtual const std::string& getFormattedRendererInfoString() const = 0;
 		virtual bool getScreenshot(std::function<void (std::unique_ptr<iV_Image>)> callback) = 0;
+		/// Queue a GPU copy of the current swapchain color into a persistent freeze texture.
+		/// The copy is recorded at frame seal (after InGameUI Store, before present).
+		virtual bool requestSwapchainFreezeCapture() { return false; }
+		virtual texture* swapchainFreezeTexture() { return nullptr; }
+		virtual void releaseSwapchainFreeze() {}
 		virtual void handleWindowSizeChange(unsigned int oldWidth, unsigned int oldHeight, unsigned int newWidth, unsigned int newHeight) = 0;
 		virtual std::pair<uint32_t, uint32_t> getDrawableDimensions() = 0;
 		virtual bool isYAxisInverted() const = 0;

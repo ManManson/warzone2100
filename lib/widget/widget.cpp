@@ -1815,6 +1815,26 @@ void widgDisplayScreen(const std::shared_ptr<W_SCREEN> &psScreen)
 	}
 
 	// Always overlays on-top (i.e. draw them last)
+	widgDisplayOverlayScreens();
+
+	if (debugBoundingBoxes && !skipDrawing)
+	{
+		debugBoundingBoxesOnly = true;
+		psScreen->psForm->displayRecursive();
+		debugBoundingBoxesOnly = false;
+	}
+}
+
+void widgDisplayOverlayScreens()
+{
+	bool skipDrawing = !gfx_api::context::get().shouldDraw();
+
+	cleanupDeletedOverlays();
+
+	W_CONTEXT sContext = W_CONTEXT::ZeroContext();
+	sContext.mx = mouseX();
+	sContext.my = mouseY();
+
 	forEachOverlayScreenBottomUp([&sContext, skipDrawing](const OverlayScreen& overlay) -> bool
 	{
 		overlay.psScreen->psForm->processCallbacksRecursive(&sContext);
@@ -1831,13 +1851,6 @@ void widgDisplayScreen(const std::shared_ptr<W_SCREEN> &psScreen)
 	{
 		/* Display the tool tip if there is one */
 		tipDisplay();
-	}
-
-	if (debugBoundingBoxes && !skipDrawing)
-	{
-		debugBoundingBoxesOnly = true;
-		psScreen->psForm->displayRecursive();
-		debugBoundingBoxesOnly = false;
 	}
 }
 

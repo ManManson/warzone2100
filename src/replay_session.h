@@ -53,6 +53,7 @@ public:
 	void dispatch(ReplayCommand cmd);
 	void onGameLoopBegin();
 	void onGameLoopAfterTicks(bool tickExhausted);
+	void commitPendingSeek();
 	void cancelBusy();
 
 	uint32_t durationMs() const { return durationMs_; }
@@ -76,6 +77,9 @@ private:
 
 	void syncClockModeFromPlayback();
 	void seekTo(uint32_t timeMs);
+	void startCatchUpTo(uint32_t timeMs);
+	void beginCatchUpAudio();
+	void endCatchUpAudio();
 	void captureInitialStateIfNeeded();
 	void maybePlantKeyframe();
 	optional<uint32_t> latestKeyframeForSeek(uint32_t timeMs) const;
@@ -87,6 +91,7 @@ private:
 	uint32_t durationMs_ = 0;
 	bool resumePaused_ = false;
 	bool capturedInitialState_ = false;
+	optional<uint32_t> pendingSeekMs_;
 	std::unique_ptr<IReplayMessageArchive> archive_;
 	std::unique_ptr<IReplayKeyframeStore> keyframes_;
 };

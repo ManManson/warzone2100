@@ -262,6 +262,7 @@ static inline void iV_DrawImageTc(IMAGEFILE *imageFile, unsigned id, unsigned id
 	iV_DrawImageTc(AtlasImage(imageFile, id), AtlasImage(imageFile, idTc), x, y, colour);
 }
 
+bool pie_BlitSwapchainFreeze();
 void iV_TransBoxFill(float x0, float y0, float x1, float y1);
 void pie_UniTransBoxFill(float x0, float y0, float x1, float y1, PIELIGHT colour);
 

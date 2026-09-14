@@ -1010,6 +1010,9 @@ public:
 	virtual std::map<std::string, std::string> getBackendGameInfo() override;
 	virtual const std::string& getFormattedRendererInfoString() const override;
 	virtual bool getScreenshot(std::function<void (std::unique_ptr<iV_Image>)> callback) override;
+	virtual bool requestSwapchainFreezeCapture() override;
+	virtual gfx_api::texture* swapchainFreezeTexture() override;
+	virtual void releaseSwapchainFreeze() override;
 	virtual void handleWindowSizeChange(unsigned int oldWidth, unsigned int oldHeight, unsigned int newWidth, unsigned int newHeight) override;
 	virtual std::pair<uint32_t, uint32_t> getDrawableDimensions() override;
 	bool isYAxisInverted() const override { return true; }
@@ -1037,6 +1040,8 @@ public:
 	void noteExternalSubresourceLayout(const gfx_api::LayoutSubresourceKey& subresource,
 		vk::ImageLayout layout) const;
 private:
+	void recordSwapchainFreezeCopy(vk::CommandBuffer drawCmd, gfx_api::abstract_texture* swapchainColor, vk::Image swapchainImage);
+	bool ensureSwapchainFreezeTexture(uint32_t width, uint32_t height);
 	virtual bool _initialize(const gfx_api::backend_Impl_Factory& impl, int32_t antialiasing, swap_interval_mode mode, optional<float> mipLodBias, uint32_t depthMapResolution) override;
 	bool initPixelFormatsSupport();
 	gfx_api::pixel_format_usage::flags getPixelFormatUsageSupport(gfx_api::pixel_format format) const;
@@ -1158,6 +1163,9 @@ private:
 	mutable gfx_api::vk::FrameLayoutTracker _frameLayoutTracker;
 	/// Swapchain screenshot readback.
 	gfx_api::vk::ScreenshotReadback _screenshotReadback;
+	bool _swapchainFreezeRequested = false;
+	bool _swapchainFreezeCopiedThisFrame = false;
+	VkTexture* _swapchainFreezeTexture = nullptr;
 	/// Batched pre-pass barriers from `CompiledPass::prePassBarriers`.
 	gfx_api::vk::PrePassBarrierEmitter _barrierEmitter;
 	/// Warm render-pass layout ids keyed by `CompiledPass::graphIndex`.

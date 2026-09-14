@@ -25,8 +25,10 @@
 #include "lib/framework/frame.h"
 #include "lib/framework/string_ext.h"
 #include "lib/gamelib/gtime.h"
+#include "lib/ivis_opengl/gfx_api.h"
 #include "lib/netplay/nettypes.h"
 #include "lib/netplay/sync_debug.h"
+#include "lib/sound/audio.h"
 #include "gamestate_serialize.h"
 #include "loop.h"
 #include "sim_clock.h"
@@ -66,9 +68,16 @@ void ReplaySession::shutdown()
 	durationMs_ = 0;
 	resumePaused_ = false;
 	capturedInitialState_ = false;
+	pendingSeekMs_.reset();
 	archive_.reset();
 	keyframes_.reset();
 	SimClock::instance().reset();
+	audio_StopAll();
+	audio_setPause(false);
+	if (gfx_api::context::isInitialized())
+	{
+		gfx_api::context::get().releaseSwapchainFreeze();
+	}
 }
 
 void ReplaySession::dispatch(ReplayCommand cmd)
@@ -93,12 +102,16 @@ uint32_t ReplaySession::timelineDurationMs() const
 
 bool ReplaySession::isBusy() const
 {
-	return SimClock::instance().isCatchingUp();
+	return pendingSeekMs_.has_value() || SimClock::instance().isCatchingUp();
 }
 
 optional<ReplayBusyStatus> ReplaySession::busy() const
 {
 	auto& clock = SimClock::instance();
+	if (pendingSeekMs_.has_value())
+	{
+		return ReplayBusyStatus{playheadMs(), *pendingSeekMs_};
+	}
 	if (!clock.isCatchingUp())
 	{
 		return nullopt;
@@ -137,6 +150,13 @@ void ReplaySession::onGameLoopAfterTicks(bool tickExhausted)
 
 void ReplaySession::cancelBusy()
 {
+	if (pendingSeekMs_.has_value())
+	{
+		pendingSeekMs_.reset();
+		resumePaused_ = true;
+		applyResumeIntent();
+		return;
+	}
 	if (!SimClock::instance().isCatchingUp())
 	{
 		return;
@@ -145,8 +165,21 @@ void ReplaySession::cancelBusy()
 	finishCatchUp();
 }
 
+void ReplaySession::beginCatchUpAudio()
+{
+	audio_setPause(true);
+	audio_StopAll();
+}
+
+void ReplaySession::endCatchUpAudio()
+{
+	audio_StopAll();
+	audio_setPause(resumePaused_);
+}
+
 void ReplaySession::applyResumeIntent()
 {
+	endCatchUpAudio();
 	if (resumePaused_)
 	{
 		if (!gameTimeIsStopped())
@@ -254,28 +287,17 @@ void ReplaySession::restoreFromKeyframe(uint32_t keyframeTime)
 	}
 }
 
-void ReplaySession::seekTo(uint32_t timeMs)
+void ReplaySession::startCatchUpTo(uint32_t timeMs)
 {
 	auto& clock = SimClock::instance();
-	const uint32_t T = quantizeReplaySeekMs(timeMs, timelineDurationMs());
-	if (T == playheadMs() && !clock.isCatchingUp())
-	{
-		return;
-	}
-
-	if (!clock.isCatchingUp())
-	{
-		resumePaused_ = isPaused();
-	}
-
-	const optional<uint32_t> keyframe = latestKeyframeForSeek(T);
+	const optional<uint32_t> keyframe = latestKeyframeForSeek(timeMs);
 	const bool cheaperKeyframe = keyframe.has_value() && *keyframe > playheadMs();
-	const bool needRestore = T < playheadMs() || cheaperKeyframe;
+	const bool needRestore = timeMs < playheadMs() || cheaperKeyframe;
 	if (gameTimeIsStopped())
 	{
 		gameTimeStart();
 	}
-	clock.catchUpTo(T);
+	clock.catchUpTo(timeMs);
 	if (needRestore)
 	{
 		const uint32_t restoreTime = keyframe.value_or(0);
@@ -284,6 +306,50 @@ void ReplaySession::seekTo(uint32_t timeMs)
 		{
 			archive_->rewindToGameTime(restoreTime);
 		}
+	}
+}
+
+void ReplaySession::commitPendingSeek()
+{
+	if (!pendingSeekMs_.has_value())
+	{
+		return;
+	}
+	const uint32_t T = *pendingSeekMs_;
+	pendingSeekMs_.reset();
+	startCatchUpTo(T);
+}
+
+void ReplaySession::seekTo(uint32_t timeMs)
+{
+	auto& clock = SimClock::instance();
+	const uint32_t T = quantizeReplaySeekMs(timeMs, timelineDurationMs());
+	if (T == playheadMs() && !clock.isCatchingUp() && !pendingSeekMs_.has_value())
+	{
+		return;
+	}
+
+	if (!clock.isCatchingUp() && !pendingSeekMs_.has_value())
+	{
+		resumePaused_ = isPaused();
+	}
+
+	beginCatchUpAudio();
+
+	if (clock.isCatchingUp())
+	{
+		startCatchUpTo(T);
+		return;
+	}
+
+	if (gameTimeIsStopped())
+	{
+		gameTimeStart();
+	}
+	pendingSeekMs_ = T;
+	if (gfx_api::context::isInitialized())
+	{
+		gfx_api::context::get().requestSwapchainFreezeCapture();
 	}
 }
 

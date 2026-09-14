@@ -297,7 +297,24 @@ void ReplayTransportBar::layoutContent()
 }
 
 static std::shared_ptr<W_SCREEN> replayOverlayScreen;
+static std::shared_ptr<ReplayTransportBar> replayTransportBar;
 static int replayTransportStripHeight = 0;
+
+void syncReplayTransportBarVisibility()
+{
+	if (!replayTransportBar)
+	{
+		return;
+	}
+	if (ReplaySession::instance().isBusy())
+	{
+		replayTransportBar->hide();
+	}
+	else
+	{
+		replayTransportBar->show();
+	}
+}
 
 bool createReplayControllerOverlay()
 {
@@ -307,10 +324,10 @@ bool createReplayControllerOverlay()
 	replayOverlayScreen = W_SCREEN::make();
 	replayOverlayScreen->psForm->hide();
 
-	auto bar = ReplayTransportBar::make();
-	replayOverlayScreen->psForm->attach(bar);
-	replayTransportStripHeight = bar->height();
-	bar->setCalcLayout([](WIDGET* psWidget) {
+	replayTransportBar = ReplayTransportBar::make();
+	replayOverlayScreen->psForm->attach(replayTransportBar);
+	replayTransportStripHeight = replayTransportBar->height();
+	replayTransportBar->setCalcLayout([](WIDGET* psWidget) {
 		psWidget->setGeometry(0, screenHeight - psWidget->height(), screenWidth, psWidget->height());
 	});
 
@@ -328,6 +345,7 @@ void destroyReplayControllerOverlay()
 		widgRemoveOverlayScreen(replayOverlayScreen);
 		replayOverlayScreen = nullptr;
 	}
+	replayTransportBar.reset();
 	replayTransportStripHeight = 0;
 }
 
