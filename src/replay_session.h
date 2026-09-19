@@ -55,6 +55,7 @@ public:
 	void onGameLoopAfterTicks(bool tickExhausted);
 	void commitPendingSeek();
 	void cancelBusy();
+	bool hasPendingSeek() const { return pendingSeekMs_.has_value(); }
 
 	uint32_t durationMs() const { return durationMs_; }
 	uint32_t timelineDurationMs() const;

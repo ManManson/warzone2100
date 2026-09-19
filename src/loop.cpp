@@ -44,6 +44,7 @@
 
 #include "loop.h"
 #include "sim_clock.h"
+#include "replay_presentation.h"
 #include "replay_session.h"
 #include "gamestate_serialize.h"
 #include "movebench.h"
@@ -803,6 +804,8 @@ GAMECODE gameLoop()
 	{
 		before = wzGetTicks();
 		renderReturn = renderLoop();
+		// After widgets so same-frame ESC can drop pending before the seal copy.
+		replayPresentationRequestHoldIfPending();
 		pie_ScreenFrameRenderEnd(); // must happen here for proper renderBudget calculation
 		if (ReplaySession::active())
 		{

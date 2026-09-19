@@ -25,7 +25,7 @@
 #include "lib/framework/frame.h"
 #include "lib/framework/string_ext.h"
 #include "lib/gamelib/gtime.h"
-#include "lib/ivis_opengl/gfx_api.h"
+#include "replay_presentation.h"
 #include "lib/netplay/nettypes.h"
 #include "lib/netplay/sync_debug.h"
 #include "lib/sound/audio.h"
@@ -75,10 +75,7 @@ void ReplaySession::shutdown()
 	SimClock::instance().reset();
 	audio_StopAll();
 	audio_setPause(false);
-	if (gfx_api::context::isInitialized())
-	{
-		gfx_api::context::get().releasePresentationHold();
-	}
+	replayPresentationReleaseHold();
 }
 
 void ReplaySession::dispatch(ReplayCommand cmd)
@@ -163,7 +160,6 @@ void ReplaySession::cancelBusy()
 	if (pendingSeekMs_.has_value())
 	{
 		pendingSeekMs_.reset();
-		resumePaused_ = true;
 		applyResumeIntent();
 		return;
 	}
@@ -171,7 +167,6 @@ void ReplaySession::cancelBusy()
 	{
 		return;
 	}
-	resumePaused_ = true;
 	finishCatchUp();
 }
 
@@ -216,6 +211,7 @@ void ReplaySession::finishCatchUp()
 	applyResumeIntent();
 	graphicsTime = gameTime;
 	gameTimeRebaseRealTimeBase();
+	replayPresentationReleaseHold();
 }
 
 void ReplaySession::captureInitialStateIfNeeded()
@@ -357,10 +353,6 @@ void ReplaySession::seekTo(uint32_t timeMs)
 		gameTimeStart();
 	}
 	pendingSeekMs_ = T;
-	if (gfx_api::context::isInitialized())
-	{
-		gfx_api::context::get().requestPresentationHold();
-	}
 }
 
 void ReplaySession::handle(CmdPlay)
