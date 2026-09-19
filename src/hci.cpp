@@ -1660,7 +1660,7 @@ void intDisplayWidgets()
 
 	if (SimClock::instance().presentation() == PresentationKind::OverlayOnly)
 	{
-		widgDisplayOverlayScreens();
+		displayReplayCatchUpOverlay();
 		return;
 	}
 

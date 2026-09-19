@@ -76,13 +76,20 @@ void ReplayBusyOverlay::display(int xOffset, int yOffset)
 
 	char measure[256];
 	ssprintf(measure, "%s%s", base, suffix[3]);
-	const int textW = iV_GetTextWidth(measure, font_large);
-	const int textH = iV_GetTextLineSize(font_large);
+	const int titleW = iV_GetTextWidth(measure, font_large);
+	const int titleH = iV_GetTextLineSize(font_large);
+
+	const char *hint = _("(Press ESC to cancel)");
+	const int hintW = iV_GetTextWidth(hint, font_regular);
+	const int hintH = iV_GetTextLineSize(font_regular);
+	const int gap = 8;
+	const int blockH = titleH + gap + hintH;
+	const int titleBaseline = yOffset + (height() - blockH) / 2 + titleH;
+
 	iV_SetTextColour(WZCOL_TEXT_BRIGHT);
-	iV_DrawText(text,
-		xOffset + (width() - textW) / 2,
-		yOffset + (height() + textH) / 2,
-		font_large);
+	iV_DrawText(text, xOffset + (width() - titleW) / 2, titleBaseline, font_large);
+	iV_SetTextColour(WZCOL_TEXT_MEDIUM);
+	iV_DrawText(hint, xOffset + (width() - hintW) / 2, titleBaseline + gap + hintH, font_regular);
 }
 
 void ReplayBusyOverlay::run(W_CONTEXT *psContext)

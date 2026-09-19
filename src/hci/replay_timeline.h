@@ -26,6 +26,13 @@
 
 using nonstd::optional;
 
+// Track is a short rectangle; the widget is taller so the square playhead can
+// overhang it. pie_DrawRoundedBox (existing SHADER_UI_BOX) anti-aliases both
+// with a 1px radius so corners stay square.
+constexpr int REPLAY_TIMELINE_STRIP_HEIGHT = 8;
+constexpr int REPLAY_PLAYHEAD_SIZE = 12;
+constexpr float REPLAY_TIMELINE_CORNER_RADIUS = 1.f;
+
 class ReplayTimelineWidget : public WIDGET
 {
 public:
@@ -35,16 +42,21 @@ public:
 	void clicked(W_CONTEXT *psContext, WIDGET_KEY key) override;
 	void released(W_CONTEXT *psContext, WIDGET_KEY key) override;
 	std::string getTip() override;
-	bool capturesMouseDrag(WIDGET_KEY) override { return true; }
-	bool isGamepadCursorMagnetTarget() const override { return true; }
+	bool capturesMouseDrag(WIDGET_KEY) override;
+	bool isGamepadCursorMagnetTarget() const override;
 
 protected:
 	void mouseDragged(WIDGET_KEY key, W_CONTEXT *start, W_CONTEXT *current) override;
 
 private:
+	int trackInset() const;
+	int trackWidth() const;
+	int msToX(int x0, uint32_t duration, uint32_t timeMs) const;
 	uint32_t xToMs(int localX) const;
 	uint32_t seekMsFromContext(W_CONTEXT *psContext) const;
 	void updateGhostFromContext(W_CONTEXT *psContext);
+	void drawPlayhead(float centerX, float centerY, PIELIGHT colour) const;
+	void drawDragTimeTip() const;
 
 	optional<uint32_t> ghostMs_;
 	bool dragging_ = false;

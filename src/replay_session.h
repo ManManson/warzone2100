@@ -59,6 +59,7 @@ public:
 	uint32_t durationMs() const { return durationMs_; }
 	uint32_t timelineDurationMs() const;
 	uint32_t playheadMs() const { return gameTime; }
+	uint32_t keyframeHorizonMs() const;
 	bool isPaused() const;
 	size_t fastForwardTicks() const;
 	bool isBusy() const;

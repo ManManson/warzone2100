@@ -25,6 +25,7 @@
 #include "../notifications.h"
 #include "../replay_command.h"
 #include "../replay_session.h"
+#include "../sim_clock.h"
 
 #include "lib/framework/frame.h"
 #include "lib/gamelib/gtime.h"
@@ -46,7 +47,6 @@ constexpr int REPLAY_ACTION_BUTTONS_SPACING = 5;
 constexpr int REPLAY_ACTION_BUTTONS_IMAGE_SIZE = 16;
 constexpr int REPLAY_ACTION_BUTTONS_WIDTH = REPLAY_ACTION_BUTTONS_IMAGE_SIZE + (REPLAY_ACTION_BUTTONS_PADDING * 2);
 constexpr int REPLAY_ACTION_BUTTONS_HEIGHT = REPLAY_ACTION_BUTTONS_WIDTH;
-constexpr int REPLAY_TIMELINE_HEIGHT = 18;
 constexpr int REPLAY_TIMELINE_SPACING = 6;
 constexpr float REPLAY_TRANSPORT_CONTENT_FRAC = 0.80f;
 
@@ -120,6 +120,7 @@ public:
 	void display(int xOffset, int yOffset) override;
 	void geometryChanged() override;
 	void run(W_CONTEXT* psContext) override;
+	void syncBusyControls();
 
 private:
 	std::shared_ptr<W_REPLAY_CONTROL_BUTTON> makeReplayActionButton(const char* imagePath);
@@ -202,7 +203,7 @@ std::shared_ptr<ReplayTransportBar> ReplayTransportBar::make()
 	result->timeLabel->setCacheNeverExpires(true);
 	result->attach(result->timeLabel);
 
-	const int stripHeight = REPLAY_TRANSPORT_PADDING + REPLAY_TIMELINE_HEIGHT + REPLAY_TIMELINE_SPACING
+	const int stripHeight = REPLAY_TRANSPORT_PADDING + REPLAY_PLAYHEAD_SIZE + REPLAY_TIMELINE_SPACING
 		+ REPLAY_ACTION_BUTTONS_HEIGHT + REPLAY_TRANSPORT_PADDING;
 	result->setGeometry(0, 0, screenWidth, stripHeight);
 	result->refreshButtonStates();
@@ -225,9 +226,27 @@ void ReplayTransportBar::geometryChanged()
 
 void ReplayTransportBar::run(W_CONTEXT*)
 {
+	syncBusyControls();
 	if (realTime - lastUpdateTime >= GAME_TICKS_PER_UPDATE)
 	{
 		refreshButtonStates();
+	}
+}
+
+void ReplayTransportBar::syncBusyControls()
+{
+	// Hide the live bar only while CatchUp is presenting. The pending-seek Full
+	// frame must still draw it (and other overlays) so the freeze snapshot
+	// includes the timeline and player-stats widgets.
+	if (SimClock::instance().isCatchingUp())
+	{
+		hide();
+	}
+	else
+	{
+		show();
+		timeline->setTransparentToMouse(false);
+		setTransparentToMouse(false);
 	}
 }
 
@@ -273,8 +292,8 @@ void ReplayTransportBar::layoutContent()
 {
 	const int contentW = std::max(1, static_cast<int>(static_cast<float>(width()) * REPLAY_TRANSPORT_CONTENT_FRAC));
 	const int contentX = (width() - contentW) / 2;
-	timeline->setGeometry(contentX, REPLAY_TRANSPORT_PADDING, contentW, REPLAY_TIMELINE_HEIGHT);
-	const int buttonsY = REPLAY_TRANSPORT_PADDING + REPLAY_TIMELINE_HEIGHT + REPLAY_TIMELINE_SPACING;
+	timeline->setGeometry(contentX, REPLAY_TRANSPORT_PADDING, contentW, REPLAY_PLAYHEAD_SIZE);
+	const int buttonsY = REPLAY_TRANSPORT_PADDING + REPLAY_PLAYHEAD_SIZE + REPLAY_TIMELINE_SPACING;
 
 	auto placeAfter = [buttonsY](const std::shared_ptr<W_REPLAY_CONTROL_BUTTON>& button,
 		const std::shared_ptr<W_REPLAY_CONTROL_BUTTON>& previous, int fallbackX) {
@@ -298,6 +317,7 @@ void ReplayTransportBar::layoutContent()
 
 static std::shared_ptr<W_SCREEN> replayOverlayScreen;
 static std::shared_ptr<ReplayTransportBar> replayTransportBar;
+static std::shared_ptr<ReplayBusyOverlay> replayBusyOverlay;
 static int replayTransportStripHeight = 0;
 
 void syncReplayTransportBarVisibility()
@@ -306,14 +326,16 @@ void syncReplayTransportBarVisibility()
 	{
 		return;
 	}
-	if (ReplaySession::instance().isBusy())
+	replayTransportBar->syncBusyControls();
+}
+
+void displayReplayCatchUpOverlay()
+{
+	if (!replayBusyOverlay)
 	{
-		replayTransportBar->hide();
+		return;
 	}
-	else
-	{
-		replayTransportBar->show();
-	}
+	replayBusyOverlay->displayRecursive();
 }
 
 bool createReplayControllerOverlay()
@@ -331,8 +353,8 @@ bool createReplayControllerOverlay()
 		psWidget->setGeometry(0, screenHeight - psWidget->height(), screenWidth, psWidget->height());
 	});
 
-	// Attach after the bar so the modal sits above it and blocks transport clicks while seeking.
-	replayOverlayScreen->psForm->attach(ReplayBusyOverlay::make());
+	replayBusyOverlay = ReplayBusyOverlay::make();
+	replayOverlayScreen->psForm->attach(replayBusyOverlay);
 
 	widgRegisterOverlayScreenOnTopOfScreen(replayOverlayScreen, psWScreen);
 	return true;
@@ -346,6 +368,7 @@ void destroyReplayControllerOverlay()
 		replayOverlayScreen = nullptr;
 	}
 	replayTransportBar.reset();
+	replayBusyOverlay.reset();
 	replayTransportStripHeight = 0;
 }
 

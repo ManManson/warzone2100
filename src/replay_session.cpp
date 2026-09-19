@@ -37,6 +37,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <limits>
 #include <variant>
 
 ReplaySession& ReplaySession::instance()
@@ -98,6 +99,15 @@ size_t ReplaySession::fastForwardTicks() const
 uint32_t ReplaySession::timelineDurationMs() const
 {
 	return std::max(durationMs_, playheadMs());
+}
+
+uint32_t ReplaySession::keyframeHorizonMs() const
+{
+	if (!keyframes_)
+	{
+		return 0;
+	}
+	return keyframes_->latestAtOrBefore(std::numeric_limits<uint32_t>::max()).value_or(0);
 }
 
 bool ReplaySession::isBusy() const
