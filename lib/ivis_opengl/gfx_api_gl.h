@@ -470,9 +470,9 @@ struct gl_context final : public gfx_api::context
 	virtual std::map<std::string, std::string> getBackendGameInfo() override;
 	virtual const std::string& getFormattedRendererInfoString() const override;
 	virtual bool getScreenshot(std::function<void (std::unique_ptr<iV_Image>)> callback) override;
-	virtual bool requestSwapchainFreezeCapture() override;
-	virtual gfx_api::texture* swapchainFreezeTexture() override;
-	virtual void releaseSwapchainFreeze() override;
+	virtual bool requestPresentationHold() override;
+	virtual gfx_api::texture* presentationHoldTexture() override;
+	virtual void releasePresentationHold() override;
 	virtual void handleWindowSizeChange(unsigned int oldWidth, unsigned int oldHeight, unsigned int newWidth, unsigned int newHeight) override;
 	virtual std::pair<uint32_t, uint32_t> getDrawableDimensions() override;
 	bool isYAxisInverted() const override { return false; }
@@ -644,6 +644,7 @@ private:
 
 	GLuint _dynamicPassFBO = 0;
 	gfx_api::RenderPassDesc _activePassDesc;
-	bool _swapchainFreezeRequested = false;
-	gfx_api::texture* _swapchainFreezeTexture = nullptr;
+	bool _presentationHoldRequested = false;
+	gfx_api::texture* _presentationHoldTexture = nullptr;
+	GLuint _presentationHoldFbo = 0;
 };

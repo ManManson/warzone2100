@@ -3472,27 +3472,32 @@ bool gl_context::getScreenshot(std::function<void (std::unique_ptr<iV_Image>)> c
 	return true;
 }
 
-bool gl_context::requestSwapchainFreezeCapture()
+bool gl_context::requestPresentationHold()
 {
 	const auto dims = getDrawableDimensions();
 	if (dims.first == 0 || dims.second == 0)
 	{
 		return false;
 	}
-	_swapchainFreezeRequested = true;
+	_presentationHoldRequested = true;
 	return true;
 }
 
-gfx_api::texture* gl_context::swapchainFreezeTexture()
+gfx_api::texture* gl_context::presentationHoldTexture()
 {
-	return _swapchainFreezeTexture;
+	return _presentationHoldTexture;
 }
 
-void gl_context::releaseSwapchainFreeze()
+void gl_context::releasePresentationHold()
 {
-	_swapchainFreezeRequested = false;
-	delete _swapchainFreezeTexture;
-	_swapchainFreezeTexture = nullptr;
+	_presentationHoldRequested = false;
+	delete _presentationHoldTexture;
+	_presentationHoldTexture = nullptr;
+	if (_presentationHoldFbo != 0)
+	{
+		glDeleteFramebuffers(1, &_presentationHoldFbo);
+		_presentationHoldFbo = 0;
+	}
 }
 
 // MARK: khr_callback
@@ -4618,35 +4623,38 @@ void gl_context::finishScreenFrame()
 	}
 #endif
 
-	if (_swapchainFreezeRequested)
+	if (_presentationHoldRequested)
 	{
-		_swapchainFreezeRequested = false;
+		_presentationHoldRequested = false;
 		const auto dims = getDrawableDimensions();
 		if (dims.first > 0 && dims.second > 0)
 		{
-			if (!_swapchainFreezeTexture
-				|| _swapchainFreezeTexture->get_dimensions().width != dims.first
-				|| _swapchainFreezeTexture->get_dimensions().height != dims.second)
+			if (!_presentationHoldTexture
+				|| _presentationHoldTexture->get_dimensions().width != dims.first
+				|| _presentationHoldTexture->get_dimensions().height != dims.second)
 			{
-				delete _swapchainFreezeTexture;
-				_swapchainFreezeTexture = create_texture(1, dims.first, dims.second,
-					gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8, "<swapchain_freeze>");
+				delete _presentationHoldTexture;
+				_presentationHoldTexture = create_texture(1, dims.first, dims.second,
+					gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8, "<presentation_hold>");
 			}
-			if (auto* glTex = dynamic_cast<gl_texture*>(_swapchainFreezeTexture))
+			if (auto* glTex = dynamic_cast<gl_texture*>(_presentationHoldTexture))
 			{
 				GLint prevDrawFBO = 0;
 				GLint prevReadFBO = 0;
 				glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevDrawFBO);
 				glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevReadFBO);
 
-				GLuint captureFBO = 0;
-				glGenFramebuffers(1, &captureFBO);
-				glBindFramebuffer(GL_DRAW_FRAMEBUFFER, captureFBO);
+				if (_presentationHoldFbo == 0)
+				{
+					glGenFramebuffers(1, &_presentationHoldFbo);
+				}
+				glBindFramebuffer(GL_DRAW_FRAMEBUFFER, _presentationHoldFbo);
 				glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 					static_cast<GLuint>(glTex->id()), 0);
 				glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+				// Flip Y so the hold matches UI-space (v=0 at the top).
 				glBlitFramebuffer(0, 0, static_cast<GLint>(dims.first), static_cast<GLint>(dims.second),
-					0, 0, static_cast<GLint>(dims.first), static_cast<GLint>(dims.second),
+					0, static_cast<GLint>(dims.second), static_cast<GLint>(dims.first), 0,
 					GL_COLOR_BUFFER_BIT, GL_NEAREST);
 				glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(glTex->id()));
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -4655,9 +4663,27 @@ void gl_context::finishScreenFrame()
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 				glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(prevDrawFBO));
 				glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(prevReadFBO));
-				glDeleteFramebuffers(1, &captureFBO);
-				glFinish();
+#if !defined(WZ_STATIC_GL_BINDINGS)
+				if (glFenceSync != nullptr && glClientWaitSync != nullptr && glDeleteSync != nullptr)
+#endif
+				{
+					if (GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0))
+					{
+						glClientWaitSync(sync, GL_SYNC_FLUSH_COMMANDS_BIT, GL_TIMEOUT_IGNORED);
+						glDeleteSync(sync);
+					}
+				}
 			}
+			else
+			{
+				delete _presentationHoldTexture;
+				_presentationHoldTexture = nullptr;
+			}
+		}
+		else
+		{
+			delete _presentationHoldTexture;
+			_presentationHoldTexture = nullptr;
 		}
 	}
 
@@ -6198,7 +6224,7 @@ bool gl_context::initCheckBorderClampSupport()
 
 void gl_context::handleWindowSizeChange(unsigned int oldWidth, unsigned int oldHeight, unsigned int newWidth, unsigned int newHeight)
 {
-	releaseSwapchainFreeze();
+	releasePresentationHold();
 	markScreenGeometryDirty();
 
 	// Update the viewport to use the new *drawable* size (which may be greater than the new window size
@@ -6348,7 +6374,7 @@ bool gl_context::shouldDraw()
 
 void gl_context::shutdown()
 {
-	releaseSwapchainFreeze();
+	releasePresentationHold();
 	for (auto& allocator : uniformBlockAllocators)
 	{
 		allocator.destroy();

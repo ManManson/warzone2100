@@ -91,7 +91,7 @@ public:
 	bool hasAwaitingRecord() const { return _awaitingRecord.has_value(); }
 
 	void recordCopy(VkRoot& root, ::vk::CommandBuffer drawCmd, ::gfx_api::abstract_texture* swapchainColor,
-		::vk::Image swapchainImage);
+		::vk::Image swapchainImage, bool transitionSwapchain = true);
 
 	void markCurrentCaptureSubmitted(uint32_t ringSlot, const WZ_vk::DispatchLoaderDynamic& vkDynLoader);
 

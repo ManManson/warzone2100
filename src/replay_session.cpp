@@ -77,7 +77,7 @@ void ReplaySession::shutdown()
 	audio_setPause(false);
 	if (gfx_api::context::isInitialized())
 	{
-		gfx_api::context::get().releaseSwapchainFreeze();
+		gfx_api::context::get().releasePresentationHold();
 	}
 }
 
@@ -359,7 +359,7 @@ void ReplaySession::seekTo(uint32_t timeMs)
 	pendingSeekMs_ = T;
 	if (gfx_api::context::isInitialized())
 	{
-		gfx_api::context::get().requestSwapchainFreezeCapture();
+		gfx_api::context::get().requestPresentationHold();
 	}
 }
 

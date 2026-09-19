@@ -3933,7 +3933,7 @@ void VkRoot::handleWindowSizeChange(unsigned int oldWidth, unsigned int oldHeigh
 	(void)oldHeight;
 	(void)newWidth;
 	(void)newHeight;
-	releaseSwapchainFreeze();
+	releasePresentationHold();
 	_screenFrameCoordinator.markDrawableSizeDirty();
 	// Do not recreate swapchain here (causes validation issues on some screens).
 	// finishScreenFrame() detects the mismatch and recreates safely.
@@ -4151,7 +4151,7 @@ void VkRoot::destroySwapchainAndSwapchainSpecificStuff(bool doDestroySwapchain)
 	finalizeActiveRecording();
 	waitForAllIdle();
 	_screenshotReadback.shutdown(vkDynLoader);
-	releaseSwapchainFreeze();
+	releasePresentationHold();
 	destroyDynamicRenderPasses();
 	flushDeferredFramebufferDeletes();
 
@@ -6887,6 +6887,27 @@ void VkRoot::sealAndSubmitTransferGraphics(ScreenFramePipelineState& state)
 		};
 		frameResources.submitCommandBuffers(submitParams, state);
 
+		if (_presentationHoldCopiedThisFrame)
+		{
+			if (state.submitDrawBuffer)
+			{
+				// OverlayOnly next frame samples the hold; the in-flight ring wait is not
+				// the previous submit.
+				const auto fences = std::array<vk::Fence, 1>{ frameResources.previousSubmission };
+				const vk::Result waitResult = dev.waitForFences(fences, true, UINT64_MAX, vkDynLoader);
+				if (waitResult == vk::Result::eTimeout)
+				{
+					debug(LOG_ERROR, "presentation hold: waitForFences resulted in vk::Result::eTimeout");
+					handleUnrecoverableError(vk::Result::eTimeout);
+				}
+			}
+			else
+			{
+				releasePresentationHold();
+			}
+			_presentationHoldCopiedThisFrame = false;
+		}
+
 		if (state.submitDrawBuffer)
 		{
 			_screenshotReadback.markCurrentCaptureSubmitted(
@@ -6939,22 +6960,58 @@ void VkRoot::sealDrawCommandBufferForPresent()
 
 	writeGpuTimingEndIfOpen(drawCmdBuffer);
 
-	if (_swapchainFreezeRequested && swapchainColor
+	const bool hold = _presentationHoldRequested
+		&& swapchainColor
 		&& _frameLayoutTracker.swapchainTouchedThisFrame()
-		&& currentSwapchainIndex < swapchainImages.size())
+		&& currentSwapchainIndex < swapchainImages.size();
+	const bool shot = _screenshotReadback.hasAwaitingRecord()
+		&& swapchainColor
+		&& _frameLayoutTracker.swapchainTouchedThisFrame();
+
+	const bool holdRequested = _presentationHoldRequested;
+	_presentationHoldRequested = false; // even if the copy is skipped
+	if (holdRequested && !hold)
 	{
-		recordSwapchainFreezeCopy(drawCmdBuffer, swapchainColor, swapchainImages[currentSwapchainIndex]);
-		_swapchainFreezeRequested = false;
-		_swapchainFreezeCopiedThisFrame = true;
+		if (_presentationHoldTexture)
+		{
+			delete _presentationHoldTexture;
+			_presentationHoldTexture = nullptr;
+		}
 	}
 
-	if (_screenshotReadback.hasAwaitingRecord() && swapchainColor
-		&& _frameLayoutTracker.swapchainTouchedThisFrame())
+	if (hold || shot)
 	{
-		ASSERT(currentSwapchainIndex < swapchainImages.size(),
-		       "Swapchain image index out of range for screenshot");
-		const vk::Image swapchainImage = swapchainImages[currentSwapchainIndex];
-		_screenshotReadback.recordCopy(*this, drawCmdBuffer, swapchainColor, swapchainImage);
+		vk::ImageLayout oldLayout = getImageLayout(swapchainColor);
+		if (oldLayout == vk::ImageLayout::eUndefined || oldLayout == vk::ImageLayout::ePresentSrcKHR)
+		{
+			oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+		}
+		transitionImageLayout(drawCmdBuffer, swapchainColor,
+			oldLayout, vk::ImageLayout::eTransferSrcOptimal,
+			vk::PipelineStageFlagBits::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits::eTransfer,
+			vk::AccessFlagBits::eColorAttachmentWrite,
+			vk::AccessFlagBits::eTransferRead);
+
+		if (hold)
+		{
+			_presentationHoldCopiedThisFrame = recordPresentationHoldCopy(
+				drawCmdBuffer, swapchainColor, swapchainImages[currentSwapchainIndex]);
+		}
+		if (shot)
+		{
+			ASSERT(currentSwapchainIndex < swapchainImages.size(),
+			       "Swapchain image index out of range for screenshot");
+			_screenshotReadback.recordCopy(*this, drawCmdBuffer, swapchainColor,
+				swapchainImages[currentSwapchainIndex], false);
+		}
+
+		transitionImageLayout(drawCmdBuffer, swapchainColor,
+			vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::ePresentSrcKHR,
+			vk::PipelineStageFlagBits::eTransfer,
+			vk::PipelineStageFlagBits::eBottomOfPipe,
+			vk::AccessFlagBits::eTransferRead,
+			vk::AccessFlags{});
 	}
 	else if (swapchainColor && _frameLayoutTracker.swapchainTouchedThisFrame())
 	{
@@ -7007,12 +7064,6 @@ bool VkRoot::canRecordSwapchainDraws() const
 void VkRoot::finishScreenFrame()
 {
 	_screenFrameCoordinator.finishFrame();
-	if (_swapchainFreezeCopiedThisFrame)
-	{
-		// OverlayOnly samples the freeze next frame; wait so the blit is visible to that submit.
-		waitForAllIdle();
-		_swapchainFreezeCopiedThisFrame = false;
-	}
 }
 
 bool VkRoot::buildPassLayoutKey(gfx_api::vk::PassLayoutKey& out, const gfx_api::RenderPassDesc& pass,
@@ -7720,94 +7771,87 @@ bool VkRoot::getScreenshot(std::function<void (std::unique_ptr<iV_Image>)> callb
 		vkDynLoader);
 }
 
-bool VkRoot::requestSwapchainFreezeCapture()
+bool VkRoot::requestPresentationHold()
 {
 	if (!dev || swapchainSize.width <= 1 || swapchainSize.height <= 1)
 	{
 		return false;
 	}
-	_swapchainFreezeRequested = true;
+	_presentationHoldRequested = true;
 	return true;
 }
 
-gfx_api::texture* VkRoot::swapchainFreezeTexture()
+gfx_api::texture* VkRoot::presentationHoldTexture()
 {
-	return _swapchainFreezeTexture;
+	return _presentationHoldTexture;
 }
 
-void VkRoot::releaseSwapchainFreeze()
+void VkRoot::releasePresentationHold()
 {
-	_swapchainFreezeRequested = false;
-	_swapchainFreezeCopiedThisFrame = false;
-	if (_swapchainFreezeTexture)
+	_presentationHoldRequested = false;
+	_presentationHoldCopiedThisFrame = false;
+	if (_presentationHoldTexture)
 	{
-		delete _swapchainFreezeTexture;
-		_swapchainFreezeTexture = nullptr;
+		delete _presentationHoldTexture;
+		_presentationHoldTexture = nullptr;
 	}
 }
 
-bool VkRoot::ensureSwapchainFreezeTexture(uint32_t width, uint32_t height)
+bool VkRoot::ensurePresentationHoldTexture(uint32_t width, uint32_t height)
 {
-	if (_swapchainFreezeTexture
-		&& _swapchainFreezeTexture->tex_width == width
-		&& _swapchainFreezeTexture->tex_height == height)
+	if (_presentationHoldTexture
+		&& _presentationHoldTexture->tex_width == width
+		&& _presentationHoldTexture->tex_height == height)
 	{
 		return true;
 	}
-	if (_swapchainFreezeTexture)
+	if (_presentationHoldTexture)
 	{
-		delete _swapchainFreezeTexture;
-		_swapchainFreezeTexture = nullptr;
+		delete _presentationHoldTexture;
+		_presentationHoldTexture = nullptr;
 	}
 	try
 	{
-		_swapchainFreezeTexture = new VkTexture(*this, 1, width, height,
-			gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8, "<swapchain_freeze>");
+		_presentationHoldTexture = new VkTexture(*this, 1, width, height,
+			gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8, "<presentation_hold>");
 	}
 	catch (const std::exception& e)
 	{
-		debug(LOG_ERROR, "Failed to allocate swapchain freeze texture: %s", e.what());
-		_swapchainFreezeTexture = nullptr;
+		debug(LOG_ERROR, "Failed to allocate presentation hold texture: %s", e.what());
+		_presentationHoldTexture = nullptr;
 		return false;
 	}
-	return _swapchainFreezeTexture != nullptr;
+	return _presentationHoldTexture != nullptr;
 }
 
-void VkRoot::recordSwapchainFreezeCopy(vk::CommandBuffer drawCmd, gfx_api::abstract_texture* swapchainColor, vk::Image swapchainImage)
+bool VkRoot::recordPresentationHoldCopy(vk::CommandBuffer drawCmd, gfx_api::abstract_texture* swapchainColor, vk::Image swapchainImage)
 {
+	(void)swapchainColor;
 	const uint32_t width = swapchainSize.width;
 	const uint32_t height = swapchainSize.height;
-	if (width == 0 || height == 0 || !ensureSwapchainFreezeTexture(width, height))
+	if (width == 0 || height == 0 || !ensurePresentationHoldTexture(width, height))
 	{
-		return;
+		if (_presentationHoldTexture)
+		{
+			delete _presentationHoldTexture;
+			_presentationHoldTexture = nullptr;
+		}
+		return false;
 	}
 
-	vk::ImageLayout oldLayout = getImageLayout(swapchainColor);
-	if (oldLayout == vk::ImageLayout::eUndefined || oldLayout == vk::ImageLayout::ePresentSrcKHR)
-	{
-		oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-	}
-
-	transitionImageLayout(drawCmd, swapchainColor,
-		oldLayout, vk::ImageLayout::eTransferSrcOptimal,
-		vk::PipelineStageFlagBits::eColorAttachmentOutput,
-		vk::PipelineStageFlagBits::eTransfer,
-		vk::AccessFlagBits::eColorAttachmentWrite,
-		vk::AccessFlagBits::eTransferRead);
-
-	vk::ImageLayout freezeOld = getImageLayout(_swapchainFreezeTexture);
-	vk::AccessFlags freezeSrcAccess = (freezeOld == vk::ImageLayout::eShaderReadOnlyOptimal)
+	vk::ImageLayout holdOld = getImageLayout(_presentationHoldTexture);
+	vk::AccessFlags holdSrcAccess = (holdOld == vk::ImageLayout::eShaderReadOnlyOptimal)
 		? vk::AccessFlags(vk::AccessFlagBits::eShaderRead)
 		: vk::AccessFlags{};
-	vk::PipelineStageFlags freezeSrcStage = (freezeOld == vk::ImageLayout::eShaderReadOnlyOptimal)
+	vk::PipelineStageFlags holdSrcStage = (holdOld == vk::ImageLayout::eShaderReadOnlyOptimal)
 		? vk::PipelineStageFlags(vk::PipelineStageFlagBits::eFragmentShader)
 		: vk::PipelineStageFlags(vk::PipelineStageFlagBits::eTopOfPipe);
 
-	transitionImageLayout(drawCmd, _swapchainFreezeTexture,
-		freezeOld, vk::ImageLayout::eTransferDstOptimal,
-		freezeSrcStage,
+	transitionImageLayout(drawCmd, _presentationHoldTexture,
+		holdOld, vk::ImageLayout::eTransferDstOptimal,
+		holdSrcStage,
 		vk::PipelineStageFlagBits::eTransfer,
-		freezeSrcAccess,
+		holdSrcAccess,
 		vk::AccessFlagBits::eTransferWrite);
 
 	vk::ImageBlit blit{};
@@ -7818,27 +7862,21 @@ void VkRoot::recordSwapchainFreezeCopy(vk::CommandBuffer drawCmd, gfx_api::abstr
 	blit.dstSubresource = blit.srcSubresource;
 	blit.srcOffsets[0] = vk::Offset3D(0, 0, 0);
 	blit.srcOffsets[1] = vk::Offset3D(static_cast<int32_t>(width), static_cast<int32_t>(height), 1);
-	// Flip Y so the freeze texture matches CPU-uploaded UI orientation (v=0 at the top).
 	blit.dstOffsets[0] = vk::Offset3D(0, static_cast<int32_t>(height), 0);
 	blit.dstOffsets[1] = vk::Offset3D(static_cast<int32_t>(width), 0, 1);
 
 	drawCmd.blitImage(swapchainImage, vk::ImageLayout::eTransferSrcOptimal,
-		_swapchainFreezeTexture->object, vk::ImageLayout::eTransferDstOptimal,
+		_presentationHoldTexture->object, vk::ImageLayout::eTransferDstOptimal,
 		1, &blit, vk::Filter::eNearest, vkDynLoader);
 
-	transitionImageLayout(drawCmd, _swapchainFreezeTexture,
+	transitionImageLayout(drawCmd, _presentationHoldTexture,
 		vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
 		vk::PipelineStageFlagBits::eTransfer,
 		vk::PipelineStageFlagBits::eFragmentShader,
 		vk::AccessFlagBits::eTransferWrite,
 		vk::AccessFlagBits::eShaderRead);
 
-	transitionImageLayout(drawCmd, swapchainColor,
-		vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eColorAttachmentOptimal,
-		vk::PipelineStageFlagBits::eTransfer,
-		vk::PipelineStageFlagBits::eColorAttachmentOutput,
-		vk::AccessFlagBits::eTransferRead,
-		vk::AccessFlagBits::eColorAttachmentWrite);
+	return true;
 }
 
 const size_t& VkRoot::current_FrameNum() const

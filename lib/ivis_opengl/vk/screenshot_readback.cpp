@@ -287,7 +287,7 @@ bool ScreenshotReadback::requestCapture(std::function<void(std::unique_ptr<iV_Im
 }
 
 void ScreenshotReadback::recordCopy(VkRoot& root, ::vk::CommandBuffer drawCmd,
-	gfx_api::abstract_texture* swapchainColor, ::vk::Image swapchainImage)
+	gfx_api::abstract_texture* swapchainColor, ::vk::Image swapchainImage, bool transitionSwapchain)
 {
 	if (!_awaitingRecord.has_value())
 	{
@@ -297,18 +297,21 @@ void ScreenshotReadback::recordCopy(VkRoot& root, ::vk::CommandBuffer drawCmd,
 	PendingCapture capture = std::move(_awaitingRecord.value());
 	_awaitingRecord.reset();
 
-	::vk::ImageLayout oldLayout = root.getImageLayout(swapchainColor);
-	if (oldLayout == ::vk::ImageLayout::eUndefined || oldLayout == ::vk::ImageLayout::ePresentSrcKHR)
+	if (transitionSwapchain)
 	{
-		oldLayout = ::vk::ImageLayout::eColorAttachmentOptimal;
-	}
+		::vk::ImageLayout oldLayout = root.getImageLayout(swapchainColor);
+		if (oldLayout == ::vk::ImageLayout::eUndefined || oldLayout == ::vk::ImageLayout::ePresentSrcKHR)
+		{
+			oldLayout = ::vk::ImageLayout::eColorAttachmentOptimal;
+		}
 
-	root.transitionImageLayout(drawCmd, swapchainColor,
-		oldLayout, ::vk::ImageLayout::eTransferSrcOptimal,
-		::vk::PipelineStageFlagBits::eColorAttachmentOutput,
-		::vk::PipelineStageFlagBits::eTransfer,
-		::vk::AccessFlagBits::eColorAttachmentWrite,
-		::vk::AccessFlagBits::eTransferRead);
+		root.transitionImageLayout(drawCmd, swapchainColor,
+			oldLayout, ::vk::ImageLayout::eTransferSrcOptimal,
+			::vk::PipelineStageFlagBits::eColorAttachmentOutput,
+			::vk::PipelineStageFlagBits::eTransfer,
+			::vk::AccessFlagBits::eColorAttachmentWrite,
+			::vk::AccessFlagBits::eTransferRead);
+	}
 
 	::vk::BufferImageCopy region{};
 	region.imageSubresource.aspectMask = ::vk::ImageAspectFlagBits::eColor;
@@ -322,12 +325,15 @@ void ScreenshotReadback::recordCopy(VkRoot& root, ::vk::CommandBuffer drawCmd,
 	drawCmd.copyImageToBuffer(swapchainImage, ::vk::ImageLayout::eTransferSrcOptimal,
 		capture.staging.buffer, 1, &region, root.vkDynLoader);
 
-	root.transitionImageLayout(drawCmd, swapchainColor,
-		::vk::ImageLayout::eTransferSrcOptimal, ::vk::ImageLayout::ePresentSrcKHR,
-		::vk::PipelineStageFlagBits::eTransfer,
-		::vk::PipelineStageFlagBits::eBottomOfPipe,
-		::vk::AccessFlagBits::eTransferRead,
-		::vk::AccessFlags{});
+	if (transitionSwapchain)
+	{
+		root.transitionImageLayout(drawCmd, swapchainColor,
+			::vk::ImageLayout::eTransferSrcOptimal, ::vk::ImageLayout::ePresentSrcKHR,
+			::vk::PipelineStageFlagBits::eTransfer,
+			::vk::PipelineStageFlagBits::eBottomOfPipe,
+			::vk::AccessFlagBits::eTransferRead,
+			::vk::AccessFlags{});
+	}
 
 	capture.gpuRecorded = true;
 	_pendingThisSubmit = std::move(capture);

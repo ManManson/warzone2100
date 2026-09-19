@@ -672,27 +672,23 @@ void iV_DrawImageAnisotropic(gfx_api::texture& TextureID, Vector2i Position, Vec
 	iv_DrawImageImpl<gfx_api::DrawImageAnisotropicPSO>(TextureID, offset, size, Vector2f(0.f, 0.f), Vector2f(1.f, 1.f), colour, mvp);
 }
 
-bool pie_BlitSwapchainFreeze()
+bool pie_BlitFullscreenTexture(gfx_api::texture* texture)
 {
-	gfx_api::texture* texture = gfx_api::context::get().swapchainFreezeTexture();
-	if (texture == nullptr)
+	if (!texture)
 	{
 		return false;
-	}
-
-	Vector2f uv(0.f, 0.f);
-	Vector2f uvSize(1.f, 1.f);
-	if (!gfx_api::context::get().isYAxisInverted())
-	{
-		uv = Vector2f(0.f, 1.f);
-		uvSize = Vector2f(1.f, -1.f);
 	}
 
 	const glm::mat4 mvp = defaultProjectionMatrix();
 	iv_DrawImageImpl<gfx_api::DrawImageAnisotropicPSO>(*texture, Vector2f(0.f, 0.f),
 		Vector2f(static_cast<float>(screenWidth), static_cast<float>(screenHeight)),
-		uv, uvSize, WZCOL_WHITE, mvp);
+		Vector2f(0.f, 0.f), Vector2f(1.f, 1.f), WZCOL_WHITE, mvp);
 	return true;
+}
+
+bool pie_BlitSwapchainFreeze()
+{
+	return pie_BlitFullscreenTexture(gfx_api::context::get().presentationHoldTexture());
 }
 
 void iV_DrawImageText(gfx_api::texture& TextureID, Vector2f Position, Vector2f offset, Vector2f size, float angle, PIELIGHT colour)
