@@ -41,7 +41,6 @@ public:
 	void display(int xOffset, int yOffset) override;
 	void clicked(W_CONTEXT *psContext, WIDGET_KEY key) override;
 	void released(W_CONTEXT *psContext, WIDGET_KEY key) override;
-	std::string getTip() override;
 	bool capturesMouseDrag(WIDGET_KEY) override;
 	bool isGamepadCursorMagnetTarget() const override;
 
@@ -56,7 +55,7 @@ private:
 	uint32_t seekMsFromContext(W_CONTEXT *psContext) const;
 	void updateGhostFromContext(W_CONTEXT *psContext);
 	void drawPlayhead(float centerX, float centerY, PIELIGHT colour) const;
-	void drawDragTimeTip() const;
+	void drawCursorTimeTip(uint32_t timeMs) const;
 
 	optional<uint32_t> ghostMs_;
 	bool dragging_ = false;

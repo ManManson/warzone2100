@@ -123,12 +123,8 @@ void ReplayTimelineWidget::drawPlayhead(float centerX, float centerY, PIELIGHT c
 	pie_DrawRoundedBox(centerX - half, centerY - half, centerX + half, centerY + half, colour, REPLAY_TIMELINE_CORNER_RADIUS);
 }
 
-void ReplayTimelineWidget::drawDragTimeTip() const
+void ReplayTimelineWidget::drawCursorTimeTip(uint32_t timeMs) const
 {
-	if (!dragging_ || !ghostMs_.has_value())
-	{
-		return;
-	}
 	auto& session = ReplaySession::instance();
 	const uint32_t duration = session.timelineDurationMs();
 	if (duration == 0)
@@ -140,7 +136,7 @@ void ReplayTimelineWidget::drawDragTimeTip() const
 	constexpr int vGap = 3;
 	constexpr int cursorGap = 8;
 	const bool useHours = duration >= 3600u * GAME_TICKS_PER_SEC;
-	const std::string label = formatReplayTime(*ghostMs_, useHours);
+	const std::string label = formatReplayTime(timeMs, useHours);
 	const int textW = iV_GetTextWidth(label.c_str(), font_regular);
 	const int textH = iV_GetTextLineSize(font_regular);
 	const int boxW = textW + hGap * 2;
@@ -155,19 +151,6 @@ void ReplayTimelineWidget::drawDragTimeTip() const
 	iV_ShadowBox(boxX, boxY, boxX + boxW, boxY + boxH, 1, WZCOL_FORM_LIGHT, WZCOL_FORM_DARK, WZCOL_FORM_TIP_BACKGROUND);
 	iV_SetTextColour(WZCOL_WHITE);
 	iV_DrawText(label.c_str(), boxX + hGap, boxY + vGap - iV_GetTextAboveBase(font_regular), font_regular);
-}
-
-std::string ReplayTimelineWidget::getTip()
-{
-	auto& session = ReplaySession::instance();
-	const uint32_t duration = session.timelineDurationMs();
-	if (duration == 0 || dragging_ || ReplaySession::instance().isBusy())
-	{
-		return {};
-	}
-	const uint32_t ms = quantizeReplaySeekMs(xToMs(mouseX() - screenPosX()), duration);
-	const bool useHours = duration >= 3600u * GAME_TICKS_PER_SEC;
-	return formatReplayTime(ms, useHours);
 }
 
 void ReplayTimelineWidget::display(int xOffset, int yOffset)
@@ -217,5 +200,12 @@ void ReplayTimelineWidget::display(int xOffset, int yOffset)
 		drawPlayhead(static_cast<float>(msToX(x0, duration, *ghostMs_)), centerY, pal_RGBA(255, 255, 255, 160));
 	}
 	drawPlayhead(static_cast<float>(playheadX), centerY, pal_RGBA(255, 255, 255, 230));
-	drawDragTimeTip();
+	if (ghostMs_.has_value())
+	{
+		drawCursorTimeTip(*ghostMs_);
+	}
+	else if (isMouseOverWidget() && !ReplaySession::instance().isBusy())
+	{
+		drawCursorTimeTip(quantizeReplaySeekMs(xToMs(mouseX() - screenPosX()), duration));
+	}
 }
