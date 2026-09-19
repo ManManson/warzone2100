@@ -137,8 +137,12 @@ PassGraphTopologyBlueprint buildInGameBlueprint(const RenderTopologySnapshot& sn
 				AttachmentLoadOp::Clear, AttachmentLoadOp::Clear);
 		}
 
+		// OverlayOnly replaces WSI with the hold. gameUpdatePaused still Loads.
+		const AttachmentLoadOp uiLoad = (snapshot.features & RenderFeatures::FrozenWorldHold)
+			? AttachmentLoadOp::Clear
+			: AttachmentLoadOp::Load;
 		addSwapchainPassToBuilder(builder, PassId::InGameUI, "InGameUI", snapshot.swapchainMsaa,
-			AttachmentLoadOp::Load, AttachmentLoadOp::Clear);
+			uiLoad, AttachmentLoadOp::Clear);
 
 		return builder.build();
 	}

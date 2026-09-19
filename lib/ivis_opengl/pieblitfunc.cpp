@@ -686,11 +686,6 @@ bool pie_BlitFullscreenTexture(gfx_api::texture* texture)
 	return true;
 }
 
-bool pie_BlitSwapchainFreeze()
-{
-	return pie_BlitFullscreenTexture(gfx_api::context::get().presentationHoldTexture());
-}
-
 void iV_DrawImageText(gfx_api::texture& TextureID, Vector2f Position, Vector2f offset, Vector2f size, float angle, PIELIGHT colour)
 {
 	glm::mat4 mvp = defaultProjectionMatrix() * glm::translate(glm::vec3(Position.x, Position.y, 0)) * glm::rotate(RADIANS(angle), glm::vec3(0.f, 0.f, 1.f));

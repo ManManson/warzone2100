@@ -145,6 +145,11 @@ public:
 	{
 		return inGameWorldDrawFrozen();
 	}
+
+	bool overlayOnlyPresentation() const override
+	{
+		return SimClock::instance().presentation() == PresentationKind::OverlayOnly;
+	}
 };
 
 gfx_api::IRenderTopologyQuery& gfx_api::getGameRenderTopologyQuery()

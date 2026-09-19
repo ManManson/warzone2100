@@ -110,6 +110,10 @@ RenderTopologySnapshot snapshot(const IRenderTopologyQuery& query)
 		if (query.inGameWorldFrozen())
 		{
 			snapshot.features |= RenderFeatures::FrozenWorldOverlay;
+			if (query.overlayOnlyPresentation())
+			{
+				snapshot.features |= RenderFeatures::FrozenWorldHold;
+			}
 		}
 		snapshot.features |= RenderFeatures::GameStartFadeSlot;
 		if (query.debugOverlaysEnabled())

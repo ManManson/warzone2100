@@ -39,6 +39,8 @@
 #include "titleui/titleui.h"
 #include "wrappers.h"
 
+#include "lib/ivis_opengl/gfx_api.h"
+#include "lib/ivis_opengl/pieblitfunc.h"
 #include "lib/ivis_opengl/piefunc.h"
 #include "lib/ivis_opengl/piematrix.h"
 #include "lib/ivis_opengl/piemode.h"
@@ -77,6 +79,12 @@ static void recordInGameUI(const gfx_api::RenderPassContext&)
 	WZ_PROFILE_SCOPE(DrawUI);
 	pie_SetFogStatus(false);
 	pie_BeginInterface();
+
+	// Last Full present. Released when catch-up ends.
+	if (gfx_api::texture* hold = gfx_api::context::get().presentationHoldTexture())
+	{
+		pie_BlitFullscreenTexture(hold);
+	}
 
 	if (getWidgetsStatus())
 	{

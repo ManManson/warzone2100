@@ -69,6 +69,8 @@ struct RenderFeatures
 		SmaaIntermediate   = 1u << 6,
 		/// Downsample generate AO into the blur target when blur is coarser.
 		SSAODownsample     = 1u << 7,
+		/// OverlayOnly InGameUI clears; recordInGameUI blits PresentationHold.
+		FrozenWorldHold    = 1u << 8,
 	};
 };
 
@@ -161,6 +163,8 @@ public:
 	virtual bool debugOverlaysEnabled() const = 0;
 	/// True when in-game simulation/rendering is frozen but UI overlays still need to draw.
 	virtual bool inGameWorldFrozen() const = 0;
+	/// Replay catch-up. Distinct from inGameWorldFrozen (also gameUpdatePaused).
+	virtual bool overlayOnlyPresentation() const = 0;
 };
 
 namespace render_topology

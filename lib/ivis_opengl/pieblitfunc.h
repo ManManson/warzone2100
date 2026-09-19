@@ -263,7 +263,6 @@ static inline void iV_DrawImageTc(IMAGEFILE *imageFile, unsigned id, unsigned id
 }
 
 bool pie_BlitFullscreenTexture(gfx_api::texture* texture);
-bool pie_BlitSwapchainFreeze();
 void iV_TransBoxFill(float x0, float y0, float x1, float y1);
 void pie_UniTransBoxFill(float x0, float y0, float x1, float y1, PIELIGHT colour);
 

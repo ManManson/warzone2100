@@ -62,10 +62,6 @@ void ReplayBusyOverlay::display(int xOffset, int yOffset)
 		return;
 	}
 
-	if (!pie_BlitSwapchainFreeze())
-	{
-		pie_UniTransBoxFill(xOffset, yOffset, xOffset + width(), yOffset + height(), pal_RGBA(0, 0, 0, 255));
-	}
 	pie_UniTransBoxFill(xOffset, yOffset, xOffset + width(), yOffset + height(), pal_RGBA(0, 0, 0, 120));
 
 	const char *base = _("Loading");
