@@ -33,12 +33,6 @@ using nonstd::nullopt;
 class IReplayKeyframeStore;
 class IReplayMessageArchive;
 
-struct ReplayBusyStatus
-{
-	uint32_t originMs = 0;
-	uint32_t targetMs = 0;
-};
-
 class ReplaySession
 {
 public:
@@ -64,7 +58,6 @@ public:
 	bool isPaused() const;
 	size_t fastForwardTicks() const;
 	bool isBusy() const;
-	optional<ReplayBusyStatus> busy() const;
 
 private:
 	ReplaySession() = default;

@@ -165,9 +165,7 @@ std::string ReplayTimelineWidget::getTip()
 	{
 		return {};
 	}
-	const uint32_t ms = dragging_ && ghostMs_.has_value()
-		? *ghostMs_
-		: quantizeReplaySeekMs(xToMs(mouseX() - screenPosX()), duration);
+	const uint32_t ms = quantizeReplaySeekMs(xToMs(mouseX() - screenPosX()), duration);
 	const bool useHours = duration >= 3600u * GAME_TICKS_PER_SEC;
 	return formatReplayTime(ms, useHours);
 }

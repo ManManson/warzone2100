@@ -100,30 +100,12 @@ uint32_t ReplaySession::timelineDurationMs() const
 
 uint32_t ReplaySession::keyframeHorizonMs() const
 {
-	if (!keyframes_)
-	{
-		return 0;
-	}
-	return keyframes_->latestAtOrBefore(std::numeric_limits<uint32_t>::max()).value_or(0);
+	return latestKeyframeForSeek(std::numeric_limits<uint32_t>::max()).value_or(0);
 }
 
 bool ReplaySession::isBusy() const
 {
 	return pendingSeekMs_.has_value() || SimClock::instance().isCatchingUp();
-}
-
-optional<ReplayBusyStatus> ReplaySession::busy() const
-{
-	auto& clock = SimClock::instance();
-	if (pendingSeekMs_.has_value())
-	{
-		return ReplayBusyStatus{playheadMs(), *pendingSeekMs_};
-	}
-	if (!clock.isCatchingUp())
-	{
-		return nullopt;
-	}
-	return ReplayBusyStatus{clock.catchUpOrigin(), clock.catchUpTarget()};
 }
 
 void ReplaySession::syncClockModeFromPlayback()

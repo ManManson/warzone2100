@@ -226,7 +226,6 @@ void ReplayTransportBar::geometryChanged()
 
 void ReplayTransportBar::run(W_CONTEXT*)
 {
-	syncBusyControls();
 	if (realTime - lastUpdateTime >= GAME_TICKS_PER_UPDATE)
 	{
 		refreshButtonStates();
