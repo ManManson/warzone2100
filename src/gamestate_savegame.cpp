@@ -23,6 +23,7 @@
 
 #include "gamestate_savegame.h"
 #include "gamestate_serialize.h" // gamestate::StateError
+#include "gamestate_resume.h"
 
 #include "lib/framework/frame.h"      // selectedPlayer, MAX_PLAYERS
 #include "lib/framework/string_ext.h" // sstrcpy
@@ -1393,7 +1394,9 @@ bool coldLoadRestoreWorld()
 		// Defer the messages section: the level's message VIEWDATA is loaded from later-index data files
 		// that have not been processed yet here. applyDeferredColdLoadMessages() replays it in
 		// levFinalizeLevelLoad once level data has finished loading (matching the legacy loadSaveMessage).
-		gamestate::gameStateFromJson(*g_coldLoadGameStateDoc, gamestate::ScriptScope::AllInstances, /*deferMessages=*/true);
+		gamestate::reconstructWorldFromSnapshot(
+			*g_coldLoadGameStateDoc,
+			gamestate::ReconstructOptions{gamestate::ScriptScope::AllInstances, true});
 	}
 	catch (const std::exception &e)
 	{

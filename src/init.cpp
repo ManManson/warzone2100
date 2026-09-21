@@ -42,7 +42,6 @@
 #include "lib/ivis_opengl/tex.h"
 #include "lib/ivis_opengl/imd.h"
 #include "lib/netplay/netplay.h"
-#include "lib/netplay/sync_debug.h" // resetSyncDebug (clear cold-load reconstruction syncDebug)
 #include "lib/sound/audio_id.h"
 #include "lib/sound/cdaudio.h"
 #include "lib/sound/mixer.h"
@@ -105,6 +104,7 @@
 #include "ingameop.h"
 #include "qtscript.h"
 #include "gamestate_savegame.h"
+#include "gamestate_resume.h"
 #include "template.h"
 #include "activity.h"
 #include "spectatorwidgets.h"
@@ -1807,13 +1807,10 @@ static bool stageThreeInitialiseSync()
 
 	prepareScripts(getLevelLoadType() == GTYPE_SAVE_MIDMISSION);
 
-	if (!fpathActiveBackend().initialise())
+	if (!gamestate::restartSimWorkers())
 	{
 		return false;
 	}
-
-	mapInit(gameWorld);
-	gridReset(gameWorld);
 
 	//if mission screen is up, close it.
 	if (MissionResUp)
@@ -1896,21 +1893,7 @@ static bool stageThreeInitialiseSync()
 	// first fully-simulated tick after resume.)
 	if (wasColdLoad)
 	{
-		resetSyncDebug();
-		// A tick's object syncDebug is attributed to the NEXT sync boundary's CRC (sendPlayerGameTime runs
-		// mid-gameStateUpdate, after the headers but before the object updates). resetSyncDebug() above
-		// empties the log, so the first post-resume boundary would otherwise hash an empty log where a
-		// continuously-playing host hashed the saved tick's object updates - diverging on that one boundary
-		// and the GAME_GAME_TIME checkCrc that echoes it. Re-seed the accumulator with the CRC captured at
-		// the save boundary (determinismCore.syncDebugCrc) so the first post-resume boundary reproduces the
-		// host's CRC exactly. No-op for snapshots without the field.
-		applyResumeSyncDebugCrc();
-		// This client resumed from a GameState snapshot at gameTime; it cannot reproduce the sync CRC of
-		// any tick at or before the resume tick (those were never simulated here), so suppress incoming
-		// GAME_GAME_TIME CRC checks for those (else a reconnect / mid-match join would spuriously flag a
-		// desync). The first post-resume boundary (> gameTime) is reproduced by applyResumeSyncDebugCrc()
-		// above and so is left verifiable. See setSyncCheckFloorTime.
-		setSyncCheckFloorTime(gameTime);
+		gamestate::seedResumeSyncDebug();
 	}
 
 	return true;
