@@ -77,6 +77,7 @@ private:
 	void endCatchUpAudio();
 	void captureInitialStateIfNeeded();
 	void maybePlantKeyframe();
+	void plantKeyframeAt(uint32_t slot);
 	optional<uint32_t> latestKeyframeForSeek(uint32_t timeMs) const;
 	void restoreFromKeyframe(uint32_t keyframeTime);
 	void applyResumeIntent();

@@ -74,30 +74,20 @@ uint32_t ReplayMessageArchive::lastIndexedGameTime() const
 	return index_.empty() ? 0 : index_.back().gameTime;
 }
 
-void ReplayMessageArchive::rewindToGameTime(uint32_t gameTime)
+ReplayQueueCursors ReplayMessageArchive::captureConsumedCounts() const
+{
+	ReplayQueueCursors cursors;
+	for (unsigned player = 0; player < MAX_GAMEQUEUE_SLOTS; ++player)
+	{
+		cursors.consumed[player] = NETgameQueueConsumedMessageCount(player);
+	}
+	return cursors;
+}
+
+void ReplayMessageArchive::restoreConsumedCounts(const ReplayQueueCursors& cursors)
 {
 	for (unsigned player = 0; player < MAX_GAMEQUEUE_SLOTS; ++player)
 	{
-		NETgameQueueRewindReadCursorToStart(player);
-		if (gameTime == 0)
-		{
-			continue;
-		}
-		while (NETgameQueueHaveMessage(player))
-		{
-			const NetMessage* message = NETgameQueueGetMessage(player);
-			if (message == nullptr)
-			{
-				break;
-			}
-			if (auto checkTime = gameTimeFromGameTimeMessage(*message))
-			{
-				if (*checkTime >= gameTime)
-				{
-					break;
-				}
-			}
-			NETgameQueuePopMessage(player);
-		}
+		NETgameQueueRestoreConsumedMessageCount(player, cursors.consumed[player]);
 	}
 }

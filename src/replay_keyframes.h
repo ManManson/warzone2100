@@ -19,6 +19,8 @@
 
 #pragma once
 
+#include "replay_archive.h"
+
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -33,9 +35,10 @@ class IReplayKeyframeStore
 {
 public:
 	virtual ~IReplayKeyframeStore() = default;
-	virtual void put(uint32_t gameTime, std::string blob) = 0;
+	virtual void put(uint32_t gameTime, std::string blob, ReplayQueueCursors cursors) = 0;
 	virtual optional<uint32_t> latestAtOrBefore(uint32_t gameTime) const = 0;
 	virtual const std::string* blobAt(uint32_t gameTime) const = 0;
+	virtual const ReplayQueueCursors* cursorsAt(uint32_t gameTime) const = 0;
 };
 
 class ReplayKeyframeStore : public IReplayKeyframeStore
@@ -43,10 +46,16 @@ class ReplayKeyframeStore : public IReplayKeyframeStore
 public:
 	static std::unique_ptr<ReplayKeyframeStore> make();
 
-	void put(uint32_t gameTime, std::string blob) override;
+	void put(uint32_t gameTime, std::string blob, ReplayQueueCursors cursors) override;
 	optional<uint32_t> latestAtOrBefore(uint32_t gameTime) const override;
 	const std::string* blobAt(uint32_t gameTime) const override;
+	const ReplayQueueCursors* cursorsAt(uint32_t gameTime) const override;
 
 private:
-	std::map<uint32_t, std::string> snapshots_;
+	struct Entry
+	{
+		std::string blob;
+		ReplayQueueCursors cursors;
+	};
+	std::map<uint32_t, Entry> snapshots_;
 };

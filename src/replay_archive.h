@@ -19,6 +19,9 @@
 
 #pragma once
 
+#include "lib/netplay/nettypes.h"
+
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -28,11 +31,17 @@ struct ReplayTimeIndexEntry
 	uint32_t gameTime = 0;
 };
 
+struct ReplayQueueCursors
+{
+	std::array<size_t, MAX_GAMEQUEUE_SLOTS> consumed{};
+};
+
 class IReplayMessageArchive
 {
 public:
 	virtual ~IReplayMessageArchive() = default;
-	virtual void rewindToGameTime(uint32_t gameTime) = 0;
+	virtual ReplayQueueCursors captureConsumedCounts() const = 0;
+	virtual void restoreConsumedCounts(const ReplayQueueCursors& cursors) = 0;
 	virtual uint32_t lastIndexedGameTime() const = 0;
 };
 
@@ -41,7 +50,8 @@ class ReplayMessageArchive : public IReplayMessageArchive
 public:
 	static std::unique_ptr<ReplayMessageArchive> buildFromLoadedQueues();
 
-	void rewindToGameTime(uint32_t gameTime) override;
+	ReplayQueueCursors captureConsumedCounts() const override;
+	void restoreConsumedCounts(const ReplayQueueCursors& cursors) override;
 	uint32_t lastIndexedGameTime() const override;
 
 private:

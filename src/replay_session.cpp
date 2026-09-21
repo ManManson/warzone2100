@@ -196,6 +196,18 @@ void ReplaySession::finishCatchUp()
 	replayPresentationReleaseHold();
 }
 
+void ReplaySession::plantKeyframeAt(uint32_t slot)
+{
+	nlohmann::ordered_json j = gamestate::gameStateToJson(gamestate::ScriptScope::AllInstances);
+	j.erase("presentation");
+	ReplayQueueCursors cursors{};
+	if (archive_)
+	{
+		cursors = archive_->captureConsumedCounts();
+	}
+	keyframes_->put(slot, j.dump(), cursors);
+}
+
 void ReplaySession::captureInitialStateIfNeeded()
 {
 	if (capturedInitialState_ || !keyframes_)
@@ -205,9 +217,7 @@ void ReplaySession::captureInitialStateIfNeeded()
 	capturedInitialState_ = true;
 	try
 	{
-		nlohmann::ordered_json j = gamestate::gameStateToJson(gamestate::ScriptScope::AllInstances);
-		j.erase("presentation");
-		keyframes_->put(0, j.dump());
+		plantKeyframeAt(0);
 	}
 	catch (const std::exception& e)
 	{
@@ -228,9 +238,7 @@ void ReplaySession::maybePlantKeyframe()
 	}
 	try
 	{
-		nlohmann::ordered_json j = gamestate::gameStateToJson(gamestate::ScriptScope::AllInstances);
-		j.erase("presentation");
-		keyframes_->put(slot, j.dump());
+		plantKeyframeAt(slot);
 	}
 	catch (const std::exception& e)
 	{
@@ -257,6 +265,10 @@ void ReplaySession::restoreFromKeyframe(uint32_t keyframeTime)
 	if (blob == nullptr)
 	{
 		setGameTime(2);
+		if (archive_)
+		{
+			archive_->restoreConsumedCounts(ReplayQueueCursors{});
+		}
 		return;
 	}
 	try
@@ -267,11 +279,26 @@ void ReplaySession::restoreFromKeyframe(uint32_t keyframeTime)
 		resetSyncDebug();
 		applyResumeSyncDebugCrc();
 		setSyncCheckFloorTime(gameTime);
+		if (archive_)
+		{
+			if (const ReplayQueueCursors* cursors = keyframes_->cursorsAt(keyframeTime))
+			{
+				archive_->restoreConsumedCounts(*cursors);
+			}
+			else
+			{
+				archive_->restoreConsumedCounts(ReplayQueueCursors{});
+			}
+		}
 	}
 	catch (const std::exception& e)
 	{
 		debug(LOG_ERROR, "Replay: failed to restore keyframe at %u: %s", keyframeTime, e.what());
 		setGameTime(2);
+		if (archive_)
+		{
+			archive_->restoreConsumedCounts(ReplayQueueCursors{});
+		}
 	}
 }
 
@@ -288,12 +315,7 @@ void ReplaySession::startCatchUpTo(uint32_t timeMs)
 	clock.catchUpTo(timeMs);
 	if (needRestore)
 	{
-		const uint32_t restoreTime = keyframe.value_or(0);
-		restoreFromKeyframe(restoreTime);
-		if (archive_)
-		{
-			archive_->rewindToGameTime(restoreTime);
-		}
+		restoreFromKeyframe(keyframe.value_or(0));
 	}
 }
 

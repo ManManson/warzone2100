@@ -24,9 +24,9 @@ std::unique_ptr<ReplayKeyframeStore> ReplayKeyframeStore::make()
 	return std::make_unique<ReplayKeyframeStore>();
 }
 
-void ReplayKeyframeStore::put(uint32_t gameTime, std::string blob)
+void ReplayKeyframeStore::put(uint32_t gameTime, std::string blob, ReplayQueueCursors cursors)
 {
-	snapshots_[gameTime] = std::move(blob);
+	snapshots_[gameTime] = Entry{std::move(blob), cursors};
 }
 
 optional<uint32_t> ReplayKeyframeStore::latestAtOrBefore(uint32_t gameTime) const
@@ -51,5 +51,15 @@ const std::string* ReplayKeyframeStore::blobAt(uint32_t gameTime) const
 	{
 		return nullptr;
 	}
-	return &it->second;
+	return &it->second.blob;
+}
+
+const ReplayQueueCursors* ReplayKeyframeStore::cursorsAt(uint32_t gameTime) const
+{
+	const auto it = snapshots_.find(gameTime);
+	if (it == snapshots_.end())
+	{
+		return nullptr;
+	}
+	return &it->second.cursors;
 }
