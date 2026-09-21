@@ -539,6 +539,12 @@ static void readResearch(const nlohmann::ordered_json &j, uint32_t version)
 	{
 		throw StateError("research.players must have MAX_PLAYERS entries");
 	}
+	// Effects (upgrade tables, Improved-mode totals, upgrade grades, self-repair) are rebuilt
+	// from the document. A rewind must not keep research that completed after the snapshot.
+	// Availability lists and object identity are restored by the sections that follow this one,
+	// so researchResult's writes to those are overwritten. bDisplay/bTrigger=false: no console
+	// and no TRIGGER_RESEARCH. syncDebug from researchResult is cleared by seedResumeSyncDebug.
+	resetPlayerResearchEffects();
 	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
 	{
 		const nlohmann::ordered_json &jtopics = jplayers[p];
@@ -554,21 +560,10 @@ static void readResearch(const nlohmann::ordered_json &j, uint32_t version)
 		for (size_t t = 0; t < jtopics.size(); ++t)
 		{
 			PLAYER_RESEARCH &r = asPlayerResList[p][t];
-			const bool resAlreadyCompleted = IsResearchCompleted(&r);
 			r.currentPoints = jtopics[t].at("points").get<uint32_t>();
 			r.ResearchStatus = jtopics[t].at("status").get<uint8_t>();
 			r.possible = jtopics[t].at("possible").get<uint8_t>();
-			// Re-apply the UPGRADE EFFECTS of completed research. We serialize only the research STATUS;
-			// the derived upgrade values (structure/component power, research, production, body, ...) live
-			// in the global stat tables and, on a cold load, start at their un-researched defaults. Without
-			// this a loaded game runs with wrong rates - i.e. getBuildingPowerPoints (upgrade.power +
-			// upgrade.modulePower*capacity) is too low, so power generation, economy and research progress
-			// all diverge. Mirrors loadSaveResearch. The !resAlreadyCompleted guard avoids double-applying
-			// when the research is already applied in the live globals (the in-process round-trip).
-			// bDisplay/bTrigger=false: no console/UI and no TRIGGER_RESEARCH script event (those fired
-			// in the original run) - any RNG it consumes is overwritten by the determinism counters
-			// applied last in gameStateFromJson.
-			if (IsResearchCompleted(&r) && !resAlreadyCompleted)
+			if (IsResearchCompleted(&r))
 			{
 				researchResult(static_cast<UDWORD>(t), static_cast<UBYTE>(p), false, nullptr, false);
 			}

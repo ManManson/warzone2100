@@ -47,6 +47,7 @@
 #include "template.h"
 #include "qtscript.h"
 #include "stats.h"
+#include "structure.h"
 #include "wzapi.h"
 
 // The stores for the research stats
@@ -1288,6 +1289,53 @@ static void makeComponentAvailable(UBYTE &state)
 	case REDUNDANT_FOUND:
 		state = REDUNDANT;
 		break;
+	}
+}
+
+template <typename Stat>
+static void copyBaseUpgrades(Stat &stat)
+{
+	for (int player = 0; player < MAX_PLAYERS; ++player)
+	{
+		stat.upgrade[player] = stat.base;
+	}
+}
+
+template <typename Stat>
+static void copyBaseUpgrades(std::vector<Stat> &stats)
+{
+	for (Stat &stat : stats)
+	{
+		copyBaseUpgrades(stat);
+	}
+}
+
+void resetPlayerResearchEffects()
+{
+	if (asStructureStats != nullptr)
+	{
+		for (unsigned i = 0; i < numStructureStats; ++i)
+		{
+			copyBaseUpgrades(asStructureStats[i]);
+		}
+	}
+	copyBaseUpgrades(asBodyStats);
+	copyBaseUpgrades(asWeaponStats);
+	copyBaseUpgrades(asPropulsionStats);
+	copyBaseUpgrades(asSensorStats);
+	copyBaseUpgrades(asECMStats);
+	copyBaseUpgrades(asRepairStats);
+	copyBaseUpgrades(asConstructStats);
+	copyBaseUpgrades(asBrainStats);
+
+	for (auto &p : cachedPerPlayerRawUpgradeChange)
+	{
+		p.clear();
+	}
+	playerUpgradeCounts = std::vector<PlayerUpgradeCounts>(MAX_PLAYERS);
+	for (int i = 0; i < MAX_PLAYERS; ++i)
+	{
+		bSelfRepair[i] = false;
 	}
 }
 

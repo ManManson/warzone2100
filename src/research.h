@@ -107,6 +107,11 @@ std::vector<uint16_t> fillResearchList(UDWORD playerID, nonstd::optional<UWORD> 
 /* process the results of a completed research topic */
 void researchResult(UDWORD researchIndex, UBYTE player, bool bDisplay, STRUCTURE *psResearchFacility, bool bTrigger);
 
+/// Copy every player's upgrade slot back to the loaded base stat, and clear the
+/// accumulators researchResult writes (Improved-mode totals, upgrade grades, self-repair).
+/// Does not touch research status or component availability.
+void resetPlayerResearchEffects();
+
 //this just inits all the research arrays
 bool ResearchShutDown();
 //this free the memory used for the research
