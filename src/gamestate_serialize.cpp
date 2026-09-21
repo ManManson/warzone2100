@@ -3353,15 +3353,14 @@ static void restampTerrainHeights(WorldMapState &map, const nlohmann::ordered_js
 	{
 		return;
 	}
-	const nlohmann::ordered_json &hgt = j.at("tileHeight");
+	// tileHeight is the base64 LE i32 blob written by writeMapTerrain, not a JSON array.
+	// An array-size check never matched that blob, so this restamp returned without writing
+	// and the +-1 foundation drift from buildFlatten survived.
 	const size_t n = static_cast<size_t>(map.width) * static_cast<size_t>(map.height);
-	if (hgt.size() != n)
-	{
-		return;
-	}
+	const std::vector<uint8_t> hgt = decodeBase64Field(j.at("tileHeight"), n * 4, "map terrain tileHeight");
 	for (size_t i = 0; i < n; ++i)
 	{
-		map.tiles[i].height = hgt[i].get<int32_t>();
+		map.tiles[i].height = static_cast<int32_t>(readU32le(&hgt[i * 4]));
 	}
 }
 
@@ -5063,6 +5062,9 @@ bool runGameStateSelfTest()
 				check(tm2.tiles[5].texture == 6, "terrain round-trip texture wrong");
 				check(tm2.tiles[5].height == 105, "terrain round-trip height wrong");
 				check(tm2.tiles[5].waterLevel == 5, "terrain round-trip water wrong");
+				tm2.tiles[5].height = 999;
+				restampTerrainHeights(tm2, tj);
+				check(tm2.tiles[5].height == 105, "restampTerrainHeights did not restore saved height");
 			}
 			check(currentMapTileset == MAP_TILESET::URBAN, "terrain round-trip tileset wrong");
 			check(terrainTypes[6] == 3, "terrain round-trip terrainTypes wrong");
