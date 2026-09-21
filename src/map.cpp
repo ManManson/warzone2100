@@ -89,9 +89,10 @@ void setLastDangerUpdate(UDWORD value) { lastDangerUpdate = value; }
 int getLastDangerPlayer() { return lastDangerPlayer; }
 void setLastDangerPlayer(int value) { lastDangerPlayer = value; }
 
-// Cleanly stop and tear down the danger worker thread (if running). Wakes it from its wait, lets it
-// observe lastDangerPlayer == -1 to exit its loop, joins it, and destroys the semaphores. Shared by
-// mapShutdown() and the GameState restore path.
+// Cleanly stop and tear down the danger worker thread (if running). The worker blocks on the job
+// semaphore while idle (done token already posted) and posts done after each flood. Wait-done drains
+// an in-flight flood or the idle token; then lastDangerPlayer = -1 and a job post lets it observe
+// the exit sentinel, join, and destroy the semaphores. Shared by mapShutdown() and GameState restore.
 static void stopDangerThread()
 {
 	if (dangerThread)
@@ -2258,11 +2259,15 @@ static int dangerFloodFill(WorldMapState& mapState, int player)
 // This function runs in a separate thread!
 static int dangerThreadFunc(WZ_DECL_UNUSED void *data)
 {
-	while (lastDangerPlayer != -1)
+	for (;;)
 	{
-		dangerFloodFill(gameWorld.map, lastDangerPlayer);	// Do the actual work
-		wzSemaphorePost(dangerDoneSemaphore);   // Signal that we are done
-		wzSemaphoreWait(dangerSemaphore);	// Go to sleep until needed.
+		wzSemaphoreWait(dangerSemaphore);
+		if (lastDangerPlayer == -1)
+		{
+			break;
+		}
+		dangerFloodFill(gameWorld.map, lastDangerPlayer);
+		wzSemaphorePost(dangerDoneSemaphore);
 	}
 	return 0;
 }
@@ -2360,8 +2365,8 @@ void mapInit(GameWorld& world)
 	// When restoring from a GameState snapshot the danger-map content + schedule were already applied
 	// (mapRestoreDangerMaps, run during the world reconstruction that precedes this call on the cold-load
 	// path). Preserve them: skip the all-fresh per-player recompute and the schedule reset, but still
-	// (re)start the worker thread. On start the thread re-floods lastDangerPlayer from the restored
-	// working THREAT bits + blockMap[AUX_DANGERMAP], reproducing the in-flight DANGER deterministically.
+	// (re)start the worker idle (done token posted, blocked on the job semaphore). The next mapUpdate
+	// round-robin posts the first job. Harvested overlays + working buffer stay as JSON restored them.
 	const bool fromSnapshot = dangerRestoredFromSnapshot;
 	dangerRestoredFromSnapshot = false; // consume
 
@@ -2385,9 +2390,14 @@ void mapInit(GameWorld& world)
 				auxMapRestore(world.map, player, AUX_DANGERMAP, AUXBITS_DANGER | AUXBITS_THREAT | AUXBITS_AATHREAT);
 			}
 			lastDangerPlayer = 0;
+			// Working buffer after the loop is player MAX_PLAYERS-1. Point it at player 0
+			// so the first mapUpdate restore is an identity apply, then the round-robin
+			// advances to player 1 -- same phase as the old immediate-flood-on-start.
+			auxMapStore(world.map, 0, AUX_DANGERMAP);
 		}
 		dangerSemaphore = wzSemaphoreCreate(0);
-		dangerDoneSemaphore = wzSemaphoreCreate(0);
+		// Idle: done token already posted, matching writeDangerMaps' parked worker.
+		dangerDoneSemaphore = wzSemaphoreCreate(1);
 		dangerThread = wzThreadCreate(dangerThreadFunc, nullptr, "wzDanger");
 		wzThreadStart(dangerThread);
 	}

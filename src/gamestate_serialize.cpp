@@ -2604,10 +2604,10 @@ static void readMapDynamic(GameWorld &world, const nlohmann::ordered_json &j)
 //     (the full range mapInit() initializes. Players in [game.maxPlayers, MAX_PLAYERS) are never refreshed
 //     by the round-robin but keep init-time danger that fpath still reads, so they must be saved too).
 //   - The in-flight working buffer auxMap[MAX_PLAYERS+AUX_DANGERMAP] (verbatim) + blockMap[AUX_DANGERMAP],
-//     i.e. the inputs dangerFloodFill() reads for lastDangerPlayer (its DANGER/TEMPORARY scratch bits are
-//     recomputed by the worker on restart, so they ride along harmlessly).
-// The worker's DANGER output for the in-flight player is NOT stored: on restore the restarted thread
-// re-floods it deterministically from the restored working THREAT/NONPASSABLE + blockMap + start pos.
+//     i.e. the inputs dangerFloodFill() reads for lastDangerPlayer (DANGER/TEMPORARY scratch bits ride
+//     along; they are rewritten on the next flood, not on thread start).
+// Snapshot mapInit starts the worker idle (done token posted); the next mapUpdate round-robin posts
+// the first job. The working buffer is restored verbatim and is not flooded on start.
 constexpr uint32_t DANGER_SECTION_VERSION = 1;
 constexpr uint8_t DANGER_OVERLAY_BITS = AUXBITS_DANGER | AUXBITS_THREAT | AUXBITS_AATHREAT;
 
@@ -2716,8 +2716,8 @@ static void readDangerMaps(GameWorld &world, const nlohmann::ordered_json &j, ui
 	}
 
 	// In-flight working buffer (verbatim) + danger blocking snapshot. The danger thread is stopped during
-	// reconstruct (mapStopDangerThreadForReconstruct), so these writes do not race it - mapInit restarts
-	// the worker, which re-floods lastDangerPlayer from exactly these inputs.
+	// reconstruct (mapStopDangerThreadForReconstruct), so these writes do not race it. mapInit restarts
+	// the worker idle; the next mapUpdate round-robin posts the first job from this restored buffer.
 	const std::vector<uint8_t> work = decodeBase64Field(j.at("work"), n, "dangerMaps work buffer");
 	const std::vector<uint8_t> blockDanger = decodeBase64Field(j.at("blockDanger"), n, "dangerMaps blockDanger");
 	uint8_t *wb = world.map.auxMap[MAX_PLAYERS + AUX_DANGERMAP].get();
