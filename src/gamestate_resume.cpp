@@ -60,6 +60,11 @@ void seedResumeSyncDebug()
 	resetSyncDebug();
 	applyResumeSyncDebugCrc();
 	setSyncCheckFloorTime(gameTime);
+	// No-op unless --gamestate-crc-detail-on-save. The next 20 sendPlayerGameTime
+	// calls append full buckets to <trace>.detail.txt. 20 covers the observed
+	// first failures (about 5 and 9 ticks after the 60s keyframe).
+	debug(LOG_INFO, "sync check floor gameTime=%u", gameTime);
+	syncCrcDetailArmOnSaveOrLoad();
 }
 
 void resumeFromSnapshot(const nlohmann::ordered_json &j,
