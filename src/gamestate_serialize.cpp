@@ -22,6 +22,7 @@
 #include <nlohmann/json.hpp> // Must come before WZ includes
 
 #include "gamestate_serialize.h"
+#include "gamestate_resume.h"
 #include "corridor_gate.h"
 
 #include "lib/framework/frame.h"
@@ -4782,17 +4783,10 @@ bool runGameStateRoundTripTest()
 	try
 	{
 		buf1 = serializeGameState();
-		deserializeGameState(buf1);
-		// Mirror ALL of what the real restore paths do after reconstruction (cold-load in init.cpp, etc):
-		// discard the syncDebug accumulated while REBUILDING the world, re-seed the accumulator with the
-		// CRC captured at save time (stashed by readDeterminismCore's setResumeSyncDebugCrc), and floor
-		// the sync-CRC check at the resume tick.
-		// Without the first two the round-trip would re-serialize the reconstruction-shifted CRC (a
-		// harness-only artifact). Without the floor, the reset log would make the resume-tick GAME_GAME_TIME
-		// checks spuriously flag a desync.
-		resetSyncDebug();
-		applyResumeSyncDebugCrc();
-		setSyncCheckFloorTime(gameTime);
+		{
+			nlohmann::ordered_json j = parseJsonBounded(buf1.data(), buf1.data() + buf1.size());
+			resumeFromSnapshot(j, {});
+		}
 		buf2 = serializeGameState();
 	}
 	catch (const std::exception &e)
