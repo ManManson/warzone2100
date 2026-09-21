@@ -524,9 +524,12 @@ bool NETend(MessageWriter& w)
 	bool shouldWrapSecretMessage = w.bSecretMessageWrap;
 	w.bSecretMessageWrap = false; // reset, always
 
-	if (bIsReplay && w.queueInfo.index != realSelectedPlayer)
+	const bool isGameQueue = w.queueInfo.queueType == QUEUE_GAME || w.queueInfo.queueType == QUEUE_GAME_FORCED;
+	if (bIsReplay && (isGameQueue || w.queueInfo.index != realSelectedPlayer))
 	{
-		// don't bother adding to the send queue if we're playing a replay
+		// Replay already contains every GAME_* message. Pushing again pollutes
+		// retain-consumed queues (duplicate GAME_GAME_TIME / orders) and makes
+		// seek cursor restore undefined. nextDebugSync still ran at the caller.
 		return true;
 	}
 
