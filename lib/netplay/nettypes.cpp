@@ -195,6 +195,25 @@ void NETgameQueueRewindReadCursorToStart(unsigned player)
 	}
 }
 
+size_t NETgameQueueConsumedMessageCount(unsigned player)
+{
+	ASSERT_OR_RETURN(0, player < MAX_GAMEQUEUE_SLOTS, "Invalid game queue slot %u", player);
+	if (gameQueues[player] == nullptr)
+	{
+		return 0;
+	}
+	return gameQueues[player]->consumedMessageCount();
+}
+
+void NETgameQueueRestoreConsumedMessageCount(unsigned player, size_t n)
+{
+	ASSERT_OR_RETURN(, player < MAX_GAMEQUEUE_SLOTS, "Invalid game queue slot %u", player);
+	if (gameQueues[player] != nullptr)
+	{
+		gameQueues[player]->restoreConsumedMessageCount(n);
+	}
+}
+
 void NETgameQueueForEachMessage(unsigned player, const std::function<void(const NetMessage&)>& fn)
 {
 	ASSERT_OR_RETURN(, player < MAX_GAMEQUEUE_SLOTS, "Invalid game queue slot %u", player);

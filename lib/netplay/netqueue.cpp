@@ -178,6 +178,7 @@ NetQueue::NetQueue()
 	, messages(MsgAllocator(defaultMemoryPool()))
 	, pendingGameTimeUpdateMessages(0)
 	, bCurrentMessageWasDecrypted(false)
+	, consumedCount(0)
 {
 	dataPos = messages.end();
 	messagePos = messages.end();
@@ -349,6 +350,7 @@ void NetQueue::popMessage()
 
 	// Pop the message.
 	--messagePos;
+	++consumedCount;
 	bCurrentMessageWasDecrypted = false;
 
 	// Recycle old data.
@@ -364,6 +366,7 @@ void NetQueue::rewindReadCursorToStart()
 {
 	messagePos = messages.end();
 	bCurrentMessageWasDecrypted = false;
+	consumedCount = 0;
 	pendingGameTimeUpdateMessages = 0;
 	for (const auto& message : messages)
 	{
@@ -371,6 +374,21 @@ void NetQueue::rewindReadCursorToStart()
 		{
 			++pendingGameTimeUpdateMessages;
 		}
+	}
+}
+
+size_t NetQueue::consumedMessageCount() const
+{
+	return consumedCount;
+}
+
+void NetQueue::restoreConsumedMessageCount(size_t n)
+{
+	rewindReadCursorToStart();
+	while (consumedCount < n)
+	{
+		ASSERT_OR_RETURN(, haveMessage(), "Queue cursor restore ran out of messages (%zu / %zu)", consumedCount, n);
+		popMessage();
 	}
 }
 

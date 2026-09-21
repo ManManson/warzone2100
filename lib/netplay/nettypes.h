@@ -70,6 +70,8 @@ size_t NETgameQueueRestorePending(unsigned player, const std::vector<std::vector
 
 void NETsetGameQueueRetainConsumedMessages(bool retain);
 void NETgameQueueRewindReadCursorToStart(unsigned player);
+size_t NETgameQueueConsumedMessageCount(unsigned player);
+void NETgameQueueRestoreConsumedMessageCount(unsigned player, size_t n);
 void NETgameQueueForEachMessage(unsigned player, const std::function<void(const NetMessage&)>& fn);
 bool NETgameQueueHaveMessage(unsigned player);
 const NetMessage *NETgameQueueGetMessage(unsigned player);

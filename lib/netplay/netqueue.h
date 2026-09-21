@@ -296,6 +296,8 @@ public:
 
 	void setRetainConsumedMessages(bool retain);
 	void rewindReadCursorToStart();
+	size_t consumedMessageCount() const;
+	void restoreConsumedMessageCount(size_t n);
 	void forEachStoredMessage(const std::function<void(const NetMessage&)>& fn) const;
 
 private:
@@ -337,6 +339,7 @@ private:
 	size_t                        pendingGameTimeUpdateMessages;       ///< Pending GAME_GAME_TIME messages added to this queue
 	bool						  bCurrentMessageWasDecrypted;
 	bool                          retainConsumedMessages = false;
+	size_t                        consumedCount = 0;
 };
 
 /// A NetQueuePair is used for talking to a socket. We insert NetMessages in the send NetQueue, which converts the messages into a stream of bytes for the
