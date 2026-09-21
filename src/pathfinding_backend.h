@@ -121,7 +121,8 @@ public:
 	virtual bool initialise() = 0;
 	virtual void shutdown() = 0;
 
-	/// Discard cached state that a load or a mission boundary has made stale.
+	/// Discard queued jobs, pending futures, and cached state that a load or an
+	/// in-place world reconstruct has made stale.
 	virtual void hardReset() = 0;
 
 	/// Main-thread hook, called once per tick from the game loop after the map

@@ -466,6 +466,16 @@ void fpathSetPendingResult(uint32_t droidID, const FPathPendingResult &in)
 	pathResults[droidID] = fpathMakeReadyResult(r);
 }
 
+void fpathResetForWorldReconstruct()
+{
+	// Join workers so in-flight searches and per-thread PathfindContext die with the
+	// old timeline. Queued packaged_tasks are abandoned (fpathQuit). pendingRoutes
+	// later installs ready futures into an empty pathResults; initialise() (resume
+	// pipeline) starts a new pool.
+	fpathActiveBackend().shutdown();
+	pathResults.clear();
+}
+
 static FPATH_RETVAL fpathRoute(const WorldMapState& mapState, MOVE_CONTROL *psMove, unsigned id, int startX, int startY, int tX, int tY, PROPULSION_TYPE propulsionType,
                                DROID_TYPE droidType, FPATH_MOVETYPE moveType, int owner, bool acceptNearest, StructureBounds const &dstStructure)
 {
@@ -607,7 +617,17 @@ class LegacyAStarBackend : public IPathfindingBackend
 public:
 	bool initialise() override { return fpathInitialise(); }
 	void shutdown() override { fpathShutdown(); }
-	void hardReset() override { fpathHardTableReset(); }
+	void hardReset() override
+	{
+		for (auto& threadInfo : fpathThreadsInfo)
+		{
+			wzMutexLock(threadInfo->mutex);
+			threadInfo->pathJobs.clear();
+			wzMutexUnlock(threadInfo->mutex);
+		}
+		pathResults.clear();
+		fpathHardTableReset();
+	}
 	void updateTick(const WorldMapState&) override { fpathUpdate(); }
 
 	FPATH_RETVAL route(DROID *psDroid, const WorldMapState& mapState, SDWORD tX, SDWORD tY, FPATH_MOVETYPE moveType) override
@@ -700,6 +720,12 @@ public:
 				syncDebug("congestionOverlay(%u,%d) = %08X", overlay->gameTime, overlay->cohortPlayer, overlay->checksum);
 			}
 		}
+	}
+
+	void hardReset() override
+	{
+		LegacyAStarBackend::hardReset();
+		overlays.clear();
 	}
 
 	void shutdown() override

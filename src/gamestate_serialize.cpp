@@ -4404,6 +4404,13 @@ void gameStateFromJson(const nlohmann::ordered_json &j, ScriptScope scriptScope,
 	// dangerMaps post-pass below and the worker is (re)started by the next mapInit.
 	mapStopDangerThreadForReconstruct();
 
+	// Drop queued path jobs and planner caches from the timeline we are leaving. In-place resume (replay
+	// seek) otherwise leaves pre-restore jobs on the worker queues; snapshot pendingRoutes then sit
+	// behind that backlog, first-tick MOVEWAITROUTE polls miss, and later searches reuse a stale
+	// PathfindContext. Cold-load is a no-op (the pool is still empty). pendingRoutes are applied later
+	// in this function, after the world exists.
+	fpathResetForWorldReconstruct();
+
 	// Purge the pending destroyed-object list before teardown. Objects killed in the tick(s) before the
 	// snapshot were moved off the world lists onto the global psDestroyedObj, so clearWorldObjects never
 	// frees them. Left in place, the next objmemUpdate would fire triggerEventDestroyed / free them on the

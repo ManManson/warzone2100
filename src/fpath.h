@@ -90,6 +90,11 @@ bool fpathTakePendingResult(uint32_t droidID, FPathPendingResult &out);
  *  consumes it directly (no re-derivation). Replaces any existing result/job for that droid. */
 void fpathSetPendingResult(uint32_t droidID, const FPathPendingResult &result);
 
+/** In-place GameState reconstruct: join path workers so in-flight searches and per-thread A*
+ *  PathfindContext die with the old timeline. pendingRoutes later installs snapshot results into
+ *  an empty table; initialise() (resume pipeline) starts a new pool. */
+void fpathResetForWorldReconstruct();
+
 void fpathUpdate();
 
 /** Find a route for a droid to a location.
