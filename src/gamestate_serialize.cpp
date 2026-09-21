@@ -2762,6 +2762,17 @@ static nlohmann::ordered_json writeWorldObjects(const GameWorld &world, bool onM
 		j["corridorFlow"] = std::move(jgateCarry);
 	}
 
+	// corridorGateUpdate hashes "corridorMap = ..." once, when seenMap/seenChecksum do not
+	// match the live CorridorMap. Reconstruct rebuilds that map, so the pointer cannot be
+	// saved. Persist the checksum only after the first announce (seenMap != nullptr).
+	// Omitting the field -- including a t=0 keyframe planted before any tick -- means the
+	// next update must announce. Checksum 0 is a legal fold, so it is not the sentinel.
+	// Sibling of corridorFlow: that object's keys are player indexes.
+	if (world.corridorFlow.seenMap != nullptr)
+	{
+		j["corridorSeenChecksum"] = world.corridorFlow.seenChecksum;
+	}
+
 	nlohmann::ordered_json jfeatures = nlohmann::ordered_json::array();
 	for (const FEATURE *psFeature : world.objects.features[0])
 	{
@@ -2817,6 +2828,21 @@ static void readWorldObjects(GameWorld &world, const nlohmann::ordered_json &j, 
 				throw StateError("world.corridorFlow player key out of range");
 			}
 			corridorGateRestoreCarry(world, static_cast<unsigned>(p), it.value().get<CorridorGateCarry>());
+		}
+	}
+
+	// Rebind the "already announced" identity onto the corridor map just rebuilt from
+	// this snapshot's terrain. A match means the next corridorGateUpdate must not
+	// syncDebug the map again. A mismatch (different geometry) leaves seenMap null so
+	// that update takes the new-map path. A missing field is a pre-announce snapshot.
+	if (j.contains("corridorSeenChecksum"))
+	{
+		const uint32_t savedSeen = j.at("corridorSeenChecksum").get<uint32_t>();
+		world.corridorFlow.seenChecksum = savedSeen;
+		const CorridorMap *cmap = world.map.corridors.get();
+		if (cmap != nullptr && cmap->checksum == savedSeen)
+		{
+			world.corridorFlow.seenMap = cmap;
 		}
 	}
 
