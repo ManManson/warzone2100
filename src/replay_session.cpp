@@ -27,13 +27,10 @@
 #include "lib/gamelib/gtime.h"
 #include "replay_presentation.h"
 #include "lib/netplay/nettypes.h"
-#include "lib/netplay/sync_debug.h"
 #include "lib/sound/audio.h"
+#include "gamestate_resume.h"
 #include "gamestate_serialize.h"
-#include "game_world.h"
 #include "loop.h"
-#include "map.h"
-#include "pathfinding_backend.h"
 #include "sim_clock.h"
 
 #include <nlohmann/json.hpp>
@@ -278,17 +275,11 @@ void ReplaySession::restoreFromKeyframe(uint32_t keyframeTime)
 	{
 		nlohmann::ordered_json j = gamestate::parseJsonBounded(blob->data(), blob->data() + blob->size());
 		j.erase("presentation");
-		gamestate::gameStateFromJson(j, gamestate::ScriptScope::AllInstances);
-		// fromJson stops the SKIRMISH danger worker before tearing down aux maps. Cold-load
-		// restarts it via mapInit(); in-place seek must do the same or mapUpdate waits on a
-		// destroyed semaphore and the overlay never refreshes, so CRC diverges after rewind.
-		mapInit(gameWorld);
-		fpathActiveBackend().initialise();
-		resetSyncDebug();
-		applyResumeSyncDebugCrc();
-		setSyncCheckFloorTime(gameTime);
-		if (archive_)
-		{
+		gamestate::resumeFromSnapshot(j, [this, keyframeTime]() {
+			if (!archive_)
+			{
+				return;
+			}
 			if (const ReplayQueueCursors* cursors = keyframes_->cursorsAt(keyframeTime))
 			{
 				archive_->restoreConsumedCounts(*cursors);
@@ -297,7 +288,7 @@ void ReplaySession::restoreFromKeyframe(uint32_t keyframeTime)
 			{
 				archive_->restoreConsumedCounts(ReplayQueueCursors{});
 			}
-		}
+		});
 	}
 	catch (const std::exception& e)
 	{
