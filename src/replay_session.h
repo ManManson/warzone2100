@@ -33,6 +33,22 @@ using nonstd::nullopt;
 class IReplayKeyframeStore;
 class IReplayMessageArchive;
 
+/// Observer of session events. Listeners are notified synchronously on the game thread.
+/// Notification iterates a snapshot of the list, so a callback may add or remove an observer.
+/// A callback may re-enter only through dispatch(). dispatch() is
+/// normally deferred to commitPendingSeek, but seekTo() restores synchronously when the clock
+/// is already catching up, so onKeyframeRestored can fire nested inside onTickCompleted.
+class IReplaySessionObserver
+{
+public:
+	virtual ~IReplaySessionObserver() = default;
+	virtual void onKeyframeRestored(uint32_t keyframeTime) {}
+	virtual void onTickCompleted(uint32_t gameTime) {}
+};
+
+void replaySessionAddObserver(IReplaySessionObserver *observer);
+void replaySessionRemoveObserver(IReplaySessionObserver *observer);
+
 class ReplaySession
 {
 public:
@@ -46,6 +62,8 @@ public:
 
 	void dispatch(ReplayCommand cmd);
 	void onGameLoopBegin();
+	/// Called once after each simulated tick, before the next tick starts.
+	void onTickCompleted();
 	void onGameLoopAfterTicks(bool tickExhausted);
 	void commitPendingSeek();
 	void cancelBusy();

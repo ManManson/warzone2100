@@ -39,6 +39,50 @@
 #include <exception>
 #include <limits>
 #include <variant>
+#include <vector>
+
+namespace
+{
+std::vector<IReplaySessionObserver *> g_replaySessionObservers;
+
+void notifyReplaySessionTick(uint32_t tickTime)
+{
+	const std::vector<IReplaySessionObserver *> observers = g_replaySessionObservers;
+	for (IReplaySessionObserver *observer : observers)
+	{
+		observer->onTickCompleted(tickTime);
+	}
+}
+
+void notifyReplaySessionRestored(uint32_t keyframeTime)
+{
+	const std::vector<IReplaySessionObserver *> observers = g_replaySessionObservers;
+	for (IReplaySessionObserver *observer : observers)
+	{
+		observer->onKeyframeRestored(keyframeTime);
+	}
+}
+} // namespace
+
+void replaySessionAddObserver(IReplaySessionObserver *observer)
+{
+	if (observer == nullptr)
+	{
+		return;
+	}
+	if (std::find(g_replaySessionObservers.begin(), g_replaySessionObservers.end(), observer) != g_replaySessionObservers.end())
+	{
+		return;
+	}
+	g_replaySessionObservers.push_back(observer);
+}
+
+void replaySessionRemoveObserver(IReplaySessionObserver *observer)
+{
+	g_replaySessionObservers.erase(
+		std::remove(g_replaySessionObservers.begin(), g_replaySessionObservers.end(), observer),
+		g_replaySessionObservers.end());
+}
 
 ReplaySession& ReplaySession::instance()
 {
@@ -123,9 +167,14 @@ void ReplaySession::onGameLoopBegin()
 	captureInitialStateIfNeeded();
 }
 
-void ReplaySession::onGameLoopAfterTicks(bool tickExhausted)
+void ReplaySession::onTickCompleted()
 {
 	maybePlantKeyframe();
+	notifyReplaySessionTick(gameTime);
+}
+
+void ReplaySession::onGameLoopAfterTicks(bool tickExhausted)
+{
 	auto& clock = SimClock::instance();
 	if (!clock.isCatchingUp())
 	{
@@ -289,6 +338,7 @@ void ReplaySession::restoreFromKeyframe(uint32_t keyframeTime)
 				archive_->restoreConsumedCounts(ReplayQueueCursors{});
 			}
 		});
+		notifyReplaySessionRestored(keyframeTime);
 	}
 	catch (const std::exception& e)
 	{

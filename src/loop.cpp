@@ -785,6 +785,10 @@ GAMECODE gameLoop()
 			break;
 		}
 		++ticksSoFar;
+		if (ReplaySession::active())
+		{
+			ReplaySession::instance().onTickCompleted();
+		}
 	}
 	if (ReplaySession::active())
 	{
