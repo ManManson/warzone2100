@@ -36,6 +36,7 @@ enum class SimClockMode
 	Realtime,
 	FastForward,
 	CatchUp,
+	Unthrottled,
 	Manual
 };
 
@@ -58,6 +59,7 @@ constexpr ClockPolicyRow CLOCK_POLICIES[] = {
 	{SimClockMode::Realtime,    TickAdvanceKind::WallClock, PresentationKind::Full},
 	{SimClockMode::FastForward, TickAdvanceKind::WallClock, PresentationKind::Full},
 	{SimClockMode::CatchUp,     TickAdvanceKind::Forced,    PresentationKind::OverlayOnly},
+	{SimClockMode::Unthrottled, TickAdvanceKind::Forced,    PresentationKind::None},
 	{SimClockMode::Manual,      TickAdvanceKind::Forced,    PresentationKind::None},
 };
 
@@ -82,6 +84,11 @@ consteval bool clockPolicyValid(ClockPolicyRow r)
 		return false;
 	}
 	if (r.mode == SimClockMode::Manual && r.present != PresentationKind::None)
+	{
+		return false;
+	}
+	if (r.mode == SimClockMode::Unthrottled
+	    && (r.tick != TickAdvanceKind::Forced || r.present != PresentationKind::None))
 	{
 		return false;
 	}

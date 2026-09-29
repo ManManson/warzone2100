@@ -69,6 +69,7 @@ bool SimClock::shouldTickThisFrame(size_t, uint32_t frameElapsedMs) const
 		case SimClockMode::Paused:
 		case SimClockMode::Realtime:
 		case SimClockMode::FastForward:
+		case SimClockMode::Unthrottled:
 			// Keep the existing gameLoop contract: attempt ticks until simulateOneGameTick
 			// reports no update. Realtime must not be capped at one attempt — renderBudget
 			// and spectator fast-forward both rely on extra WallClock iterations.

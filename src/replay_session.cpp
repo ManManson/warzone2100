@@ -160,6 +160,11 @@ void ReplaySession::syncClockModeFromPlayback()
 		SimClock::instance().setMode(SimClockMode::Paused);
 		return;
 	}
+	if (headlessGameMode())
+	{
+		SimClock::instance().setMode(SimClockMode::Unthrottled);
+		return;
+	}
 	SimClock::instance().setMode(getMaxFastForwardTicks() > 0 ? SimClockMode::FastForward : SimClockMode::Realtime);
 }
 

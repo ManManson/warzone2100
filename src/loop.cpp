@@ -688,8 +688,10 @@ static size_t numFastForwardTicks = 0;
 
 bool inGameWorldDrawFrozen()
 {
+	const PresentationKind present = SimClock::instance().presentation();
 	return gameUpdatePaused()
-		|| SimClock::instance().presentation() == PresentationKind::OverlayOnly;
+		|| present == PresentationKind::OverlayOnly
+		|| present == PresentationKind::None;
 }
 
 TickResult simulateOneGameTick(TickAdvanceKind kind)
@@ -788,6 +790,12 @@ GAMECODE gameLoop()
 		if (ReplaySession::active())
 		{
 			ReplaySession::instance().onTickCompleted();
+			// A seek is applied after this burst, from commitPendingSeek. Stop so the
+			// restore happens before any further ticks are thrown away.
+			if (ReplaySession::instance().hasPendingSeek())
+			{
+				break;
+			}
 		}
 	}
 	if (ReplaySession::active())
