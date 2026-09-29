@@ -32,6 +32,7 @@
 #include "gamestate_serialize.h"
 #include "loop.h"
 #include "sim_clock.h"
+#include "wrappers.h"
 
 #include <nlohmann/json.hpp>
 
@@ -180,6 +181,8 @@ void ReplaySession::onGameLoopAfterTicks(bool tickExhausted)
 	{
 		return;
 	}
+	// A present-interval yield leaves tickExhausted false. Finish only when the
+	// target is reached or a tick cannot run.
 	if (gameTime >= clock.catchUpTarget() || tickExhausted)
 	{
 		finishCatchUp();
@@ -361,7 +364,8 @@ void ReplaySession::startCatchUpTo(uint32_t timeMs)
 	{
 		gameTimeStart();
 	}
-	clock.catchUpTo(timeMs);
+	const uint32_t presentEvery = headlessGameMode() ? 0 : CATCH_UP_PRESENT_INTERVAL_MS;
+	clock.catchUpTo(timeMs, presentEvery);
 	if (needRestore)
 	{
 		restoreFromKeyframe(keyframe.value_or(0));

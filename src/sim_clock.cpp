@@ -33,10 +33,11 @@ void SimClock::setMode(SimClockMode mode)
 	mode_ = mode;
 }
 
-void SimClock::catchUpTo(uint32_t targetGameTime)
+void SimClock::catchUpTo(uint32_t targetGameTime, uint32_t presentIntervalMs)
 {
 	catchUpOrigin_ = gameTime;
 	catchUpTarget_ = targetGameTime;
+	presentIntervalMs_ = presentIntervalMs;
 	mode_ = SimClockMode::CatchUp;
 }
 
@@ -44,6 +45,7 @@ void SimClock::cancelCatchUp()
 {
 	catchUpTarget_ = 0;
 	catchUpOrigin_ = 0;
+	presentIntervalMs_ = 0;
 }
 
 void SimClock::requestManualTicks(size_t)
@@ -56,6 +58,7 @@ void SimClock::reset()
 	mode_ = SimClockMode::Realtime;
 	catchUpTarget_ = 0;
 	catchUpOrigin_ = 0;
+	presentIntervalMs_ = 0;
 	manualTicksRemaining_ = 0;
 }
 
@@ -71,7 +74,17 @@ bool SimClock::shouldTickThisFrame(size_t, uint32_t frameElapsedMs) const
 			// and spectator fast-forward both rely on extra WallClock iterations.
 			return true;
 		case SimClockMode::CatchUp:
-			return gameTime < catchUpTarget_ && frameElapsedMs < CATCH_UP_FRAME_BUDGET_MS;
+			// 0 runs until the target. A windowed seek passes a nonzero interval so the
+			// frame loop can present OverlayOnly and pump events.
+			if (gameTime >= catchUpTarget_)
+			{
+				return false;
+			}
+			if (presentIntervalMs_ == 0)
+			{
+				return true;
+			}
+			return frameElapsedMs < presentIntervalMs_;
 		case SimClockMode::Manual:
 			ASSERT(false, "Manual clock mode is not wired yet.");
 			return false;

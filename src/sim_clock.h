@@ -61,6 +61,11 @@ constexpr ClockPolicyRow CLOCK_POLICIES[] = {
 	{SimClockMode::Manual,      TickAdvanceKind::Forced,    PresentationKind::None},
 };
 
+// How often a windowed catch-up returns to wzEventLoopOneFrame. Long enough that
+// the sim dominates a seek; short of the few seconds a window manager waits
+// before treating the process as not responding. 0 on a catch-up means no yield.
+constexpr uint32_t CATCH_UP_PRESENT_INTERVAL_MS = 200;
+
 consteval bool clockPolicyValid(ClockPolicyRow r)
 {
 	if (r.tick == TickAdvanceKind::WallClock && r.present == PresentationKind::OverlayOnly)
@@ -104,15 +109,13 @@ constexpr ClockPolicyRow clockPolicyFor(SimClockMode mode)
 	return CLOCK_POLICIES[1]; // Realtime fallback
 }
 
-constexpr uint32_t CATCH_UP_FRAME_BUDGET_MS = 50;
-
 class SimClock
 {
 public:
 	static SimClock& instance();
 
 	void setMode(SimClockMode mode);
-	void catchUpTo(uint32_t targetGameTime);
+	void catchUpTo(uint32_t targetGameTime, uint32_t presentIntervalMs);
 	void cancelCatchUp();
 	void requestManualTicks(size_t n);
 	void reset();
@@ -131,5 +134,6 @@ private:
 	SimClockMode mode_ = SimClockMode::Realtime;
 	uint32_t catchUpTarget_ = 0;
 	uint32_t catchUpOrigin_ = 0;
+	uint32_t presentIntervalMs_ = 0;
 	size_t manualTicksRemaining_ = 0;
 };
