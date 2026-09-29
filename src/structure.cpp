@@ -29,6 +29,7 @@
 #include <algorithm>
 
 #include "lib/framework/frame.h"
+#include "lib/framework/crc.h"
 #include "lib/framework/gamepad_input.h"
 #include "lib/framework/geometry.h"
 #include "lib/framework/physfs_ext.h"
@@ -371,6 +372,26 @@ void initFactoryNumFlag()
 			factoryNumFlag[i][j].clear();
 		}
 	}
+}
+
+uint32_t factoryNumFlagCrc()
+{
+	uint32_t crc = wz::crc_init();
+	for (unsigned player = 0; player < MAX_PLAYERS; ++player)
+	{
+		for (unsigned type = 0; type < NUM_FLAG_TYPES; ++type)
+		{
+			const auto &flags = factoryNumFlag[player][type];
+			const uint32_t n = static_cast<uint32_t>(flags.size());
+			crc = wz::crc_update(crc, &n, sizeof(n));
+			for (size_t i = 0; i < flags.size(); ++i)
+			{
+				const uint8_t bit = flags[i] ? 1 : 0;
+				crc = wz::crc_update(crc, &bit, sizeof(bit));
+			}
+		}
+	}
+	return crc;
 }
 
 //called at start of missions

@@ -86,6 +86,8 @@
 #include "lib/ivis_opengl/piedef.h"    // pie_GetLighting0 / pie_Lighting0
 #include "lib/ivis_opengl/piestate.h"  // pie_Get/SetFogColour
 
+#include <map>
+#include <string>
 #include <vector>
 #include <algorithm>
 #include <array>
@@ -4790,6 +4792,275 @@ void runGameStateLiveWriteCheck()
 //
 // DESTRUCTIVE (replaces live objects) - intended for headless autogame & other dev/testing.
 
+struct DigestLine
+{
+	std::string label;
+	uint32_t crc = 0;
+};
+
+static uint32_t crcBytes(const void *p, size_t n)
+{
+	return wz::crc_update(wz::crc_init(), p, n);
+}
+
+template <typename T>
+static void crcMix(uint32_t &crc, const T &value)
+{
+	crc = wz::crc_update(crc, &value, sizeof(value));
+}
+
+static uint32_t crcByteSlot(const std::unique_ptr<uint8_t[]> &slot, size_t n)
+{
+	if (!slot)
+	{
+		return 0;
+	}
+	return crcBytes(slot.get(), n);
+}
+
+static void digestObjectCoverage(std::vector<DigestLine> &out, const std::string &prefix, const BASE_OBJECT *obj)
+{
+	const std::vector<TILEPOS> &watched = obj->watchedTiles;
+	out.push_back({ prefix + "obj:" + std::to_string(obj->id) + ":watchedTiles",
+	                watched.empty() ? 0u : crcBytes(watched.data(), watched.size() * sizeof(TILEPOS)) });
+}
+
+static void digestWorldDerived(std::vector<DigestLine> &out, const std::string &prefix, const GameWorld &world)
+{
+	const WorldMapState &m = world.map;
+	if (m.tiles)
+	{
+		const size_t n = size_t(m.width) * size_t(m.height);
+		std::vector<uint16_t> sensors(n * MAX_PLAYERS), watchers(n * MAX_PLAYERS), jammers(n * MAX_PLAYERS);
+		std::vector<PlayerMask> sensorBits(n), jammerBits(n), explored(n);
+		std::vector<int32_t> height(n), water(n);
+		for (size_t i = 0; i < n; ++i)
+		{
+			const MAPTILE &t = m.tiles[i];
+			for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+			{
+				sensors[i * MAX_PLAYERS + p] = t.sensors[p];
+				watchers[i * MAX_PLAYERS + p] = t.watchers[p];
+				jammers[i * MAX_PLAYERS + p] = t.jammers[p];
+			}
+			sensorBits[i] = t.sensorBits;
+			jammerBits[i] = t.jammerBits;
+			explored[i] = t.tileExploredBits;
+			height[i] = t.height;
+			water[i] = t.waterLevel;
+		}
+		out.push_back({ prefix + "tiles:sensors", crcBytes(sensors.data(), sensors.size() * sizeof(uint16_t)) });
+		out.push_back({ prefix + "tiles:watchers", crcBytes(watchers.data(), watchers.size() * sizeof(uint16_t)) });
+		out.push_back({ prefix + "tiles:jammers", crcBytes(jammers.data(), jammers.size() * sizeof(uint16_t)) });
+		out.push_back({ prefix + "tiles:sensorBits", crcBytes(sensorBits.data(), sensorBits.size() * sizeof(PlayerMask)) });
+		out.push_back({ prefix + "tiles:jammerBits", crcBytes(jammerBits.data(), jammerBits.size() * sizeof(PlayerMask)) });
+		out.push_back({ prefix + "tiles:explored", crcBytes(explored.data(), explored.size() * sizeof(PlayerMask)) });
+		out.push_back({ prefix + "tiles:height", crcBytes(height.data(), height.size() * sizeof(int32_t)) });
+		out.push_back({ prefix + "tiles:water", crcBytes(water.data(), water.size() * sizeof(int32_t)) });
+		for (int slot = 0; slot < MAX_PLAYERS + AUX_MAX; ++slot)
+		{
+			out.push_back({ prefix + "auxMap:" + std::to_string(slot), crcByteSlot(m.auxMap[slot], n) });
+		}
+		for (int slot = 0; slot < AUX_MAX; ++slot)
+		{
+			out.push_back({ prefix + "blockMap:" + std::to_string(slot), crcByteSlot(m.blockMap[slot], n) });
+		}
+	}
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		for (const DROID *d : world.objects.droids[p])
+		{
+			digestObjectCoverage(out, prefix, d);
+			uint32_t crc = wz::crc_init();
+			crcMix(crc, d->expectedDamageDirect);
+			crcMix(crc, d->expectedDamageIndirect);
+			out.push_back({ prefix + "obj:" + std::to_string(d->id) + ":expectedDamage", crc });
+		}
+		for (const STRUCTURE *s : world.objects.structures[p])
+		{
+			digestObjectCoverage(out, prefix, s);
+			out.push_back({ prefix + "obj:" + std::to_string(s->id) + ":expectedDamage", crcBytes(&s->expectedDamage, sizeof(s->expectedDamage)) });
+		}
+	}
+	for (const FEATURE *f : world.objects.features[0])
+	{
+		digestObjectCoverage(out, prefix, f);
+	}
+}
+
+static void digestUpgradeTables(std::vector<DigestLine> &out)
+{
+	uint32_t structureUpgrade = wz::crc_init();
+	uint32_t structureCurCount = wz::crc_init();
+	for (size_t i = 0; i < numStructureStats; ++i)
+	{
+		const STRUCTURE_STATS &s = asStructureStats[i];
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			crcMix(structureCurCount, s.curCount[p]);
+			const auto &u = s.upgrade[p];
+			crcMix(structureUpgrade, u.research);
+			crcMix(structureUpgrade, u.moduleResearch);
+			crcMix(structureUpgrade, u.repair);
+			crcMix(structureUpgrade, u.power);
+			crcMix(structureUpgrade, u.modulePower);
+			crcMix(structureUpgrade, u.production);
+			crcMix(structureUpgrade, u.moduleProduction);
+			crcMix(structureUpgrade, u.rearm);
+			crcMix(structureUpgrade, u.armour);
+			crcMix(structureUpgrade, u.thermal);
+			crcMix(structureUpgrade, u.hitpoints);
+			crcMix(structureUpgrade, u.resistance);
+			crcMix(structureUpgrade, u.limit);
+		}
+	}
+	out.push_back({ "upgrade:structure", structureUpgrade });
+	out.push_back({ "upgrade:structureCurCount", structureCurCount });
+
+	auto mixComponent = [](uint32_t &crc, const COMPONENT_STATS::UPGRADE &u)
+	{
+		crcMix(crc, u.hitpoints);
+		crcMix(crc, u.hitpointPct);
+	};
+
+	uint32_t body = wz::crc_init();
+	for (const BODY_STATS &s : asBodyStats)
+	{
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			mixComponent(body, s.upgrade[p]);
+			crcMix(body, s.upgrade[p].power);
+			crcMix(body, s.upgrade[p].armour);
+			crcMix(body, s.upgrade[p].thermal);
+			crcMix(body, s.upgrade[p].resistance);
+		}
+	}
+	out.push_back({ "upgrade:body", body });
+
+	uint32_t propulsion = wz::crc_init();
+	for (const PROPULSION_STATS &s : asPropulsionStats)
+	{
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			mixComponent(propulsion, s.upgrade[p]);
+			crcMix(propulsion, s.upgrade[p].hitpointPctOfBody);
+		}
+	}
+	out.push_back({ "upgrade:propulsion", propulsion });
+
+	uint32_t sensor = wz::crc_init();
+	for (const SENSOR_STATS &s : asSensorStats)
+	{
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			mixComponent(sensor, s.upgrade[p]);
+			crcMix(sensor, s.upgrade[p].range);
+		}
+	}
+	out.push_back({ "upgrade:sensor", sensor });
+
+	uint32_t ecm = wz::crc_init();
+	for (const ECM_STATS &s : asECMStats)
+	{
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			mixComponent(ecm, s.upgrade[p]);
+			crcMix(ecm, s.upgrade[p].range);
+		}
+	}
+	out.push_back({ "upgrade:ecm", ecm });
+
+	uint32_t repair = wz::crc_init();
+	for (const REPAIR_STATS &s : asRepairStats)
+	{
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			mixComponent(repair, s.upgrade[p]);
+			crcMix(repair, s.upgrade[p].repairPoints);
+		}
+	}
+	out.push_back({ "upgrade:repair", repair });
+
+	uint32_t construct = wz::crc_init();
+	for (const CONSTRUCT_STATS &s : asConstructStats)
+	{
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			mixComponent(construct, s.upgrade[p]);
+			crcMix(construct, s.upgrade[p].constructPoints);
+		}
+	}
+	out.push_back({ "upgrade:construct", construct });
+
+	uint32_t weapon = wz::crc_init();
+	for (const WEAPON_STATS &s : asWeaponStats)
+	{
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			const auto &u = s.upgrade[p];
+			mixComponent(weapon, u);
+			crcMix(weapon, u.shortRange);
+			crcMix(weapon, u.maxRange);
+			crcMix(weapon, u.minRange);
+			crcMix(weapon, u.hitChance);
+			crcMix(weapon, u.shortHitChance);
+			crcMix(weapon, u.firePause);
+			crcMix(weapon, u.numRounds);
+			crcMix(weapon, u.reloadTime);
+			crcMix(weapon, u.damage);
+			crcMix(weapon, u.empRadius);
+			crcMix(weapon, u.radius);
+			crcMix(weapon, u.radiusDamage);
+			crcMix(weapon, u.periodicalDamage);
+			crcMix(weapon, u.periodicalDamageRadius);
+			crcMix(weapon, u.periodicalDamageTime);
+			crcMix(weapon, u.minimumDamage);
+		}
+	}
+	out.push_back({ "upgrade:weapon", weapon });
+
+	uint32_t brain = wz::crc_init();
+	for (const BRAIN_STATS &s : asBrainStats)
+	{
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			const auto &u = s.upgrade[p];
+			mixComponent(brain, u);
+			const uint32_t n = static_cast<uint32_t>(u.rankThresholds.size());
+			crcMix(brain, n);
+			for (int threshold : u.rankThresholds)
+			{
+				crcMix(brain, threshold);
+			}
+			crcMix(brain, u.maxDroids);
+			crcMix(brain, u.maxDroidsMult);
+		}
+	}
+	out.push_back({ "upgrade:brain", brain });
+	out.push_back({ "upgrade:weaponModifier", crcBytes(asWeaponModifier, sizeof(asWeaponModifier)) });
+	out.push_back({ "upgrade:weaponModifierBody", crcBytes(asWeaponModifierBody, sizeof(asWeaponModifierBody)) });
+}
+
+static std::vector<DigestLine> derivedStateDigest()
+{
+	std::vector<DigestLine> out;
+	digestWorldDerived(out, "world/", gameWorld);
+	digestWorldDerived(out, "mission/", mission.gameWorld);
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		uint32_t crc = wz::crc_init();
+		for (const PowerRequestSave &request : getPlayerPowerQueue(p))
+		{
+			crcMix(crc, request.structId);
+			crcMix(crc, request.amount);
+		}
+		out.push_back({ "powerQueue:" + std::to_string(p), crc });
+	}
+	out.push_back({ "factoryNumFlag", factoryNumFlagCrc() });
+	digestUpgradeTables(out);
+	return out;
+}
+
 static uint32_t g_roundTripTestTick = 0;
 
 void gamestateSetRoundTripTestTick(uint32_t tick)
@@ -4800,14 +5071,17 @@ void gamestateSetRoundTripTestTick(uint32_t tick)
 bool runGameStateRoundTripTest()
 {
 	std::string buf1, buf2;
+	std::vector<DigestLine> d1, d2;
 	try
 	{
 		buf1 = serializeGameState();
+		d1 = derivedStateDigest();
 		{
 			nlohmann::ordered_json j = parseJsonBounded(buf1.data(), buf1.data() + buf1.size());
 			resumeFromSnapshot(j, {});
 		}
 		buf2 = serializeGameState();
+		d2 = derivedStateDigest();
 	}
 	catch (const std::exception &e)
 	{
@@ -4816,32 +5090,86 @@ bool runGameStateRoundTripTest()
 		return false;
 	}
 
-	if (buf1 == buf2)
+	bool ok = (buf1 == buf2);
+	if (ok)
 	{
 		CONPRINTF("GameState round-trip OK @ gameTime %u (%zu bytes reconstruct identically)", gameTime, buf1.size());
-		return true;
+	}
+	else
+	{
+		size_t i = 0;
+		const size_t minLen = std::min(buf1.size(), buf2.size());
+		while (i < minLen && buf1[i] == buf2[i]) { ++i; }
+
+		// Identify the object at the mismatch: the nearest preceding "id":<n> in each buffer. If these
+		// differ, the lists are out of order / different length (a reorder or add/drop); if they match,
+		// it's a field of the same object. Differing buffer sizes => an object was added or dropped.
+		auto precedingId = [](const std::string &buf, size_t pos) -> long {
+			const std::string key = "\"id\":";
+			const size_t p = buf.rfind(key, pos);
+			return (p == std::string::npos) ? -1 : strtol(buf.c_str() + p + key.size(), nullptr, 10);
+		};
+		const long id1 = precedingId(buf1, i);
+		const long id2 = precedingId(buf2, i);
+
+		CONPRINTF("GameState round-trip MISMATCH at byte %zu (sizes %zu vs %zu; ids %ld vs %ld)", i, buf1.size(), buf2.size(), id1, id2);
+		// Dump a short window around the first differing byte so the log shows nearby JSON without
+		// printing the whole snapshot. Look-behind includes enough context for a field name; the
+		// forward span covers a typical object field cluster.
+		constexpr size_t MISMATCH_CONTEXT_BEFORE = 200;
+		constexpr size_t MISMATCH_CONTEXT_LENGTH = 400;
+		const size_t start = (i > MISMATCH_CONTEXT_BEFORE) ? i - MISMATCH_CONTEXT_BEFORE : 0;
+		debug(LOG_ERROR, "GameState round-trip mismatch near byte %zu (buf sizes %zu vs %zu; nearest preceding \"id\": expected %ld, got %ld):\n  expected: ...%s...\n  got:      ...%s...",
+		      i, buf1.size(), buf2.size(), id1, id2, buf1.substr(start, MISMATCH_CONTEXT_LENGTH).c_str(), buf2.substr(start, MISMATCH_CONTEXT_LENGTH).c_str());
 	}
 
-	size_t i = 0;
-	const size_t minLen = std::min(buf1.size(), buf2.size());
-	while (i < minLen && buf1[i] == buf2[i]) { ++i; }
-
-	// Identify the object at the mismatch: the nearest preceding "id":<n> in each buffer. If these
-	// differ, the lists are out of order / different length (a reorder or add/drop); if they match,
-	// it's a field of the same object. Differing buffer sizes => an object was added or dropped.
-	auto precedingId = [](const std::string &buf, size_t pos) -> long {
-		const std::string key = "\"id\":";
-		const size_t p = buf.rfind(key, pos);
-		return (p == std::string::npos) ? -1 : strtol(buf.c_str() + p + key.size(), nullptr, 10);
+	// A byte-identical snapshot can still rebuild derived state wrong. Compare by label so one extra
+	// object does not shift every later line.
+	std::map<std::string, uint32_t> byLabel;
+	for (const DigestLine &line : d1)
+	{
+		byLabel.emplace(line.label, line.crc);
+	}
+	size_t digestDiffs = 0;
+	size_t printed = 0;
+	// Cap the per-line dump so a map-wide tiles:* mismatch does not flood the console; the total
+	// count is still reported below.
+	constexpr size_t MAX_DIGEST_MISMATCH_LINES_TO_PRINT = 20;
+	auto report = [&digestDiffs, &printed](const std::string &label, uint32_t before, uint32_t after)
+	{
+		if (printed < MAX_DIGEST_MISMATCH_LINES_TO_PRINT)
+		{
+			CONPRINTF("GameState derived-state MISMATCH: %s (%08X vs %08X)", label.c_str(), before, after);
+			++printed;
+		}
+		++digestDiffs;
 	};
-	const long id1 = precedingId(buf1, i);
-	const long id2 = precedingId(buf2, i);
-
-	CONPRINTF("GameState round-trip MISMATCH at byte %zu (sizes %zu vs %zu; ids %ld vs %ld)", i, buf1.size(), buf2.size(), id1, id2);
-	const size_t start = (i > 200) ? i - 200 : 0;
-	debug(LOG_ERROR, "GameState round-trip mismatch near byte %zu (buf sizes %zu vs %zu; nearest preceding \"id\": expected %ld, got %ld):\n  expected: ...%s...\n  got:      ...%s...",
-	      i, buf1.size(), buf2.size(), id1, id2, buf1.substr(start, 400).c_str(), buf2.substr(start, 400).c_str());
-	return false;
+	for (const DigestLine &line : d2)
+	{
+		const auto it = byLabel.find(line.label);
+		if (it == byLabel.end())
+		{
+			report(line.label, 0, line.crc);
+		}
+		else
+		{
+			if (it->second != line.crc)
+			{
+				report(line.label, it->second, line.crc);
+			}
+			byLabel.erase(it);
+		}
+	}
+	for (const auto &left : byLabel)
+	{
+		report(left.first, left.second, 0);
+	}
+	if (digestDiffs > 0)
+	{
+		CONPRINTF("GameState derived-state digest: %zu differing lines (%zu vs %zu lines)", digestDiffs, d1.size(), d2.size());
+		ok = false;
+	}
+	return ok;
 }
 
 // Called once per game tick - when the configured target tick is reached, runs the
