@@ -479,6 +479,7 @@ void sendPlayerGameTime()
 	// Record the local per-tick CRC for the cross-process join acceptance test (no-op unless a
 	// trace file was set). nextDebugSync() is consuming, so we trace the value it just returned.
 	syncCrcTraceRecord(checkTime, checkCrc);
+	syncLogEmit(checkTime);
 
 	for (player = 0; player < MAX_CONNECTED_PLAYERS; ++player)
 	{

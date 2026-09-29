@@ -44,6 +44,7 @@
 #include "main.h"
 #include "modding.h"
 #include "movebench.h"
+#include "replay_selftest.h"
 #include "pathbench.h"
 #include "pathfinding_backend.h"
 #include "corridordump.h"
@@ -365,6 +366,7 @@ typedef enum
 	CLI_GAMESTATE_CRCTRACE,
 	CLI_GAMESTATE_CRCDETAIL,
 	CLI_GAMESTATE_CRCDETAIL_ONSAVE,
+	CLI_REPLAY_SELFTEST,
 	CLI_TMP_PREFER_OLD_SAVE,
 	CLI_DRS_FRACTION,
 	CLI_RESOLUTION,
@@ -467,6 +469,7 @@ static const struct poptOption *getOptionsTable()
 		{ "gamestate-crc-trace", POPT_ARG_STRING, CLI_GAMESTATE_CRCTRACE, N_("Write a per-tick sync-CRC trace to the given file (for the load sync test)"), N_("file") },
 		{ "gamestate-crc-detail-tick", POPT_ARG_STRING, CLI_GAMESTATE_CRCDETAIL, N_("At this game tick, dump the full sync-debug log to <crc-trace-file>.detail.txt (diff original vs loaded run to pinpoint a divergence)"), N_("game tick") },
 		{ "gamestate-crc-detail-on-save", POPT_ARG_NONE, CLI_GAMESTATE_CRCDETAIL_ONSAVE, N_("Auto-dump a window of full sync-debug logs to <crc-trace-file>.detail.txt around each GameState save/load (no need to know the save tick)"), nullptr },
+		{ "replay-selftest", POPT_ARG_STRING, CLI_REPLAY_SELFTEST, N_("With --loadreplay: plant a keyframe at game tick T, run N ticks, seek back to T, run N ticks, compare full sync logs and exit"), N_("T,N") },
 		{ "tmp-prefer-old-save", POPT_ARG_NONE, CLI_TMP_PREFER_OLD_SAVE, N_("Prefer the legacy load path for a save folder that has both the old and new-format data (temporary)"), nullptr },
 		{ "drs-fraction", POPT_ARG_STRING, CLI_DRS_FRACTION, N_("Pin the dynamic resolution scene render fraction for testing, bypassing GPU timing feedback"), N_("fraction 0.5 - 1.0") },
 		{ "resolution", POPT_ARG_STRING, CLI_RESOLUTION, N_("Set the resolution to use"),         N_("WIDTHxHEIGHT") },
@@ -934,6 +937,18 @@ bool ParseCommandLine(int argc, const char * const *argv)
 			break;
 		case CLI_GAMESTATE_CRCDETAIL_ONSAVE:
 			setSyncCrcDetailOnSave(20); // dump a 20-tick window around each save/load (overlaps saving vs loaded run, with headroom for debugging divergences a few ticks past resume)
+			break;
+		case CLI_REPLAY_SELFTEST:
+			token = poptGetOptArg(poptCon);
+			{
+				unsigned T = 0;
+				unsigned N = 0;
+				if (token == nullptr || sscanf(token, "%u,%u", &T, &N) != 2 || T == 0 || T % 1000 != 0 || N == 0)
+				{
+					qFatal("--replay-selftest expects T,N with T a positive multiple of 1000");
+				}
+				replaySelfTestConfigure(T, N);
+			}
 			break;
 		case CLI_TMP_PREFER_OLD_SAVE:
 			gamestate::savegame::setPreferLegacyLoadOverride(true);

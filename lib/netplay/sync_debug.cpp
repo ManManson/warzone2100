@@ -661,6 +661,38 @@ static bool g_syncCrcDetailFileStarted = false; // whether <tracefile>.detail.tx
 
 static size_t dumpLocalDebugSyncLogByTime(uint32_t time); // defined below; fills debugSyncTmpBuf
 
+static std::vector<ISyncLogSink *> g_syncLogSinks;
+
+void syncLogAddSink(ISyncLogSink *sink)
+{
+	if (sink == nullptr)
+	{
+		return;
+	}
+	g_syncLogSinks.push_back(sink);
+}
+
+void syncLogRemoveSink(ISyncLogSink *sink)
+{
+	g_syncLogSinks.erase(std::remove(g_syncLogSinks.begin(), g_syncLogSinks.end(), sink), g_syncLogSinks.end());
+}
+
+void syncLogEmit(uint32_t atGameTime)
+{
+	if (g_syncLogSinks.empty())
+	{
+		return;
+	}
+	const size_t len = dumpLocalDebugSyncLogByTime(atGameTime);
+	const SyncLogRecord rec{ atGameTime, std::string(reinterpret_cast<const char *>(debugSyncTmpBuf.data()), len) };
+	// A sink may remove itself from inside onSyncBoundary.
+	const std::vector<ISyncLogSink *> sinks = g_syncLogSinks;
+	for (ISyncLogSink *sink : sinks)
+	{
+		sink->onSyncBoundary(rec);
+	}
+}
+
 void setSyncCrcTraceFile(const std::string &filename)
 {
 	if (g_syncCrcTraceFile != nullptr)

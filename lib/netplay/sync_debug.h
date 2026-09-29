@@ -60,6 +60,29 @@ bool checkDebugSync(uint32_t checkGameTime, GameCrcType checkCrc);  ///< Dumps a
 void setSyncCrcTraceFile(const std::string &filename);
 bool syncCrcTraceActive();                                        ///< True iff a sync-CRC trace file is open. Used to switch on deterministic, wall-clock-free latency negotiation so two independent runs' traces stay comparable.
 void syncCrcTraceRecord(uint32_t atGameTime, GameCrcType crc);     ///< Append one (gameTime, crc) line if tracing is enabled; no-op otherwise.
+
+/// One sync boundary's full local debug log, as dumped by the sync-debug ring.
+struct SyncLogRecord
+{
+	uint32_t gameTime = 0;
+	std::string text;
+};
+
+/// Receives one record per sync boundary while installed. The recorder does not buffer, count, or
+/// decide when to stop; the sink does. An installed sink must outlive the install, and may remove
+/// itself from inside onSyncBoundary.
+class ISyncLogSink
+{
+public:
+	virtual ~ISyncLogSink() = default;
+	virtual void onSyncBoundary(const SyncLogRecord &record) = 0;
+};
+
+void syncLogAddSink(ISyncLogSink *sink);
+void syncLogRemoveSink(ISyncLogSink *sink);
+/// Deliver the log just stamped for atGameTime to every installed sink. No-op when none are installed.
+/// Called from sendPlayerGameTime, after nextDebugSync has stored that boundary.
+void syncLogEmit(uint32_t atGameTime);
 void setSyncCrcDetailTick(uint32_t tick);                         ///< At this gameTime, dump the full per-tick sync-debug log to "<tracefile>.detail.txt" (0 = disabled). Diff the original-run vs loaded-run detail to pinpoint exactly which object/subsystem/field diverges.
 void setSyncCrcDetailOnSave(int numTicks);                        ///< Enable auto-dump: arm a window of `numTicks` detailed dumps whenever a GameState savegame is written or restored (0 = disabled). Avoids having to know the save tick up front.
 void syncCrcDetailArmOnSaveOrLoad();                              ///< Call from the GameState save/cold-load path to arm the auto-dump window (no-op unless setSyncCrcDetailOnSave was enabled).

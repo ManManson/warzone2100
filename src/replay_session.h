@@ -61,6 +61,9 @@ public:
 	void shutdown();
 
 	void dispatch(ReplayCommand cmd);
+	/// Plant a keyframe keyed `key` from the current world state, between ticks.
+	/// The scheduler uses slot keys; this pins an exact second. An extra keyframe is harmless.
+	void plantKeyframeNow(uint32_t key) { plantKeyframeAt(key); }
 	void onGameLoopBegin();
 	/// Called once after each simulated tick, before the next tick starts.
 	void onTickCompleted();
