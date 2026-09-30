@@ -418,15 +418,27 @@ uint32_t factoryNumFlagCrc()
 	uint32_t crc = wz::crc_init();
 	for (unsigned player = 0; player < MAX_PLAYERS; ++player)
 	{
-		for (unsigned type = 0; type < NUM_FLAG_TYPES; ++type)
+		// Occupied indices only. vector::size includes trailing clear slots left behind
+		// when the highest number is freed, and those slots do not change the next index.
+		for (unsigned type = 0; type < NUM_FACTORY_TYPES; ++type)
 		{
 			const auto &flags = factoryNumFlag[player][type];
-			const uint32_t n = static_cast<uint32_t>(flags.size());
-			crc = wz::crc_update(crc, &n, sizeof(n));
+			uint32_t occupied = 0;
 			for (size_t i = 0; i < flags.size(); ++i)
 			{
-				const uint8_t bit = flags[i] ? 1 : 0;
-				crc = wz::crc_update(crc, &bit, sizeof(bit));
+				if (flags[i])
+				{
+					++occupied;
+				}
+			}
+			crc = wz::crc_update(crc, &occupied, sizeof(occupied));
+			for (size_t i = 0; i < flags.size(); ++i)
+			{
+				if (flags[i])
+				{
+					const uint32_t idx = static_cast<uint32_t>(i);
+					crc = wz::crc_update(crc, &idx, sizeof(idx));
+				}
 			}
 		}
 	}
@@ -452,26 +464,14 @@ void resetFactoryNumFlag(const WorldObjectState& objState)
 			case REF_FACTORY:        type = FACTORY_FLAG; break;
 			case REF_CYBORG_FACTORY: type = CYBORG_FLAG;  break;
 			case REF_VTOL_FACTORY:   type = VTOL_FLAG;    break;
-			case REF_REPAIR_FACILITY: type = REPAIR_FLAG; break;
-			default: continue;
+			default: continue; // repairs are not factory slots; setFlagPositionInc never marks them
 			}
 
 			int inc = -1;
-			if (type == REPAIR_FLAG)
+			FACTORY *psFactory = &psStruct->pFunctionality->factory;
+			if (psFactory->psAssemblyPoint != nullptr)
 			{
-				REPAIR_FACILITY *psRepair = &psStruct->pFunctionality->repairFacility;
-				if (psRepair->psDeliveryPoint != nullptr)
-				{
-					inc = psRepair->psDeliveryPoint->factoryInc;
-				}
-			}
-			else
-			{
-				FACTORY *psFactory = &psStruct->pFunctionality->factory;
-				if (psFactory->psAssemblyPoint != nullptr)
-				{
-					inc = psFactory->psAssemblyPoint->factoryInc;
-				}
+				inc = psFactory->psAssemblyPoint->factoryInc;
 			}
 			if (inc >= 0)
 			{

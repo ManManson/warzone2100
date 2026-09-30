@@ -4888,7 +4888,7 @@ void gameStateFromJson(const nlohmann::ordered_json &j, ScriptScope scriptScope,
 		const nlohmann::ordered_json &sec = j.at("mission");
 		readMission(sec, sec.value("version", 0u));
 	}
-	// factoryNumFlag is a single global reflecting the ACTIVE world's factory/repair assembly slots.
+	// factoryNumFlag is a single global reflecting the ACTIVE world's factory assembly slots.
 	// readWorldObjects rebuilds it per world (resetFactoryNumFlag clears ALL players then refills from the
 	// one world it is passed), so the last pass - the mission world, empty in skirmish - would otherwise
 	// leave it bound to the wrong (or empty) world. Rebind it to the active gameWorld now that both are

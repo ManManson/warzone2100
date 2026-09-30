@@ -152,8 +152,8 @@ void setAssemblyPoint(GameWorld& world, FLAG_POSITION *psAssemblyPoint, UDWORD x
 /*initialises the flag before a new data set is loaded up*/
 void initFactoryNumFlag();
 
-/// CRC of the per-player assembly-point allocation bits. The storage is vector<bool>, so this
-/// hashes the bits explicitly rather than exposing the container.
+/// CRC of the occupied factory-number slots. Trailing clear slots are padding (the next
+/// number is the first clear bit), and REPAIR_FLAG is not an allocator row.
 uint32_t factoryNumFlagCrc();
 
 //called at start of missions
