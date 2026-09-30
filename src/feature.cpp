@@ -39,6 +39,7 @@
 #include "display.h"
 #include "order.h"
 #include "structure.h"
+#include "gamestate_serialize.h"
 #include "miscimd.h"
 #include "visibility.h"
 #include "effects.h"
@@ -278,7 +279,7 @@ FEATURE *buildFeature(GameWorld& world, FEATURE_STATS *psStats, UDWORD x, UDWORD
 	//return the average of max/min height
 	int height = (foundationMin + foundationMax) / 2;
 
-	if (psStats->subType == FEAT_TREE)
+	if (psStats->subType == FEAT_TREE && !gamestate::reconstructInProgress())
 	{
 		psFeature->rot.direction = gameRand(DEG_360);
 	}

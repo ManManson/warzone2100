@@ -83,6 +83,10 @@ std::unordered_map<uint32_t, std::vector<TILEPOS>> *reconstructWatchedTiles();
 /// The value last passed to ReconstructScope::setSightCarried. False outside a scope.
 bool reconstructSightCarried();
 
+/// True for the whole of one gameStateFromJson, including version-1 worlds. Constructors use this
+/// to skip side effects whose result the snapshot already carries (position, rotation, scores).
+bool reconstructInProgress();
+
 /// Which script instances the "scripting" section covers (write side: which to serialize; read side:
 /// how to bind them). The rest of the GameState is identical across scopes.
 enum class ScriptScope

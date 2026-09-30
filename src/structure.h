@@ -196,6 +196,18 @@ void buildingComplete(STRUCTURE *psBuilding, GameWorld& world);
 // Reapply a gate's tile blocking bits to match its restored SAS_* animation state (GameState restore).
 void structureApplyGateStateBlocking(STRUCTURE *psStructure, WorldMapState& mapState);
 
+// Clear a completed gate's tile flags the way buildingComplete does, before
+// structureApplyGateStateBlocking reapplies the saved open/closed state.
+void structureResetCompletedGate(STRUCTURE *psStructure, WorldMapState& mapState);
+
+// Display model for a structure that already has `capacity` modules. SS_BUILT uses the combined
+// IMD; SS_BEING_BUILT keeps the previous combined model in prebuiltImd and shows the module piece.
+void structureApplyModuleImd(STRUCTURE *psStruct);
+
+// Display-only foundation depth from the structure's position and the terrain under it.
+// Does not move the structure or flatten tiles.
+void structureComputeFoundationDepth(STRUCTURE *psBuilding, WorldMapState& mapState);
+
 // these functions are used in game.c inplace of  building complete
 void checkForResExtractors(STRUCTURE *psPowerGen, WorldObjectState& objState);
 void checkForPowerGen(STRUCTURE *psPowerGen, WorldObjectState& objState);

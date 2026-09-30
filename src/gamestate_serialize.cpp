@@ -155,6 +155,11 @@ bool reconstructSightCarried()
 	return g_reconstructSightCarried;
 }
 
+bool reconstructInProgress()
+{
+	return g_reconstructWatchedTiles != nullptr;
+}
+
 
 // MARK: - Parsed-input validation helpers
 //
@@ -1433,21 +1438,10 @@ static void readStructurePass1(GameWorld &world, const nlohmann::ordered_json &j
 	psStruct->resistance = j.at("resistance").get<int>();
 	psStruct->lastResistance = j.at("lastResistance").get<uint32_t>();
 	psStruct->productToGroup = j.at("productToGroup").get<uint8_t>();
-	const int capacity = j.at("capacity").get<int>();
-	psStruct->capacity = 0; // incremented as modules are (re)built
+	// Modules are capacity on the parent. The display model is applied once status is known.
+	psStruct->capacity = j.at("capacity").get<int>();
 
 	const STRUCTURE_TYPE type = psStruct->pStructureType->type;
-	const auto buildModules = [&]()
-	{
-		if (capacity > 0)
-		{
-			STRUCTURE_STATS *psModule = getModuleStat(psStruct);
-			for (int m = 0; m < capacity; ++m)
-			{
-				buildStructure(world, psModule, psStruct->pos.x, psStruct->pos.y, psStruct->player, true);
-			}
-		}
-	};
 
 	if (isFactoryType(type))
 	{
@@ -1459,7 +1453,6 @@ static void readStructurePass1(GameWorld &world, const nlohmann::ordered_json &j
 		f->timeStartHold = jf.at("timeStartHold").get<uint32_t>();
 		f->loopsPerformed = jf.at("loopsPerformed").get<uint8_t>();
 		f->secondaryOrder = jf.at("secondaryOrder").get<uint32_t>();
-		buildModules();
 		if (jf.contains("templateId"))
 		{
 			f->psSubject = getTemplateFromMultiPlayerID(jf.at("templateId").get<uint32_t>());
@@ -1481,7 +1474,6 @@ static void readStructurePass1(GameWorld &world, const nlohmann::ordered_json &j
 	else if (type == REF_RESEARCH)
 	{
 		RESEARCH_FACILITY *r = &psStruct->pFunctionality->researchFacility;
-		buildModules();
 		r->psSubject = nullptr;
 		r->psBestTopic = nullptr;
 		r->timeStartHold = 0;
@@ -1514,10 +1506,6 @@ static void readStructurePass1(GameWorld &world, const nlohmann::ordered_json &j
 			}
 		}
 	}
-	else if (type == REF_POWER_GEN)
-	{
-		buildModules();
-	}
 	else if (type == REF_REPAIR_FACILITY)
 	{
 		REPAIR_FACILITY *rp = &psStruct->pFunctionality->repairFacility;
@@ -1546,10 +1534,8 @@ static void readStructurePass1(GameWorld &world, const nlohmann::ordered_json &j
 		psStruct->sDisplay.imd = psStruct->pStructureType->pIMD[std::min<unsigned>(psStruct->pFunctionality->wall.type, psStruct->pStructureType->pIMD.size() - 1)];
 	}
 
-	// Re-apply the saved (absolute) body + time after modules are built: building a module calls
-	// buildStructure, which resets the parent's body and its time (time = gameTime - deltaGameTime - 1)
-	// at construction, clobbering the values readBaseObjectCommon restored (matches loadSaveStructure2
-	// ordering). buildingComplete() below does not touch time, so restoring it here is sufficient.
+	// Re-apply the saved (absolute) body + time. buildStructureDir sets body from the stat and time
+	// from gameTime, clobbering the values readBaseObjectCommon restored.
 	psStruct->body = j.at("body").get<uint32_t>();
 	psStruct->currentBuildPts = j.at("currentBuildPts").get<uint32_t>();
 	psStruct->time = j.at("time").get<uint32_t>();
@@ -1573,16 +1559,12 @@ static void readStructurePass1(GameWorld &world, const nlohmann::ordered_json &j
 	}
 
 	psStruct->status = static_cast<STRUCT_STATES>(j.at("status").get<int>());
+	structureApplyModuleImd(psStruct);
 	if (psStruct->status == SS_BUILT)
 	{
-		// buildingComplete() rebuilds the derrick<->power-gen linkage via the order-dependent
-		// checkForResExtractors/checkForPowerGen (so explicit calls here would be redundant).
-		// restorePowerLinkage() (after pass 2) overrides that with the exact saved slotting,
-		// which is what lockstep determinism requires.
-		buildingComplete(psStruct, world);
-		// buildingComplete() -> releaseProduction/releaseResearch clears a restored production/research
-		// HOLD (zeroes timeStartHold, advances timeStarted). Re-apply the saved timing so a facility
-		// saved on hold stays held after restore (aiUpdateStructure gates on timeStartHold).
+		// buildingComplete() is not called during restore: it re-links power, releases production
+		// and research, reveals the map, and rebuilds sight. Power linkage is restorePowerLinkage().
+		// The hold fields below stay until that re-apply is removed; releaseProduction no longer runs.
 		if (type == REF_FACTORY || type == REF_CYBORG_FACTORY || type == REF_VTOL_FACTORY)
 		{
 			const nlohmann::ordered_json &jf = j.at("factory");
@@ -1600,16 +1582,21 @@ static void readStructurePass1(GameWorld &world, const nlohmann::ordered_json &j
 			}
 		}
 	}
-	// Restore gate animation state and reapply matching tile blocking. buildingComplete() forced every
-	// gate closed+blocking; a gate saved SAS_OPEN must clear the block (no-op for non-gate structures).
+	// Restore gate animation state and reapply matching tile blocking. A completed gate is cleared
+	// then closed first, matching buildingComplete, and structureApplyGateStateBlocking then opens
+	// a gate that was saved SAS_OPEN. Non-gates are unchanged by either call.
 	psStruct->state = static_cast<STRUCT_ANIM_STATES>(j.at("gateState").get<int>());
 	psStruct->lastStateTime = j.at("lastStateTime").get<uint32_t>();
+	if (psStruct->status == SS_BUILT && type == REF_GATE)
+	{
+		structureResetCompletedGate(psStruct, world.map);
+	}
 	structureApplyGateStateBlocking(psStruct, world.map);
 	// body is the absolute value already restored by readBaseObjectCommon
 }
 
 /// Pass 2: resolve object cross-references now that every object exists.
-static void readStructurePass2(const nlohmann::ordered_json &j)
+static void readStructurePass2(GameWorld &world, const nlohmann::ordered_json &j)
 {
 	const uint32_t id = j.at("id").get<uint32_t>();
 	const unsigned player = j.at("player").get<unsigned>();
@@ -1626,6 +1613,9 @@ static void readStructurePass2(const nlohmann::ordered_json &j)
 	// terrain - clobbering that restored pos.z. Pass 2 runs after all structure building/alignment, so
 	// re-applying the saved pos here is stable. (No-op for structures whose pos.z was not re-aligned.)
 	psStruct->pos = readVector3i(j.at("pos"));
+	// alignStructure is skipped during restore, so the display-only foundation depth is filled here
+	// from the authoritative position.
+	structureComputeFoundationDepth(psStruct, world.map);
 
 	const nlohmann::ordered_json &weapons = j.at("weapons");
 	for (unsigned w = 0; w < psStruct->numWeaps && w < weapons.size(); ++w)
@@ -2946,7 +2936,7 @@ static void readWorldObjects(GameWorld &world, const nlohmann::ordered_json &j, 
 	// Structure cross-references (targets/commander/repair-rearm) need all objects + lists.
 	for (const nlohmann::ordered_json &js : jstructures)
 	{
-		readStructurePass2(js);
+		readStructurePass2(world, js);
 	}
 
 	// Override the greedy derrick<->power-gen rebuild with the exact saved slotting (lockstep CRC).

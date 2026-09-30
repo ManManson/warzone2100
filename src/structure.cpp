@@ -42,6 +42,7 @@
 #include "world_object_state.h"
 #include "visibility.h"
 #include "structure.h"
+#include "gamestate_serialize.h"
 #include "research.h"
 #include "hci.h"
 #include "power.h"
@@ -246,6 +247,44 @@ void structureApplyGateStateBlocking(STRUCTURE *psStructure, WorldMapState& mapS
 	{
 		auxStructureClosedGate(psStructure, mapState);
 	}
+}
+
+void structureResetCompletedGate(STRUCTURE *psStructure, WorldMapState& mapState)
+{
+	auxStructureNonblocking(psStructure, mapState);
+	auxStructureClosedGate(psStructure, mapState);
+}
+
+void structureApplyModuleImd(STRUCTURE *psStruct)
+{
+	if (psStruct->capacity <= 0)
+	{
+		return;
+	}
+	std::vector<iIMDBaseShape *> &IMDs = psStruct->pStructureType->pIMD;
+	if (IMDs.empty())
+	{
+		return;
+	}
+	const int moduleCount = psStruct->capacity;
+	const int last = static_cast<int>(IMDs.size()) - 1;
+	if (psStruct->status == SS_BEING_BUILT)
+	{
+		// Even indices are the combined building; the odd index just below is the module piece.
+		const int prebuiltIndex = std::min((moduleCount - 1) * 2, last);
+		int imdIndex = std::min(moduleCount * 2, last) - 1;
+		if (imdIndex < 0)
+		{
+			debug(LOG_ERROR, "No upgraded structure model to draw.");
+			imdIndex = 0;
+		}
+		psStruct->prebuiltImd = IMDs[prebuiltIndex];
+		psStruct->sDisplay.imd = IMDs[imdIndex];
+		return;
+	}
+	const int imdIndex = std::min(moduleCount * 2, last);
+	psStruct->prebuiltImd = nullptr;
+	psStruct->sDisplay.imd = IMDs[imdIndex];
 }
 
 bool IsStatExpansionModule(const STRUCTURE_STATS *psStats)
@@ -1482,6 +1521,26 @@ static bool isPulledToTerrain(const STRUCTURE *psBuilding)
 	return type == REF_DEFENSE || type == REF_GATE || type == REF_WALL || type == REF_WALLCORNER || type == REF_REARM_PAD;
 }
 
+void structureComputeFoundationDepth(STRUCTURE *psBuilding, WorldMapState& mapState)
+{
+	if (!isPulledToTerrain(psBuilding))
+	{
+		psBuilding->foundationDepth = psBuilding->pos.z;
+		return;
+	}
+	iIMDBaseShape *s = psBuilding->sDisplay.imd;
+	Vector2i dir = iSinCosR(psBuilding->rot.direction, 1);
+	// Rotate s->max.{x, z} and s->min.{x, z} by angle rot.direction.
+	Vector2i p1{s->max.x * dir.y - s->max.z * dir.x, s->max.x * dir.x + s->max.z * dir.y};
+	Vector2i p2{s->min.x * dir.y - s->min.z * dir.x, s->min.x * dir.x + s->min.z * dir.y};
+	int h1 = map_Height(mapState, psBuilding->pos.x + p1.x, psBuilding->pos.y + p2.y);
+	int h2 = map_Height(mapState, psBuilding->pos.x + p1.x, psBuilding->pos.y + p1.y);
+	int h3 = map_Height(mapState, psBuilding->pos.x + p2.x, psBuilding->pos.y + p1.y);
+	int h4 = map_Height(mapState, psBuilding->pos.x + p2.x, psBuilding->pos.y + p2.y);
+	const int minH = std::min({h1, h2, h3, h4});
+	psBuilding->foundationDepth = std::min<float>(TILE_MAX_HEIGHT, minH);
+}
+
 void alignStructure(STRUCTURE *psBuilding, WorldMapState& mapState)
 {
 	/* DEFENSIVE structures are pulled to the terrain */
@@ -1515,7 +1574,6 @@ void alignStructure(STRUCTURE *psBuilding, WorldMapState& mapState)
 		iIMDBaseShape *s = psBuilding->sDisplay.imd;
 
 		psBuilding->pos.z = TILE_MIN_HEIGHT;
-		psBuilding->foundationDepth = TILE_MAX_HEIGHT;
 
 		Vector2i dir = iSinCosR(psBuilding->rot.direction, 1);
 		// Rotate s->max.{x, z} and s->min.{x, z} by angle rot.direction.
@@ -1526,11 +1584,10 @@ void alignStructure(STRUCTURE *psBuilding, WorldMapState& mapState)
 		int h2 = map_Height(mapState, psBuilding->pos.x + p1.x, psBuilding->pos.y + p1.y);
 		int h3 = map_Height(mapState, psBuilding->pos.x + p2.x, psBuilding->pos.y + p1.y);
 		int h4 = map_Height(mapState, psBuilding->pos.x + p2.x, psBuilding->pos.y + p2.y);
-		int minH = std::min({h1, h2, h3, h4});
 		int maxH = std::max({h1, h2, h3, h4});
 		psBuilding->pos.z = std::max(psBuilding->pos.z, maxH);
-		psBuilding->foundationDepth = std::min<float>(psBuilding->foundationDepth, minH);
-		syncDebug("minH=%d,maxH=%d,pointHeight=%d", minH, maxH, psBuilding->pos.z);  // s->max is based on floats! If this causes desynchs, need to fix!
+		structureComputeFoundationDepth(psBuilding, mapState);
+		syncDebug("maxH=%d,pointHeight=%d", maxH, psBuilding->pos.z);  // s->max is based on floats! If this causes desynchs, need to fix!
 	}
 }
 
@@ -1715,7 +1772,11 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		psBuilding->status = SS_BEING_BUILT;
 		psBuilding->currentBuildPts = 0;
 
-		alignStructure(psBuilding, world.map);
+		// A snapshot restore already carries pos and must not flatten terrain or drag neighbours.
+		if (!gamestate::reconstructInProgress())
+		{
+			alignStructure(psBuilding, world.map);
+		}
 
 		/* Store the weapons */
 		psBuilding->numWeaps = 0;
@@ -1768,8 +1829,11 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 			psBuilding->visible[vPlayer] = hasSharedVision(vPlayer, player) ? UINT8_MAX : 0;
 		}
 
-		// Reveal any tiles that can be seen by the structure
-		visTilesUpdate(psBuilding, world.map);
+		// Version-2 snapshots rebuild sight from watchedTiles after every object exists.
+		if (!gamestate::reconstructSightCarried())
+		{
+			visTilesUpdate(psBuilding, world.map);
+		}
 
 		/*if we're coming from a SAVEGAME and we're on an Expand_Limbo mission,
 		any factories that were built previously for the selectedPlayer will
@@ -1850,32 +1914,36 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 			psBuilding->asWeaps[0].ammo = 1; // ready to trigger the fire button
 		}
 
-		// Move any delivery points under the new structure.
-		StructureBounds bounds = getStructureBounds(psBuilding);
-		for (unsigned playerNum = 0; playerNum < MAX_PLAYERS; ++playerNum)
+		// Live placement shoves a delivery point that the new footprint covers. A restore
+		// writes every assembly point from the snapshot, so that shove would move it twice.
+		if (!gamestate::reconstructInProgress())
 		{
-			for (const STRUCTURE *psStruct : world.objects.structures[playerNum])
+			StructureBounds bounds = getStructureBounds(psBuilding);
+			for (unsigned playerNum = 0; playerNum < MAX_PLAYERS; ++playerNum)
 			{
-				if (!psStruct)
+				for (const STRUCTURE *psStruct : world.objects.structures[playerNum])
 				{
-					continue;
-				}
-				FLAG_POSITION *fp = nullptr;
-				if (psStruct->isFactory())
-				{
-					fp = psStruct->pFunctionality->factory.psAssemblyPoint;
-				}
-				else if (psStruct->pStructureType->type == REF_REPAIR_FACILITY)
-				{
-					fp = psStruct->pFunctionality->repairFacility.psDeliveryPoint;
-				}
-				if (fp != nullptr)
-				{
-					Vector2i pos = map_coord(fp->coords.xy());
-					if (unsigned(pos.x - bounds.map.x) < unsigned(bounds.size.x) && unsigned(pos.y - bounds.map.y) < unsigned(bounds.size.y))
+					if (!psStruct)
 					{
-						// Delivery point fp is under the new structure. Need to move it.
-						setAssemblyPoint(world, fp, fp->coords.x, fp->coords.y, playerNum, true);
+						continue;
+					}
+					FLAG_POSITION *fp = nullptr;
+					if (psStruct->isFactory())
+					{
+						fp = psStruct->pFunctionality->factory.psAssemblyPoint;
+					}
+					else if (psStruct->pStructureType->type == REF_REPAIR_FACILITY)
+					{
+						fp = psStruct->pFunctionality->repairFacility.psDeliveryPoint;
+					}
+					if (fp != nullptr)
+					{
+						Vector2i pos = map_coord(fp->coords.xy());
+						if (unsigned(pos.x - bounds.map.x) < unsigned(bounds.size.x) && unsigned(pos.y - bounds.map.y) < unsigned(bounds.size.y))
+						{
+							// Delivery point fp is under the new structure. Need to move it.
+							setAssemblyPoint(world, fp, fp->coords.x, fp->coords.y, playerNum, true);
+						}
 					}
 				}
 			}
@@ -2009,7 +2077,8 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		}
 		intNotifyResearchButton(prevResearchState);
 	}
-	if (pStructureType->type != REF_WALL && pStructureType->type != REF_WALLCORNER)
+	if (!gamestate::reconstructInProgress()
+	    && pStructureType->type != REF_WALL && pStructureType->type != REF_WALLCORNER)
 	{
 		if (player == selectedPlayer)
 		{
@@ -2018,7 +2087,10 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 	}
 
 	/* why is this necessary - it makes tiles under the structure visible */
-	setUnderTilesVis(psBuilding, world.map, player);
+	if (!gamestate::reconstructInProgress())
+	{
+		setUnderTilesVis(psBuilding, world.map, player);
+	}
 
 	psBuilding->prevTime = gameTime - deltaGameTime;  // Structure hasn't been updated this tick, yet.
 	psBuilding->time = psBuilding->prevTime - 1;      // -1, so the times are different, even before updating.
