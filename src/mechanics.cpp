@@ -36,14 +36,16 @@
 #include "visibility.h"
 
 /* Shutdown the mechanics system */
-void mechanicsPurgeDestroyedObjects()
+void mechanicsPurgeDestroyedObjects(bool checkRefs)
 {
 	for (BASE_OBJECT* psObj : psDestroyedObj)
 	{
 		// Force-destroying everything: clear any not-yet-removed tile visibility (the owning
-		// map may already be gone, so don't touch it) so the destructor's assert is satisfied
+		// map may already be gone, so don't touch it) so the destructor's assert is satisfied.
+		// checkRefs false: objmemDestroy erases the container entry even if a check would fail.
+		// The referencers have already been freed on the reconstruct path.
 		visRemoveVisibilityOffWorld(psObj);
-		objmemDestroy(psObj, true);
+		objmemDestroy(psObj, checkRefs);
 	}
 	psDestroyedObj.clear();
 }

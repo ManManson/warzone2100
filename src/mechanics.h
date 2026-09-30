@@ -29,10 +29,10 @@
 /* Shutdown the mechanics system */
 bool mechanicsShutdown();
 
-/* Force-destroy and clear the pending destroyed-object list (psDestroyedObj). Used by the GameState
- * restore teardown: those objects belong to the pre-restore timeline and must not linger to fire
- * triggerEventDestroyed / be freed on a resumed tick. */
-void mechanicsPurgeDestroyedObjects();
+/// Free every object on psDestroyedObj and clear the list.
+/// checkRefs is the live-play dangling-pointer check. Reconstruct passes false,
+/// and only after the world lists that held the referencers are already gone.
+void mechanicsPurgeDestroyedObjects(bool checkRefs = true);
 
 // Allocate the list for a component
 bool allocComponentList(COMPONENT_TYPE	type, SDWORD number);

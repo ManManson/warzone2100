@@ -4500,7 +4500,18 @@ void gameStateFromJson(const nlohmann::ordered_json &j, ScriptScope scriptScope,
 	// Unknown sections are ignored.
 
 	// Phase 0: every process-lifetime sim subsystem, in the state a fresh level load leaves it in.
+	// Spotters and proximity displays still run here, while the objects they point at are alive.
 	simSubsystemsReset();
+
+	// The retiring timeline. Live lists first, so a this-tick corpse is not freed while a shooter
+	// still points at it. Visibility comes off the map those objects still belong to, before
+	// readMapTerrain reallocates it. Limbo is in the same reference check, so it goes in the same
+	// discard. The pending-dead list is freed last, and without the live reference check: the
+	// referencers are already gone, and a corpse is not on a world list for clearWorldObjects.
+	clearWorldObjects(gameWorld);
+	clearWorldObjects(mission.gameWorld);
+	freeAllLimboDroids();
+	mechanicsPurgeDestroyedObjects(false);
 
 	// Main-world static terrain is restored FIRST: the world is built on it and every object /
 	// fog-fire overlay references tiles. The serialized terrain is authoritative and always overwrites

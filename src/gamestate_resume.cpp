@@ -30,7 +30,6 @@
 #include "mapgrid.h"
 #include "pathfinding_backend.h"
 #include "fpath.h"
-#include "mechanics.h"
 #include "visibility.h"
 #include "structure.h"
 #include "message.h"
@@ -57,13 +56,6 @@ void simSubsystemsReset()
 	// PathfindContext. Cold-load is a no-op (the pool is still empty). pendingRoutes are applied later,
 	// after the world exists.
 	fpathResetForWorldReconstruct();
-
-	// Purge the pending destroyed-object list before teardown. Objects killed in the tick(s) before the
-	// snapshot were moved off the world lists onto the global psDestroyedObj, so clearWorldObjects never
-	// frees them. Left in place, the next objmemUpdate would fire triggerEventDestroyed / free them on the
-	// resumed tick - the pre-restore timeline leaking into the restored one. (No-op when the list is empty:
-	// cold-load starts fresh, the in-process round-trip usually has none pending.)
-	mechanicsPurgeDestroyedObjects();
 
 	// Tear down any live script spotters before the world/map is reset. They hold watchedTiles into the
 	// active map - clearWorldObjects/readMapTerrain zero and reallocate the per-tile watcher/sensor counts,
