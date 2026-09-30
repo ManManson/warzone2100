@@ -1440,6 +1440,10 @@ static void readStructurePass1(GameWorld &world, const nlohmann::ordered_json &j
 	psStruct->productToGroup = j.at("productToGroup").get<uint8_t>();
 	// Modules are capacity on the parent. The display model is applied once status is known.
 	psStruct->capacity = j.at("capacity").get<int>();
+	// Not base-object fields. buildStructureDir leaves currentBuildPts at 0 and the constructor
+	// leaves buildRate at 1; both are sim-authoritative for a structure that is still being built.
+	psStruct->currentBuildPts = j.at("currentBuildPts").get<uint32_t>();
+	psStruct->buildRate = j.value("buildRate", psStruct->buildRate);
 
 	const STRUCTURE_TYPE type = psStruct->pStructureType->type;
 
@@ -1533,14 +1537,6 @@ static void readStructurePass1(GameWorld &world, const nlohmann::ordered_json &j
 		psStruct->pFunctionality->wall.type = j.at("wall").at("type").get<unsigned>();
 		psStruct->sDisplay.imd = psStruct->pStructureType->pIMD[std::min<unsigned>(psStruct->pFunctionality->wall.type, psStruct->pStructureType->pIMD.size() - 1)];
 	}
-
-	// Re-apply the saved (absolute) body + time. buildStructureDir sets body from the stat and time
-	// from gameTime, clobbering the values readBaseObjectCommon restored.
-	psStruct->body = j.at("body").get<uint32_t>();
-	psStruct->currentBuildPts = j.at("currentBuildPts").get<uint32_t>();
-	psStruct->time = j.at("time").get<uint32_t>();
-	// Restore the real per-tick build rate, overriding the protective buildStructure default of 1.
-	psStruct->buildRate = j.value("buildRate", psStruct->buildRate);
 
 	// Weapons:
 	const nlohmann::ordered_json &weapons = j.at("weapons");
