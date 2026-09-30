@@ -1556,28 +1556,6 @@ static void readStructurePass1(GameWorld &world, const nlohmann::ordered_json &j
 
 	psStruct->status = static_cast<STRUCT_STATES>(j.at("status").get<int>());
 	structureApplyModuleImd(psStruct);
-	if (psStruct->status == SS_BUILT)
-	{
-		// buildingComplete() is not called during restore: it re-links power, releases production
-		// and research, reveals the map, and rebuilds sight. Power linkage is restorePowerLinkage().
-		// The hold fields below stay until that re-apply is removed; releaseProduction no longer runs.
-		if (type == REF_FACTORY || type == REF_CYBORG_FACTORY || type == REF_VTOL_FACTORY)
-		{
-			const nlohmann::ordered_json &jf = j.at("factory");
-			FACTORY *f = &psStruct->pFunctionality->factory;
-			f->timeStarted = jf.at("timeStarted").get<uint32_t>();
-			f->timeStartHold = jf.at("timeStartHold").get<uint32_t>();
-		}
-		else if (type == REF_RESEARCH)
-		{
-			const nlohmann::ordered_json &jr = j.at("research");
-			RESEARCH_FACILITY *r = &psStruct->pFunctionality->researchFacility;
-			if (r->psSubject != nullptr && jr.contains("timeStartHold"))
-			{
-				r->timeStartHold = jr.at("timeStartHold").get<uint32_t>();
-			}
-		}
-	}
 	// Restore gate animation state and reapply matching tile blocking. A completed gate is cleared
 	// then closed first, matching buildingComplete, and structureApplyGateStateBlocking then opens
 	// a gate that was saved SAS_OPEN. Non-gates are unchanged by either call.
@@ -1588,7 +1566,6 @@ static void readStructurePass1(GameWorld &world, const nlohmann::ordered_json &j
 		structureResetCompletedGate(psStruct, world.map);
 	}
 	structureApplyGateStateBlocking(psStruct, world.map);
-	// body is the absolute value already restored by readBaseObjectCommon
 }
 
 /// Pass 2: resolve object cross-references now that every object exists.
