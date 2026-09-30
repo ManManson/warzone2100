@@ -1466,9 +1466,8 @@ static void readStructurePass1(GameWorld &world, const nlohmann::ordered_json &j
 			const nlohmann::ordered_json &ja = jf.at("assembly");
 			const nlohmann::ordered_json &jap = ja.at("pos");
 			setAssemblyPoint(world, f->psAssemblyPoint, jap[0].get<int32_t>(), jap[1].get<int32_t>(), player, false);
-			// setAssemblyPoint recomputes coords.z from map_Height(). During reconstruct the terrain is
-			// still mid-restore (object builds re-flatten foundations, see restampTerrainHeights), so it
-			// can sample a +-1-perturbed height. The saved z is authoritative, so restore it explicitly.
+			// setAssemblyPoint samples coords.z from the terrain at the moment the point is placed.
+			// Later builds may flatten that ground, so the saved z is authoritative.
 			f->psAssemblyPoint->coords.z = jap[2].get<int32_t>();
 			f->psAssemblyPoint->selected = ja.at("selected").get<bool>();
 			f->psAssemblyPoint->factoryInc = ja.at("number").get<int>();
@@ -1521,7 +1520,8 @@ static void readStructurePass1(GameWorld &world, const nlohmann::ordered_json &j
 			const nlohmann::ordered_json &jd = jrp.at("delivery");
 			const nlohmann::ordered_json &jdp = jd.at("pos");
 			setAssemblyPoint(world, rp->psDeliveryPoint, jdp[0].get<int32_t>(), jdp[1].get<int32_t>(), player, false);
-			rp->psDeliveryPoint->coords.z = jdp[2].get<int32_t>(); // authoritative z (see factory assembly above)
+			// Same as a factory assembly point: the saved z is the height sampled when the point was placed.
+			rp->psDeliveryPoint->coords.z = jdp[2].get<int32_t>();
 			rp->psDeliveryPoint->selected = jd.at("selected").get<bool>();
 		}
 	}
