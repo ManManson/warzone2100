@@ -3766,13 +3766,9 @@ static void readScores(const nlohmann::ordered_json &j, uint32_t version, Script
 // each newly built droid, and experience feeds combat - so unlike the scores section this IS part of the
 // deterministic sim and must round-trip exactly.
 //
-// Restore ordering is critical: the queues are CLEARED (clearAllRecycledExperience) BEFORE any
-// world/mission object is restored, and POPULATED only AFTER all object restoration. reallyBuildDroid
-// pops a banked value for each non-construct/non-transporter unit it builds unless gameTimeIsStopped(),
-// and the GameState reconstruction does NOT stop the clock - so a populated queue would be consumed by
-// the very droids being restored (each such droid's experience is then overwritten from the snapshot,
-// but the queue would be left wrongly depleted). Clearing first guarantees restored units take nothing,
-// and populating last reproduces the snapshot's queues exactly.
+// reallyBuildDroid pops a banked value unless the clock is stopped or a snapshot is being
+// reconstructed. Restore takes the second path, so rebuilt droids do not consume the queues.
+// readRecycledExperience clears each queue and refills it from the snapshot.
 
 constexpr uint32_t RECYCLED_XP_SECTION_VERSION = 1;
 
@@ -3798,14 +3794,6 @@ static nlohmann::ordered_json writeRecycledExperience()
 	return j;
 }
 
-static void clearAllRecycledExperience()
-{
-	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
-	{
-		clear_experience_queue(static_cast<int>(p));
-	}
-}
-
 static void readRecycledExperience(const nlohmann::ordered_json &j, uint32_t version)
 {
 	if (version != RECYCLED_XP_SECTION_VERSION)
@@ -3819,7 +3807,7 @@ static void readRecycledExperience(const nlohmann::ordered_json &j, uint32_t ver
 	const nlohmann::ordered_json &arr = j.at("queues");
 	for (unsigned p = 0; p < MAX_PLAYERS && p < arr.size(); ++p)
 	{
-		clear_experience_queue(static_cast<int>(p)); // already cleared pre-world; kept idempotent
+		clear_experience_queue(static_cast<int>(p));
 		for (const auto &v : arr[p])
 		{
 			add_to_experience_queue(static_cast<int>(p), v.get<int>());
@@ -4633,10 +4621,6 @@ void gameStateFromJson(const nlohmann::ordered_json &j, ScriptScope scriptScope,
 		const nlohmann::ordered_json &sec = j.at("formations");
 		readFormations(sec, sec.value("version", 0u));
 	}
-	// Empty the recycled-experience queues BEFORE any droid is rebuilt, so restored units do not consume
-	// banked experience (reallyBuildDroid pops from them while the clock runs). They are repopulated from
-	// the snapshot after all object restoration (see readRecycledExperience).
-	clearAllRecycledExperience();
 	if (j.contains("world"))
 	{
 		debug(LOG_GAMESTATE_SERIAL, "restoring section: world (active gameWorld objects)");
@@ -4718,8 +4702,8 @@ void gameStateFromJson(const nlohmann::ordered_json &j, ScriptScope scriptScope,
 		const nlohmann::ordered_json &sec = j.at("presentation");
 		readPresentation(sec, sec.value("version", 0u));
 	}
-	// Repopulate the recycled-experience queues now that ALL droid-building is done (active world,
-	// off-world + limbo). Cleared earlier (pre-world) so the restored units took nothing from them.
+	// Repopulate the recycled-experience queues now that all droids exist. readRecycledExperience
+	// clears each queue, then pushes the saved values.
 	if (j.contains("recycledExperience"))
 	{
 		debug(LOG_GAMESTATE_SERIAL, "restoring section: recycledExperience (repopulate)");
