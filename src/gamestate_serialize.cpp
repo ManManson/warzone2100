@@ -1560,15 +1560,8 @@ static void readStructurePass2(GameWorld &world, const nlohmann::ordered_json &j
 		throw StateError("structure pass 2: object not found, id " + std::to_string(id));
 	}
 
-	// Re-stamp the authoritative saved position. readBaseObjectCommon already restored pos in pass 1,
-	// but pulled-to-terrain structures (walls/gates/defenses) have pos.z recomputed by alignStructure
-	// from the terrain beneath them, and a non-wall structure built later re-aligns its wall/gate
-	// neighbours (alignStructure's neighbour recursion) against the by-then foundation-flattened
-	// terrain - clobbering that restored pos.z. Pass 2 runs after all structure building/alignment, so
-	// re-applying the saved pos here is stable. (No-op for structures whose pos.z was not re-aligned.)
-	psStruct->pos = readVector3i(j.at("pos"));
-	// alignStructure is skipped during restore, so the display-only foundation depth is filled here
-	// from the authoritative position.
+	// alignStructure is skipped during restore, so pos stays as readBaseObjectCommon left it.
+	// Foundation depth is display-only and is filled from that position.
 	structureComputeFoundationDepth(psStruct, world.map);
 
 	const nlohmann::ordered_json &weapons = j.at("weapons");
