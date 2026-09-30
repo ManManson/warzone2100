@@ -39,9 +39,12 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <nlohmann/json_fwd.hpp>
+
+#include "basedef.h"
 
 namespace gamestate
 {
@@ -58,6 +61,27 @@ class StateError : public std::runtime_error
 public:
 	explicit StateError(const std::string &what) : std::runtime_error(what) {}
 };
+
+/// Owns the snapshot-side data constructors must not recompute, for the duration of one
+/// gameStateFromJson. The stash lives with the caller; this only publishes it.
+struct ReconstructScope
+{
+	explicit ReconstructScope(std::unordered_map<uint32_t, std::vector<TILEPOS>> &watchedTiles);
+	~ReconstructScope();
+
+	ReconstructScope(const ReconstructScope &) = delete;
+	ReconstructScope &operator=(const ReconstructScope &) = delete;
+
+	/// True when the world currently being read is section version >= 2, so its sight coverage
+	/// is in the stash and will be rebuilt after the constructors. Step 6's constructors read this.
+	void setSightCarried(bool carried);
+};
+
+/// Non-null only inside a ReconstructScope. The scope does not own the map.
+std::unordered_map<uint32_t, std::vector<TILEPOS>> *reconstructWatchedTiles();
+
+/// The value last passed to ReconstructScope::setSightCarried. False outside a scope.
+bool reconstructSightCarried();
 
 /// Which script instances the "scripting" section covers (write side: which to serialize; read side:
 /// how to bind them). The rest of the GameState is identical across scopes.

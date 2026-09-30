@@ -36,6 +36,11 @@ bool visInitialise();
 /* Check which tiles can be seen by an object */
 void visTilesUpdate(BASE_OBJECT *psObj, WorldMapState& mapState);
 
+struct MAPTILE;
+
+/// Recompute one player's sensorBits from watchers, sensors, jammerBits and alliances.
+void updateTileVis(MAPTILE *psTile, int player);
+
 void revealAll(WorldMapState& mapState, UBYTE player);
 
 /* Check whether psViewer can see psTarget

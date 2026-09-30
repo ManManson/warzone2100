@@ -118,7 +118,7 @@ void visUpdateLevel()
 	visLevelDec = gameTimeAdjustedAverage(VIS_LEVEL_DEC);
 }
 
-static inline void updateTileVis(MAPTILE *psTile, int player)
+void updateTileVis(MAPTILE *psTile, int player)
 {
 	/// The definition of whether a player can see something on a given tile or not
 	if (psTile->watchers[player] > 0 || (psTile->sensors[player] > 0 && !(psTile->jammerBits & ~alliancebits[player])))

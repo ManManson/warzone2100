@@ -115,8 +115,46 @@ static void from_json(const nlohmann::ordered_json &j, CorridorGateCarry &carry)
 	carry.flow = flow.get<std::vector<uint8_t>>();
 }
 
+namespace
+{
+std::unordered_map<uint32_t, std::vector<TILEPOS>> *g_reconstructWatchedTiles = nullptr;
+bool g_reconstructSightCarried = false;
+}
+
 namespace gamestate
 {
+
+ReconstructScope::ReconstructScope(std::unordered_map<uint32_t, std::vector<TILEPOS>> &watchedTiles)
+{
+	if (g_reconstructWatchedTiles != nullptr)
+	{
+		throw StateError("nested GameState reconstruct");
+	}
+	g_reconstructWatchedTiles = &watchedTiles;
+	g_reconstructSightCarried = false;
+}
+
+ReconstructScope::~ReconstructScope()
+{
+	g_reconstructWatchedTiles = nullptr;
+	g_reconstructSightCarried = false;
+}
+
+void ReconstructScope::setSightCarried(bool carried)
+{
+	g_reconstructSightCarried = carried;
+}
+
+std::unordered_map<uint32_t, std::vector<TILEPOS>> *reconstructWatchedTiles()
+{
+	return g_reconstructWatchedTiles;
+}
+
+bool reconstructSightCarried()
+{
+	return g_reconstructSightCarried;
+}
+
 
 // MARK: - Parsed-input validation helpers
 //
@@ -945,7 +983,7 @@ static void readProduction(const nlohmann::ordered_json &j, uint32_t version)
 // object types (addObjectToList prepends, so rebuilding in reverse reproduces
 // the exact list order, which matters for deterministic iteration).
 
-constexpr uint32_t WORLD_SECTION_VERSION = 1;
+constexpr uint32_t WORLD_SECTION_VERSION = 2;
 
 static nlohmann::ordered_json writeVector3i(const Vector3i &v)
 {
@@ -985,6 +1023,22 @@ static nlohmann::ordered_json writeBaseObjectCommon(const BASE_OBJECT *psObj)
 		vis.push_back(psObj->visible[p]);
 	}
 	j["visible"] = std::move(vis);
+	// Sight coverage is history-derived (raycast at the last tile crossing / completion, against the
+	// terrain and walls of that moment). It cannot be recomputed from the current pose, so it is
+	// carried verbatim: 3 bytes per TILEPOS {x, y, type}, base64. Omitted when empty (features,
+	// off-world droids, unbuilt structures, walls/gates).
+	if (!psObj->watchedTiles.empty())
+	{
+		std::vector<uint8_t> bytes;
+		bytes.reserve(psObj->watchedTiles.size() * 3);
+		for (const TILEPOS &t : psObj->watchedTiles)
+		{
+			bytes.push_back(t.x);
+			bytes.push_back(t.y);
+			bytes.push_back(t.type);
+		}
+		j["watchedTiles"] = base64Encode(bytes);
+	}
 	return j;
 }
 
@@ -1030,6 +1084,28 @@ static void readBaseObjectCommon(const nlohmann::ordered_json &j, BASE_OBJECT *p
 	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
 	{
 		psObj->visible[p] = jvis[p].get<uint8_t>();
+	}
+	// Do not write psObj->watchedTiles here. The constructor has already incremented tile counters
+	// from its own list, and readDroid still calls visRemoveVisibility, which decrements by the
+	// object's current list. An early overwrite would underflow. The saved list stays in the
+	// reconstruct stash until rebuildSightCoverageFromSnapshot.
+	if (j.contains("watchedTiles"))
+	{
+		const std::string &s = j.at("watchedTiles").get_ref<const std::string &>();
+		const std::vector<uint8_t> bytes = base64Decode(s);
+		if (bytes.size() % 3 != 0)
+		{
+			throw StateError("watchedTiles blob length not a multiple of 3");
+		}
+		std::vector<TILEPOS> tiles(bytes.size() / 3);
+		for (size_t i = 0; i < tiles.size(); ++i)
+		{
+			tiles[i] = TILEPOS{ bytes[i * 3], bytes[i * 3 + 1], bytes[i * 3 + 2] };
+		}
+		if (auto *stash = reconstructWatchedTiles())
+		{
+			stash->emplace(psObj->id, std::move(tiles));
+		}
 	}
 }
 
@@ -2520,8 +2596,10 @@ static void readDroidList(GameWorld &constructWorld, PerPlayerDroidLists &target
 // Only the authoritative state that is NOT rebuilt from objects:
 // - the explored (fog-of-war) bitmask and fire (BITS_ON_FIRE + fireEndTime)
 //
-// Sensor/jammer/watcher coverage is rebuilt by visTilesUpdate during object reconstruction.
-// Terrain (texture/height/water) comes from the map file. Continents/aux maps are recomputed.
+// Sensor/jammer/watcher coverage for a version-2 world is the saved watchedTiles list, applied by
+// rebuildSightCoverageFromSnapshot after the constructors. A version-1 world still uses the
+// constructor raycasts. Terrain (texture/height/water) comes from the map file. Continents/aux
+// maps are recomputed.
 // Applied AFTER objects so the explored set is exactly the saved (authoritative) one rather
 // than only what restored objects re-reveal.
 
@@ -2794,7 +2872,7 @@ static nlohmann::ordered_json writeWorldObjects(const GameWorld &world, bool onM
 
 static void readWorldObjects(GameWorld &world, const nlohmann::ordered_json &j, uint32_t version)
 {
-	if (version != WORLD_SECTION_VERSION)
+	if (version != 1 && version != WORLD_SECTION_VERSION)
 	{
 		throw StateError("unsupported world section version");
 	}
@@ -3366,6 +3444,95 @@ static void restampTerrainHeights(WorldMapState &map, const nlohmann::ordered_js
 	}
 }
 
+// Replace the constructor raycasts with the saved coverage. Mirrors visMarkTile (increment) and is the
+// inverse of visRemoveVisibility; counters are zeroed first so the result is independent of what the
+// constructors computed. A no-op when this world has no map.
+static void rebuildSightCoverageFromSnapshot(GameWorld &world)
+{
+	if (!world.map.tiles)
+	{
+		return;
+	}
+	if (!reconstructSightCarried())
+	{
+		throw StateError("rebuilding sight coverage without a version-2 world");
+	}
+	auto *stash = reconstructWatchedTiles();
+	if (stash == nullptr)
+	{
+		throw StateError("sight rebuild outside reconstruct");
+	}
+	const size_t n = size_t(world.map.width) * size_t(world.map.height);
+	for (size_t i = 0; i < n; ++i)
+	{
+		MAPTILE &t = world.map.tiles[i];
+		t.sensorBits = 0;
+		t.jammerBits = 0;
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			t.sensors[p] = 0;
+			t.watchers[p] = 0;
+			t.jammers[p] = 0;
+		}
+	}
+	auto apply = [&](BASE_OBJECT *o)
+	{
+		auto it = stash->find(o->id);
+		o->watchedTiles = (it != stash->end()) ? std::move(it->second) : std::vector<TILEPOS>();
+		if (it != stash->end())
+		{
+			stash->erase(it);
+		}
+		if (o->watchedTiles.empty())
+		{
+			return;
+		}
+		if (o->player >= MAX_PLAYERS)
+		{
+			throw StateError("watchedTiles entry for a non-player object");
+		}
+		const bool jams = o->flags.test(OBJECT_FLAG_JAMMED_TILES);
+		for (const TILEPOS &tp : o->watchedTiles)
+		{
+			if (tp.x >= world.map.width || tp.y >= world.map.height || tp.type > 1)
+			{
+				throw StateError("watchedTiles entry out of range");
+			}
+			MAPTILE *psTile = mapTile(world.map, tp.x, tp.y);
+			uint16_t *visionType = (tp.type == 0) ? psTile->sensors : psTile->watchers;
+			visionType[o->player]++;
+			if (jams)
+			{
+				psTile->jammers[o->player]++;
+				psTile->jammerBits |= (1 << o->player);
+			}
+		}
+	};
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		for (DROID *d : world.objects.droids[p])
+		{
+			apply(d);
+		}
+		for (STRUCTURE *s : world.objects.structures[p])
+		{
+			apply(s);
+		}
+	}
+	for (FEATURE *f : world.objects.features[0])
+	{
+		apply(f);
+	}
+	// jammerBits must be final before sensorBits is derived (updateTileVis reads jammerBits).
+	for (size_t i = 0; i < n; ++i)
+	{
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			updateTileVis(&world.map.tiles[i], static_cast<int>(p));
+		}
+	}
+}
+
 static nlohmann::ordered_json writeMission()
 {
 	nlohmann::ordered_json j = nlohmann::ordered_json::object();
@@ -3471,13 +3638,21 @@ static void readMission(const nlohmann::ordered_json &j, uint32_t version)
 	}
 
 	const nlohmann::ordered_json &jworld = j.at("world");
-	readWorldObjects(mission.gameWorld, jworld, jworld.value("version", 0u));
+	const uint32_t worldVersion = jworld.value("version", 0u);
+	g_reconstructSightCarried = worldVersion >= 2;
+	readWorldObjects(mission.gameWorld, jworld, worldVersion);
 
 	// Undo the foundation-flattening the object build path applied to the off-world terrain
 	// (see restampTerrainHeights); the saved terrain is authoritative.
 	if (j.contains("mapTerrain"))
 	{
 		restampTerrainHeights(mission.gameWorld.map, j.at("mapTerrain"));
+	}
+	// Version 1 keeps the constructor raycasts. Version 2 replaces them with the saved lists.
+	// Spotters are not on this world; the active-map spotters are applied later, on gameWorld.
+	if (worldVersion >= 2)
+	{
+		rebuildSightCoverageFromSnapshot(mission.gameWorld);
 	}
 
 	// Limbo droids: free existing then reconstruct into apsLimboDroids. These are off the
@@ -4416,6 +4591,10 @@ void gameStateFromJson(const nlohmann::ordered_json &j, ScriptScope scriptScope,
 		throw StateError("unsupported GameState container format version");
 	}
 
+	std::unordered_map<uint32_t, std::vector<TILEPOS>> watchedTileStash;
+	ReconstructScope reconstructScope(watchedTileStash);
+	uint32_t activeWorldVersion = 0;
+
 	// Each subsystem is a top-level section object carrying its own "version".
 	// Unknown sections are ignored.
 
@@ -4557,7 +4736,9 @@ void gameStateFromJson(const nlohmann::ordered_json &j, ScriptScope scriptScope,
 	{
 		debug(LOG_GAMESTATE_SERIAL, "restoring section: world (active gameWorld objects)");
 		const nlohmann::ordered_json &sec = j.at("world");
-		readWorldObjects(gameWorld, sec, sec.value("version", 0u));
+		activeWorldVersion = sec.value("version", 0u);
+		reconstructScope.setSightCarried(activeWorldVersion >= 2);
+		readWorldObjects(gameWorld, sec, activeWorldVersion);
 	}
 	if (j.contains("mission"))
 	{
@@ -4582,6 +4763,14 @@ void gameStateFromJson(const nlohmann::ordered_json &j, ScriptScope scriptScope,
 	{
 		debug(LOG_GAMESTATE_SERIAL, "post-pass: restampTerrainHeights (main world)");
 		restampTerrainHeights(gameWorld.map, j.at("mapTerrain"));
+	}
+	// Version 1 keeps the constructor raycasts. Version 2 replaces them from the stash, after
+	// terrain is final and before spotters add coverage on top.
+	if (activeWorldVersion >= 2)
+	{
+		debug(LOG_GAMESTATE_SERIAL, "post-pass: rebuildSightCoverageFromSnapshot (main world)");
+		reconstructScope.setSightCarried(true);
+		rebuildSightCoverageFromSnapshot(gameWorld);
 	}
 	// Re-apply the power request queues now that all structures exist: structure (re)building during
 	// the world restore mutates the per-player queue (delPowerRequest/requestPowerFor), so it must be
@@ -5140,6 +5329,7 @@ bool runGameStateRoundTripTest()
 		if (printed < MAX_DIGEST_MISMATCH_LINES_TO_PRINT)
 		{
 			CONPRINTF("GameState derived-state MISMATCH: %s (%08X vs %08X)", label.c_str(), before, after);
+			debug(LOG_ERROR, "GameState derived-state MISMATCH: %s (%08X vs %08X)", label.c_str(), before, after);
 			++printed;
 		}
 		++digestDiffs;
@@ -5167,6 +5357,7 @@ bool runGameStateRoundTripTest()
 	if (digestDiffs > 0)
 	{
 		CONPRINTF("GameState derived-state digest: %zu differing lines (%zu vs %zu lines)", digestDiffs, d1.size(), d2.size());
+		debug(LOG_ERROR, "GameState derived-state digest: %zu differing lines (%zu vs %zu lines)", digestDiffs, d1.size(), d2.size());
 		ok = false;
 	}
 	return ok;
@@ -5199,6 +5390,30 @@ bool runGameStateSelfTest()
 			ok = false;
 		}
 	};
+
+	// watchedTiles round-trip through the object helpers. The read side stashes the list; it must
+	// not overwrite the object's own list (constructors and visRemoveVisibility still own that).
+	{
+		std::unordered_map<uint32_t, std::vector<TILEPOS>> stash;
+		ReconstructScope scope(stash);
+		BASE_OBJECT obj(OBJ_FEATURE, 7, 1);
+		obj.watchedTiles = { TILEPOS{1, 2, 0}, TILEPOS{3, 4, 1}, TILEPOS{5, 6, 0} };
+		const nlohmann::ordered_json written = writeBaseObjectCommon(&obj);
+		obj.watchedTiles.clear();
+		readBaseObjectCommon(written, &obj);
+		check(obj.watchedTiles.empty(), "readBaseObjectCommon wrote watchedTiles onto the object");
+		const auto it = stash.find(7);
+		check(it != stash.end() && it->second.size() == 3, "watchedTiles round-trip size");
+		if (it != stash.end() && it->second.size() == 3)
+		{
+			const std::vector<TILEPOS> &got = it->second;
+			check(got[0].x == 1 && got[0].y == 2 && got[0].type == 0
+			      && got[1].x == 3 && got[1].y == 4 && got[1].type == 1
+			      && got[2].x == 5 && got[2].y == 6 && got[2].type == 0,
+			      "watchedTiles round-trip values");
+		}
+	}
+	check(reconstructWatchedTiles() == nullptr, "reconstruct scope leaked");
 
 	// Arrange: drive the determinism core into a known, non-default configuration.
 	gameSRand(0xDEADBEEFu);
