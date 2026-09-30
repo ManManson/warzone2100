@@ -3381,32 +3381,6 @@ static void readMapTerrain(WorldMapState &map, const nlohmann::ordered_json &j, 
 	map.scroll.maxY = sc[3].get<int32_t>();
 }
 
-// Re-stamp the authoritative saved tile heights over the map. Object reconstruction perturbs the
-// terrain: a structure's build path runs alignStructure() -> buildFlatten(), which re-flattens the
-// foundation tiles to foundationHeight()'s (min+max)/2 average. That average is integer-truncating
-// and so *not* idempotent against already-flattened terrain (the saved terrain is already flattened),
-// drifting foundation tiles by +-1. The serialized terrain is authoritative and each object restores
-// its own pos.z explicitly, so the build path's re-flatten is pure noise, thus: undo it by re-applying
-// saved heights once all objects are placed. Heights only - texture/water are untouched by building,
-// and the aux/blocking maps + continents were already computed (in readMapTerrain) from these exact
-// heights, so no reinit is needed.
-static void restampTerrainHeights(WorldMapState &map, const nlohmann::ordered_json &j)
-{
-	if (!map.tiles || !j.contains("tileHeight"))
-	{
-		return;
-	}
-	// tileHeight is the base64 LE i32 blob written by writeMapTerrain, not a JSON array.
-	// An array-size check never matched that blob, so this restamp returned without writing
-	// and the +-1 foundation drift from buildFlatten survived.
-	const size_t n = static_cast<size_t>(map.width) * static_cast<size_t>(map.height);
-	const std::vector<uint8_t> hgt = decodeBase64Field(j.at("tileHeight"), n * 4, "map terrain tileHeight");
-	for (size_t i = 0; i < n; ++i)
-	{
-		map.tiles[i].height = static_cast<int32_t>(readU32le(&hgt[i * 4]));
-	}
-}
-
 // Replace the constructor raycasts with the saved coverage. Mirrors visMarkTile (increment) and is the
 // inverse of visRemoveVisibility; counters are zeroed first so the result is independent of what the
 // constructors computed. A no-op when this world has no map.
@@ -3605,12 +3579,6 @@ static void readMission(const nlohmann::ordered_json &j, uint32_t version)
 	g_reconstructSightCarried = worldVersion >= 2;
 	readWorldObjects(mission.gameWorld, jworld, worldVersion);
 
-	// Undo the foundation-flattening the object build path applied to the off-world terrain
-	// (see restampTerrainHeights); the saved terrain is authoritative.
-	if (j.contains("mapTerrain"))
-	{
-		restampTerrainHeights(mission.gameWorld.map, j.at("mapTerrain"));
-	}
 	// Version 1 keeps the constructor raycasts. Version 2 replaces them with the saved lists.
 	// Spotters are not on this world; the active-map spotters are applied later, on gameWorld.
 	if (worldVersion >= 2)
@@ -4719,14 +4687,6 @@ void gameStateFromJson(const nlohmann::ordered_json &j, ScriptScope scriptScope,
 	// formation's members re-attached, fail-soft on violations, and drop the attach stash.
 	debug(LOG_GAMESTATE_SERIAL, "post-pass: finalizeRestoredFormations");
 	finalizeRestoredFormations();
-	// Undo the foundation-flattening the object build path applied to the main-world terrain
-	// (see restampTerrainHeights). Done after all world/mission object restoration so no later
-	// structure build can re-perturb the authoritative saved terrain.
-	if (j.contains("mapTerrain"))
-	{
-		debug(LOG_GAMESTATE_SERIAL, "post-pass: restampTerrainHeights (main world)");
-		restampTerrainHeights(gameWorld.map, j.at("mapTerrain"));
-	}
 	// Version 1 keeps the constructor raycasts. Version 2 replaces them from the stash, after
 	// terrain is final and before spotters add coverage on top.
 	if (activeWorldVersion >= 2)
@@ -5568,9 +5528,6 @@ bool runGameStateSelfTest()
 				check(tm2.tiles[5].texture == 6, "terrain round-trip texture wrong");
 				check(tm2.tiles[5].height == 105, "terrain round-trip height wrong");
 				check(tm2.tiles[5].waterLevel == 5, "terrain round-trip water wrong");
-				tm2.tiles[5].height = 999;
-				restampTerrainHeights(tm2, tj);
-				check(tm2.tiles[5].height == 105, "restampTerrainHeights did not restore saved height");
 			}
 			check(currentMapTileset == MAP_TILESET::URBAN, "terrain round-trip tileset wrong");
 			check(terrainTypes[6] == 3, "terrain round-trip terrainTypes wrong");
