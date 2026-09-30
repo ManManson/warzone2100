@@ -1053,6 +1053,16 @@ BASE_OBJECT *getBaseObjFromData(unsigned id, unsigned player, OBJECT_TYPE type)
 	default:
 		break;
 	}
+	// This-tick corpses are off every world list but still targeted. A missing match
+	// above is the normal case for a pointer saved from psDestroyedObj.
+	for (BASE_OBJECT *obj : psDestroyedObj)
+	{
+		if (obj->id == id && obj->type == type
+		    && (type == OBJ_FEATURE || obj->player == player))
+		{
+			return obj;
+		}
+	}
 	return nullptr;
 }
 
