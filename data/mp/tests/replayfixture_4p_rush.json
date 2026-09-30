@@ -1,0 +1,15 @@
+{
+	"challenge": {
+		"map": "Sk-Rush",
+		"maxPlayers": 4,
+		"bases": 1,
+		"powerLevel": 1,
+		"scavengers": "true",
+		"difficulty": "Medium",
+		"version": 2
+	},
+	"player_0": { "team": 0, "ai": "multiplay/skirmish/semperfi.js" },
+	"player_1": { "team": 1, "ai": "multiplay/skirmish/nexus.js" },
+	"player_2": { "team": 2, "ai": "bonecrusher/bonecrusher.js" },
+	"player_3": { "team": 3, "ai": "multiplay/skirmish/semperfi.js" }
+}

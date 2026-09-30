@@ -900,6 +900,8 @@ add_subdirectory(doc)
 add_subdirectory(po)
 add_subdirectory(src)
 add_subdirectory(pkg)
+enable_testing()
+add_subdirectory(tests)
 
 # Standalone unit test for the (dependency-free) terrain surface interpolation math
 option(WZ_BUILD_TERRAIN_SURFACE_TEST "Build the terrain surface math unit test (tests/terrain_surface_test.cpp)" OFF)
