@@ -495,27 +495,8 @@ static void readPower(const nlohmann::ordered_json &j, uint32_t version)
 		s.powerModifier = jp.at("powerModifier").get<int>();
 		setPlayerPowerState(p, s);
 
-		// The per-player power request queue is restored separately (reapplyPowerQueue), AFTER world
-		// reconstruction: the queue is keyed by structure id and structure (re)building mutates it
-		// (delPowerRequest/requestPowerFor), so restoring it here - before objects exist - would be
-		// clobbered.
-	}
-}
-
-// Re-apply the authoritative per-player power request queue. Called after the world objects are
-// reconstructed (see readPower): structure (re)building runs delPowerRequest/requestPowerFor, which
-// would otherwise perturb a queue restored earlier. The queue entries are pure {structId, amount}
-// snapshot data and do not require the structures to exist to be stored.
-static void reapplyPowerQueue(const nlohmann::ordered_json &j)
-{
-	const nlohmann::ordered_json &jplayers = j.at("players");
-	if (!jplayers.is_array() || jplayers.size() != MAX_PLAYERS)
-	{
-		throw StateError("power.players must have MAX_PLAYERS entries");
-	}
-	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
-	{
-		const nlohmann::ordered_json &jp = jplayers[p];
+		// Queue entries are {structId, amount}. Restore does not call delPowerRequest or
+		// requestPowerFor, so this is not clobbered by the structures built afterwards.
 		std::vector<PowerRequestSave> queue;
 		if (jp.contains("queue"))
 		{
@@ -4694,14 +4675,6 @@ void gameStateFromJson(const nlohmann::ordered_json &j, ScriptScope scriptScope,
 		debug(LOG_GAMESTATE_SERIAL, "post-pass: rebuildSightCoverageFromSnapshot (main world)");
 		reconstructScope.setSightCarried(true);
 		rebuildSightCoverageFromSnapshot(gameWorld);
-	}
-	// Re-apply the power request queues now that all structures exist: structure (re)building during
-	// the world restore mutates the per-player queue (delPowerRequest/requestPowerFor), so it must be
-	// stamped from the snapshot after reconstruction rather than inside readPower (see reapplyPowerQueue).
-	if (j.contains("power"))
-	{
-		debug(LOG_GAMESTATE_SERIAL, "post-pass: reapplyPowerQueue");
-		reapplyPowerQueue(j.at("power"));
 	}
 	// Restore the in-flight path results for droids reconstructed mid-route (MOVEWAITROUTE).
 	// Replay the serialized PATHRESULT directly into the fpath result table so the droid consumes it on
