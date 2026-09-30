@@ -4733,9 +4733,8 @@ void gameStateFromJson(const nlohmann::ordered_json &j, ScriptScope scriptScope,
 		const nlohmann::ordered_json &sec = j.at("commandDesignators");
 		readCommandDesignators(sec, sec.value("version", 0u));
 	}
-	// Win/lose flags + mission/score stats. Restored AFTER all object building: reallyBuildDroid /
-	// buildStructure call scoreUpdateVar(WD_UNITS_BUILT / WD_STR_BUILT), bumping missionData as the world
-	// is reconstructed, so the saved tally must overwrite those bumps (not be applied before them).
+	// Win/lose flags + mission/score stats. Constructors skip scoreUpdateVar during restore, so this
+	// no longer has to follow object building. It stays here, after the world exists.
 	if (j.contains("scores"))
 	{
 		debug(LOG_GAMESTATE_SERIAL, "restoring section: scores");
