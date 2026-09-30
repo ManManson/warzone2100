@@ -40,8 +40,6 @@
 #include "screens/guidescreen.h" // save/restoreLoadedGuideTopics + guide popup toggle
 #include "map.h"            // builtInMap, useTerrainOverrides, mapReloadGroundTypes
 #include "game_world.h"     // gameWorld
-#include "structure.h"      // initFactoryNumFlag
-#include "message.h"        // releaseAllProxDisp
 #include "display3d.h"      // playerPos (camera) - local view state
 #include "radar.h"          // Get/SetRadarZoom - local view state
 #include "mission.h"        // Cheated - local meta flag
@@ -1377,13 +1375,8 @@ bool coldLoadRestoreWorld()
 		debug(LOG_ERROR, "coldLoadRestoreWorld called with no stashed GameState");
 		return false;
 	}
-	// Canonical reset of the global derived state the scenario load (which placed the map + starting
-	// units) dirtied and that the snapshot does not reset on its own. Mirrors the legacy load reset
-	// (game.cpp): factory-number flags and proximity-message displays. (Per-world object lists +
-	// extractor/sensor/oil indices + structure curCount are reset inside gameStateFromJson's
-	// clearWorldObjects; projectiles are reset by its projectiles section.)
-	initFactoryNumFlag();
-	releaseAllProxDisp();
+	// simSubsystemsReset(), inside reconstructWorldFromSnapshot, clears the process-lifetime caches
+	// the scenario load dirtied (factory-number flags, proximity displays, and the rest).
 
 	try
 	{

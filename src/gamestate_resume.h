@@ -42,7 +42,11 @@ struct ReconstructOptions
 	bool deferMessages = false;
 };
 
-/// Phase 1: teardown process-lifetime workers (inside gameStateFromJson) and apply the document.
+/// Phase 0: put every process-lifetime sim subsystem into the state a fresh level load leaves it in,
+/// before a snapshot is applied. Order follows stageTwoShutDown/stageTwoInitialise where one exists.
+void simSubsystemsReset();
+
+/// Phase 1: simSubsystemsReset (inside gameStateFromJson) and apply the document.
 void reconstructWorldFromSnapshot(const nlohmann::ordered_json &j,
                                   ReconstructOptions options = {});
 

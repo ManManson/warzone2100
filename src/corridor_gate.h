@@ -137,6 +137,10 @@ void corridorGateRestoreCarry(GameWorld &world, unsigned player, const CorridorG
 /// before any droid moves, so every droid decides against the same snapshot.
 void corridorGateUpdate(GameWorld &world);
 
+/// Drop the debug-only corridor classification and queue-speed logs. Droid ids recycle
+/// across a restore, and these maps are not part of the synced state.
+void corridorGateResetDebugLogs();
+
 /// If the droid is inside a detected corridor, fills laneTarget with a steering
 /// point that keeps it on its side and returns true. Returns false when the
 /// droid is not inside a corridor, so the caller steers to its own waypoint.

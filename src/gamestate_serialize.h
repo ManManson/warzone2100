@@ -103,6 +103,10 @@ enum class ScriptScope
 /// Build a JSON document representing the current live match state.
 nlohmann::ordered_json gameStateToJson(ScriptScope scriptScope = ScriptScope::AllInstances);
 
+/// Empty every player's recycled-experience queue. simSubsystemsReset calls this;
+/// readRecycledExperience refills it from the snapshot.
+void clearAllRecycledExperience();
+
 /// Restore live match state from a JSON document. Throws StateError on bad data.
 /// deferMessages skips the "messages" section (intel/proximity), for the disk cold-load where the level's
 /// VIEWDATA is not yet loaded when this runs. The caller replays it later via applyGameStateMessages().

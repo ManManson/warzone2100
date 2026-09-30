@@ -887,6 +887,12 @@ Query approachQuery(const GameWorld &world, const Vector2i &pos, const Vector2i 
 
 } // anonymous namespace
 
+void corridorGateResetDebugLogs()
+{
+	g_logClass.clear();
+	g_logSpeed.clear();
+}
+
 /// One cohort's flow for this tick, measured over the droids of cohortPlayer and its allies.
 /// canonical names the player whose pass carries each owner's droids, so the classification log
 /// still emits one line per droid however the cohorts share their computation.
@@ -1375,8 +1381,7 @@ void corridorGateUpdate(GameWorld &world)
 		}
 		++g_queryStamp;   // the joints changed, so no earlier answer holds
 		// droid ids recycle across games, so the transition log dedup restarts with the map
-		g_logClass.clear();
-		g_logSpeed.clear();
+		corridorGateResetDebugLogs();
 	}
 
 	// Each player's flow is measured over its own and allied droids, the cohort the congestion

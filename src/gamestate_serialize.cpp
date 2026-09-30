@@ -3184,7 +3184,7 @@ static void readSpotters(const nlohmann::ordered_json &j, uint32_t version)
 	{
 		throw StateError("unsupported spotters section version");
 	}
-	// The pre-restore spotters were already torn down at the top of gameStateFromJson (removeSpotters).
+	// The pre-restore spotters were already torn down by simSubsystemsReset (removeSpotters).
 	const nlohmann::ordered_json &list = j.at("list");
 	if (!list.is_array())
 	{
@@ -3792,6 +3792,14 @@ static nlohmann::ordered_json writeRecycledExperience()
 	}
 	j["queues"] = std::move(arr);
 	return j;
+}
+
+void clearAllRecycledExperience()
+{
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		clear_experience_queue(static_cast<int>(p));
+	}
 }
 
 static void readRecycledExperience(const nlohmann::ordered_json &j, uint32_t version)
@@ -4491,33 +4499,8 @@ void gameStateFromJson(const nlohmann::ordered_json &j, ScriptScope scriptScope,
 	// Each subsystem is a top-level section object carrying its own "version".
 	// Unknown sections are ignored.
 
-	// Stop the SKIRMISH danger worker (if one is running) BEFORE the world is torn down and the aux/block
-	// maps are reallocated by readMapTerrain - the worker writes auxMap[MAX_PLAYERS+AUX_DANGERMAP] /
-	// reads blockMap[AUX_DANGERMAP], so reallocating those underneath it would race / use-after-free.
-	// No-op on the disk cold-load path (mapInit has not started a worker yet) - the in-process round-trip
-	// and in-place resume are the cases with a live worker here. The danger overlay is re-applied by the
-	// dangerMaps post-pass below and the worker is (re)started by the next mapInit.
-	mapStopDangerThreadForReconstruct();
-
-	// Drop queued path jobs and planner caches from the timeline we are leaving. In-place resume (replay
-	// seek) otherwise leaves pre-restore jobs on the worker queues; snapshot pendingRoutes then sit
-	// behind that backlog, first-tick MOVEWAITROUTE polls miss, and later searches reuse a stale
-	// PathfindContext. Cold-load is a no-op (the pool is still empty). pendingRoutes are applied later
-	// in this function, after the world exists.
-	fpathResetForWorldReconstruct();
-
-	// Purge the pending destroyed-object list before teardown. Objects killed in the tick(s) before the
-	// snapshot were moved off the world lists onto the global psDestroyedObj, so clearWorldObjects never
-	// frees them. Left in place, the next objmemUpdate would fire triggerEventDestroyed / free them on the
-	// resumed tick - the pre-restore timeline leaking into the restored one. (No-op when the list is empty:
-	// cold-load starts fresh, the in-process round-trip usually has none pending.)
-	mechanicsPurgeDestroyedObjects();
-
-	// Tear down any live script spotters before the world/map is reset. They hold watchedTiles into the
-	// active map - clearWorldObjects/readMapTerrain zero and reallocate the per-tile watcher/sensor counts,
-	// so a surviving spotter's ~SPOTTER would later underflow those counts. The snapshot's own spotters are
-	// rebuilt by the "spotters" section (readSpotters) after the world is restored.
-	removeSpotters();
+	// Phase 0: every process-lifetime sim subsystem, in the state a fresh level load leaves it in.
+	simSubsystemsReset();
 
 	// Main-world static terrain is restored FIRST: the world is built on it and every object /
 	// fog-fire overlay references tiles. The serialized terrain is authoritative and always overwrites
