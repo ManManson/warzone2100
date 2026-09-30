@@ -48,6 +48,7 @@
 #include "replay_session.h"
 #include "gamestate_serialize.h"
 #include "movebench.h"
+#include "run_control.h"
 #include "pathbench.h"
 #include "corridordump.h"
 #include "corridor_gate.h"
@@ -650,6 +651,7 @@ static void gameStateUpdate()
 
 	// Optional GameState reconstruct-fidelity test (no-op unless --gamestate-roundtrip was set).
 	gamestate::gamestateMaybeRunRoundTripTest();
+	runControlMaybeQuit();
 }
 
 size_t getMaxFastForwardTicks()

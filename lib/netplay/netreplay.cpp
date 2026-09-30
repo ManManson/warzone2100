@@ -117,7 +117,7 @@ static bool NETreplaySaveWritePreamble(const nlohmann::json& settings, ReplayOpt
 	return true;
 }
 
-std::string NETreplaySaveStart(std::string const& subdir, ReplayOptionsHandler const &optionsHandler, int maxReplaysSaved, bool appendPlayerToFilename)
+std::string NETreplaySaveStart(std::string const& subdir, ReplayOptionsHandler const &optionsHandler, int maxReplaysSaved, bool appendPlayerToFilename, nonstd::optional<std::string> fixedName)
 {
 	if (NETisReplay())
 	{
@@ -128,32 +128,46 @@ std::string NETreplaySaveStart(std::string const& subdir, ReplayOptionsHandler c
 
 	ASSERT_OR_RETURN("", !subdir.empty(), "Must provide a valid subdir");
 
-	if (maxReplaysSaved > 0)
-	{
-		// clean up old replay files
-		std::string replayFullDir = "replay/" + subdir;
-		WZ_PHYSFS_cleanupOldFilesInFolder(replayFullDir.c_str(), ".wzrp", maxReplaysSaved - 1, [](const char *fileName){
-			if (PHYSFS_delete(fileName) == 0)
-			{
-				debug(LOG_ERROR, "Failed to delete old replay file: %s", fileName);
-				return false;
-			}
-			return true;
-		});
-	}
-
-	time_t aclock;
-	time(&aclock);                     // Get time in seconds
-	tm *newtime = localtime(&aclock);  // Convert time to struct
-
 	std::string filename;
-	if (appendPlayerToFilename)
+	if (fixedName.has_value())
 	{
-		filename = astringf("replay/%s/%04d%02d%02d_%02d%02d%02d_%s_p%u.wzrp", subdir.c_str(), newtime->tm_year + 1900, newtime->tm_mon + 1, newtime->tm_mday, newtime->tm_hour, newtime->tm_min, newtime->tm_sec, subdir.c_str(), selectedPlayer);
+		// A pinned name must not sweep the folder: fixtures would evict user replays and each other.
+		const std::string &stem = fixedName.value();
+		if (stem.empty() || stem.find_first_of("/\\") != std::string::npos)
+		{
+			debug(LOG_ERROR, "Invalid replay name: %s", stem.c_str());
+			return "";
+		}
+		filename = astringf("replay/%s/%s.wzrp", subdir.c_str(), stem.c_str());
 	}
 	else
 	{
-		filename = astringf("replay/%s/%04d%02d%02d_%02d%02d%02d_%s.wzrp", subdir.c_str(), newtime->tm_year + 1900, newtime->tm_mon + 1, newtime->tm_mday, newtime->tm_hour, newtime->tm_min, newtime->tm_sec, subdir.c_str());
+		if (maxReplaysSaved > 0)
+		{
+			// clean up old replay files
+			std::string replayFullDir = "replay/" + subdir;
+			WZ_PHYSFS_cleanupOldFilesInFolder(replayFullDir.c_str(), ".wzrp", maxReplaysSaved - 1, [](const char *fileName){
+				if (PHYSFS_delete(fileName) == 0)
+				{
+					debug(LOG_ERROR, "Failed to delete old replay file: %s", fileName);
+					return false;
+				}
+				return true;
+			});
+		}
+
+		time_t aclock;
+		time(&aclock);                     // Get time in seconds
+		tm *newtime = localtime(&aclock);  // Convert time to struct
+
+		if (appendPlayerToFilename)
+		{
+			filename = astringf("replay/%s/%04d%02d%02d_%02d%02d%02d_%s_p%u.wzrp", subdir.c_str(), newtime->tm_year + 1900, newtime->tm_mon + 1, newtime->tm_mday, newtime->tm_hour, newtime->tm_min, newtime->tm_sec, subdir.c_str(), selectedPlayer);
+		}
+		else
+		{
+			filename = astringf("replay/%s/%04d%02d%02d_%02d%02d%02d_%s.wzrp", subdir.c_str(), newtime->tm_year + 1900, newtime->tm_mon + 1, newtime->tm_mday, newtime->tm_hour, newtime->tm_min, newtime->tm_sec, subdir.c_str());
+		}
 	}
 	replaySaveHandle = PHYSFS_openWrite(filename.c_str());  // open the file
 	if (replaySaveHandle == nullptr)

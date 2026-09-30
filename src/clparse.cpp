@@ -45,6 +45,7 @@
 #include "modding.h"
 #include "movebench.h"
 #include "replay_selftest.h"
+#include "run_control.h"
 #include "pathbench.h"
 #include "pathfinding_backend.h"
 #include "corridordump.h"
@@ -367,6 +368,10 @@ typedef enum
 	CLI_GAMESTATE_CRCDETAIL,
 	CLI_GAMESTATE_CRCDETAIL_ONSAVE,
 	CLI_REPLAY_SELFTEST,
+	CLI_GAME_SEED,
+	CLI_QUIT_AT_GAMETIME,
+	CLI_DETERMINISTIC_LATENCY,
+	CLI_RECORD_REPLAY_AS,
 	CLI_TMP_PREFER_OLD_SAVE,
 	CLI_DRS_FRACTION,
 	CLI_RESOLUTION,
@@ -470,6 +475,10 @@ static const struct poptOption *getOptionsTable()
 		{ "gamestate-crc-detail-tick", POPT_ARG_STRING, CLI_GAMESTATE_CRCDETAIL, N_("At this game tick, dump the full sync-debug log to <crc-trace-file>.detail.txt (diff original vs loaded run to pinpoint a divergence)"), N_("game tick") },
 		{ "gamestate-crc-detail-on-save", POPT_ARG_NONE, CLI_GAMESTATE_CRCDETAIL_ONSAVE, N_("Auto-dump a window of full sync-debug logs to <crc-trace-file>.detail.txt around each GameState save/load (no need to know the save tick)"), nullptr },
 		{ "replay-selftest", POPT_ARG_STRING, CLI_REPLAY_SELFTEST, N_("With --loadreplay: plant a keyframe at game tick T, run N ticks, seek back to T, run N ticks, compare full sync logs and exit"), N_("T,N") },
+		{ "game-seed", POPT_ARG_STRING, CLI_GAME_SEED, N_("Seed for the synchronised game RNG (skirmish/autohost host only)"), N_("seed") },
+		{ "quit-at-gametime", POPT_ARG_STRING, CLI_QUIT_AT_GAMETIME, N_("Quit cleanly once gameTime reaches this value in ms (autogame)"), N_("ms") },
+		{ "deterministic-latency", POPT_ARG_NONE, CLI_DETERMINISTIC_LATENCY, N_("Wall-clock-free order-queue latency negotiation (reproducible runs)"), nullptr },
+		{ "record-replay-as", POPT_ARG_STRING, CLI_RECORD_REPLAY_AS, N_("Write the recorded replay to replay/<subdir>/<name>.wzrp instead of a timestamped name"), N_("name") },
 		{ "tmp-prefer-old-save", POPT_ARG_NONE, CLI_TMP_PREFER_OLD_SAVE, N_("Prefer the legacy load path for a save folder that has both the old and new-format data (temporary)"), nullptr },
 		{ "drs-fraction", POPT_ARG_STRING, CLI_DRS_FRACTION, N_("Pin the dynamic resolution scene render fraction for testing, bypassing GPU timing feedback"), N_("fraction 0.5 - 1.0") },
 		{ "resolution", POPT_ARG_STRING, CLI_RESOLUTION, N_("Set the resolution to use"),         N_("WIDTHxHEIGHT") },
@@ -949,6 +958,51 @@ bool ParseCommandLine(int argc, const char * const *argv)
 				}
 				replaySelfTestConfigure(T, N);
 			}
+			break;
+		case CLI_GAME_SEED:
+			token = poptGetOptArg(poptCon);
+			{
+				char *end = nullptr;
+				unsigned long seed = 0;
+				if (token == nullptr || *token == '\0')
+				{
+					qFatal("--game-seed expects a seed");
+				}
+				seed = strtoul(token, &end, 0);
+				if (end == token || *end != '\0')
+				{
+					qFatal("--game-seed expects a seed");
+				}
+				runControlMutable().gameSeed = static_cast<uint32_t>(seed);
+			}
+			break;
+		case CLI_QUIT_AT_GAMETIME:
+			token = poptGetOptArg(poptCon);
+			{
+				char *end = nullptr;
+				unsigned long deadline = 0;
+				if (token == nullptr || *token == '\0')
+				{
+					qFatal("--quit-at-gametime expects a gameTime in ms");
+				}
+				deadline = strtoul(token, &end, 0);
+				if (end == token || *end != '\0' || deadline == 0)
+				{
+					qFatal("--quit-at-gametime expects a positive gameTime in ms");
+				}
+				runControlMutable().quitAtGameTime = static_cast<uint32_t>(deadline);
+			}
+			break;
+		case CLI_DETERMINISTIC_LATENCY:
+			runControlMutable().deterministicLatency = true;
+			break;
+		case CLI_RECORD_REPLAY_AS:
+			token = poptGetOptArg(poptCon);
+			if (token == nullptr || *token == '\0' || strchr(token, '/') != nullptr || strchr(token, '\\') != nullptr)
+			{
+				qFatal("--record-replay-as expects a filename stem with no path separators");
+			}
+			runControlMutable().replayName = token;
 			break;
 		case CLI_TMP_PREFER_OLD_SAVE:
 			gamestate::savegame::setPreferLegacyLoadOverride(true);

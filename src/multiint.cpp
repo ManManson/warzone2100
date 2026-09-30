@@ -94,7 +94,7 @@
 #include "game.h"
 #include "warzoneconfig.h"
 #include "modding.h"
-#include "movebench.h"
+#include "run_control.h"
 #include "qtscript.h"
 #include "random.h"
 #include "notifications.h"
@@ -3853,8 +3853,8 @@ static void SendFireUp()
 	}
 
 	// Pick a random random seed for the synchronised random number generator.
-	// The movement benchmark pins it instead, so a scenario reproduces exactly.
-	uint32_t randomSeed = movementBenchActive() ? movementBenchSeed() : rand();
+	// --game-seed and the movement benchmark pin it instead, so a run reproduces exactly.
+	uint32_t randomSeed = runControl().gameSeed.value_or(static_cast<uint32_t>(rand()));
 
 	debug(LOG_INFO, "Sending NET_FIREUP");
 

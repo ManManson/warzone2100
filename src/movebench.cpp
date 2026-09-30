@@ -23,6 +23,7 @@
  */
 
 #include "movebench.h"
+#include "run_control.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/crc.h"
@@ -139,7 +140,6 @@ const BenchScenario scenarios[] =
 	{ "counterflow_hostile", "movebench_counterflow_hostile.json",  5000, 0x5EEDBEEF },
 };
 
-optional<uint32_t> seedOverride;
 uint32_t arrangementIndex = 0;
 bool watching = false;
 
@@ -581,6 +581,11 @@ bool movementBenchSelectScenario(const std::string &name)
 	// Watched and headless runs of a scenario must be the same simulation, so
 	// the order-queue latency negotiation goes wall-clock-free for the bench.
 	gameTimeSetDeterministicLatency(true);
+	// --game-seed and --movementseed already wrote the field. Otherwise the scenario seed is the run.
+	if (!runControl().gameSeed.has_value())
+	{
+		runControlMutable().gameSeed = scenario->seed;
+	}
 	return true;
 }
 
@@ -602,12 +607,12 @@ const std::string &movementBenchTestConfig()
 uint32_t movementBenchSeed()
 {
 	ASSERT_OR_RETURN(0, activeScenario != nullptr, "No active movement bench scenario");
-	return seedOverride.value_or(activeScenario->seed);
+	return runControl().gameSeed.value_or(activeScenario->seed);
 }
 
 void movementBenchSetSeed(uint32_t seed)
 {
-	seedOverride = seed;
+	runControlMutable().gameSeed = seed;
 }
 
 void movementBenchSetArrangement(uint32_t index)

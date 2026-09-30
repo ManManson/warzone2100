@@ -77,6 +77,7 @@
 #include "lib/sound/cdaudio.h"
 
 #include "clparse.h"
+#include "run_control.h"
 #include "challenge.h"
 #include "configuration.h"
 #include "display.h"
@@ -904,7 +905,12 @@ bool startGameAfterLevelLoad()
 			if (!war_getDisableReplayRecording())
 			{
 				WZGameReplayOptionsHandler replayOptions;
-				auto replayFilename = NETreplaySaveStart((currentGameMode == ActivitySink::GameMode::MULTIPLAYER) ? "multiplay" : "skirmish", replayOptions, war_getMaxReplaysSaved(), (currentGameMode == ActivitySink::GameMode::MULTIPLAYER));
+				nonstd::optional<std::string> fixedReplayName = nonstd::nullopt;
+				if (!runControl().replayName.empty())
+				{
+					fixedReplayName = runControl().replayName;
+				}
+				auto replayFilename = NETreplaySaveStart((currentGameMode == ActivitySink::GameMode::MULTIPLAYER) ? "multiplay" : "skirmish", replayOptions, war_getMaxReplaysSaved(), (currentGameMode == ActivitySink::GameMode::MULTIPLAYER), fixedReplayName);
 				if (!replayFilename.empty()) {
 					wz_command_interface_output("WZEVENT: replaySaveStarted: %s\n", replayFilename.c_str());
 				}
@@ -2074,6 +2080,10 @@ int realmain(int argc, char *argv[])
 	if (!ParseCommandLine(utfargc, utfargv))
 	{
 		return EXIT_FAILURE;
+	}
+	if (runControl().deterministicLatency)
+	{
+		gameTimeSetDeterministicLatency(true);
 	}
 
 	// Save new (commandline) settings
